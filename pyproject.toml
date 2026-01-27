@@ -1,0 +1,14 @@
+[project]
+name = "ixa-epi-covid"
+version = "0.1.0"
+description = "Epidemiological models for COVID-19 developed in ixa"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.3.4",
+    "scipy>=1.16.3",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.13,<0.9.0"]
+build-backend = "uv_build"

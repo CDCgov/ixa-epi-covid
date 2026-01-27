@@ -1,0 +1,35 @@
+[package]
+name = "ixa-epi-covid"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ixa = "0.5.0"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+[profile.profiling]
+inherits = "release"
+debug = true
+
+[lints.rust]
+#turn all rsutc warnings into errors
+warnings = "deny"
+
+[lints.clippy]
+module_name_repetitions = "allow"
+match_wildcard_for_single_variants = "allow"
+uninlined_format_args = "allow"
+
+[[bench]]
+name = "basic_benchmarks"
+path = "bench/bench_main.rs"
+harness = false
+
+[[bin]]
+name = "check_criterion_regressions"
+path = "src/bin/check_criterion_regressions.rs"
+bench = false
