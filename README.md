@@ -4,7 +4,7 @@ This project presents a general transmission model implemented in ixa, the Cente
 
 ## Project Admin
 
-Community Mitigation and Economic Impacts team of the CDC Center for Forecasting and Outbreak Analytics. 
+Community Mitigation and Economic Impacts team of the CDC Center for Forecasting and Outbreak Analytics.
 Team lead: Guido Camargo España (CDC/IOD/ORR/CFA)
 
 ## General Disclaimer

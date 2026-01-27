@@ -516,6 +516,8 @@ name = "ixa-epi-covid"
 version = "0.1.0"
 dependencies = [
  "ixa",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

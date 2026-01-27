@@ -2,9 +2,16 @@
 name = "ixa-epi-covid"
 version = "0.1.0"
 edition = "2024"
+default-run = "ixa-epi-covid"
+
+[lib]
+name = "epimodel"
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 ixa = "0.5.0"
+serde = "1.0.217"
+serde_json = "1.0.139"
 
 [profile.release]
 opt-level = 3
@@ -23,13 +30,3 @@ warnings = "deny"
 module_name_repetitions = "allow"
 match_wildcard_for_single_variants = "allow"
 uninlined_format_args = "allow"
-
-[[bench]]
-name = "basic_benchmarks"
-path = "bench/bench_main.rs"
-harness = false
-
-[[bin]]
-name = "check_criterion_regressions"
-path = "src/bin/check_criterion_regressions.rs"
-bench = false
