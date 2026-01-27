@@ -1,4 +1,4 @@
-# IXA-EPI_COVID
+# IXA-EPI-COVID
 
 This project presents a general transmission model implemented in ixa, the Center for Forecasting and Outbreak Analytics' agent-based modeling framework. Our goal is to develop a model that can appropriately represent all stages of a respiratory disease outbreak, including case importation, a detailed transmission model accounting for time-varying infectiousness and immunity, and the assessment of non-pharmaceutical interventions. This model is a next generation update of [ixa-epi-isolation](https://github.com/CDCgov/ixa-epi-isolation).
 
