@@ -8,6 +8,10 @@ default-run = "ixa-epi-covid"
 name = "epimodel"
 crate-type = ["cdylib", "rlib"]
 
+[lib]
+name = "epimodel"
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 ixa = "0.5.0"
 serde = "1.0.217"
