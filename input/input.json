@@ -1,0 +1,6 @@
+{
+    "epimodel.GlobalParams": {
+        "seed": 1234,
+        "max_time": 100.0
+    }
+}
