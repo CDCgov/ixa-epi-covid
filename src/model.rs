@@ -1,6 +1,6 @@
 use ixa::{Context, ContextRandomExt, ExecutionPhase, IxaError};
 
-pub fn run_model(context: &mut Context, seed: u64, max_time: f64) -> Result<(), IxaError> {
+pub fn initialize_model(context: &mut Context, seed: u64, max_time: f64) -> Result<(), IxaError> {
     // Initialize the random number generator with the provided seed
     context.init_random(seed);
 

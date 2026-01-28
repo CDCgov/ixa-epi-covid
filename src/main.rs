@@ -1,4 +1,4 @@
-use epimodel::{ParametersContextExt, Params, run_model};
+use epimodel::{ParametersContextExt, Params, initialize_model};
 use ixa::{Context, profiling::ProfilingContextExt, run_with_args};
 
 fn main() {
@@ -9,7 +9,7 @@ fn main() {
         );
 
         let &Params { seed, max_time, .. } = context.get_params();
-        run_model(context, seed, max_time).expect("Model run failed");
+        initialize_model(context, seed, max_time).expect("Model initialization failed");
 
         Ok(())
     })

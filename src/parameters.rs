@@ -30,3 +30,40 @@ pub trait ParametersContextExt: PluginContext + ContextGlobalPropertiesExt {
     }
 }
 impl ParametersContextExt for Context {}
+
+impl Default for Params {
+    fn default() -> Self {
+        Params {
+            seed: 0,
+            max_time: 0.0,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn test_validate_max_time() {
+        let parameters = Params {
+            max_time: -100.0,
+            ..Default::default()
+        };
+        let e = validate_inputs(&parameters).err();
+        match e {
+            Some(IxaError::IxaError(msg)) => {
+                assert_eq!(
+                    msg,
+                    "The max simulation running time must be non-negative.".to_string()
+                );
+            }
+            Some(ue) => panic!(
+                "Expected an error that the max simulation running time validation should fail. Instead got {:?}",
+                ue.to_string()
+            ),
+            None => panic!("Expected an error. Instead, validation passed with no errors."),
+        }
+    }
+}
