@@ -1,6 +1,15 @@
 {
     "epimodel.GlobalParams": {
         "seed": 1234,
-        "max_time": 100.0
+        "max_time": 100.0,
+        "synth_population_file": "input/people_test.csv",
+        "settings_properties": {"Home": {"alpha": 0.0,
+                                     "itinerary_specification": {"Constant": {"ratio": 0.25}}},
+                            "Workplace": {"alpha": 0.0,
+                                          "itinerary_specification": {"Constant": {"ratio": 0.25}}},
+                            "School": {"alpha": 0.0,
+                                       "itinerary_specification": {"Constant": {"ratio": 0.25}}},
+                            "CensusTract": {"alpha": 0.0,
+                                            "itinerary_specification": {"Constant": {"ratio": 0.25}}}}
     }
 }
