@@ -1,6 +1,24 @@
-use ixa::{Context, ContextGlobalPropertiesExt, IxaError, PluginContext, define_global_property};
+use ixa::{
+    Context, ContextGlobalPropertiesExt, HashMap, HashMapExt, IxaError, PluginContext,
+    define_global_property,
+};
 use serde::{Deserialize, Serialize};
-use std::fmt::Debug;
+use std::{fmt::Debug, path::PathBuf};
+
+use crate::settings::SettingProperties;
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Hash, PartialEq, Eq)]
+pub enum CoreSettingsTypes {
+    Home,
+    School,
+    Workplace,
+    CensusTract,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
+pub enum ItinerarySpecificationType {
+    Constant { ratio: f64 },
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Params {
@@ -9,6 +27,10 @@ pub struct Params {
     /// The maximum run time of the simulation; even if there are still infections
     /// scheduled to occur, the simulation will stop at this time.
     pub max_time: f64,
+    /// The path to the synthetic population file loaded in `population_loader`
+    pub synth_population_file: PathBuf,
+    /// Setting properties by setting type
+    pub settings_properties: HashMap<CoreSettingsTypes, SettingProperties>,
 }
 
 #[allow(clippy::too_many_lines)]
@@ -36,6 +58,8 @@ impl Default for Params {
         Params {
             seed: 0,
             max_time: 0.0,
+            synth_population_file: PathBuf::new(),
+            settings_properties: HashMap::new(),
         }
     }
 }
