@@ -7,15 +7,11 @@ use ixa::{
     Context, ContextPeopleExt, ContextRandomExt, HashMap, HashMapExt, HashSet, IxaError, PersonId,
     PluginContext, define_data_plugin, define_rng, profiling::open_span,
 };
-use ixa_fips::{parser::parse_county_code, parser::parse_state_code, parser::parse_tract_code};
-
 use serde::{Deserialize, Serialize};
 
 use std::{any::TypeId, hash::Hash};
 
 use dyn_clone::DynClone;
-use dyn_eq::DynEq;
-use dyn_hash::DynHash;
 
 define_rng!(SettingsRng);
 
@@ -39,7 +35,7 @@ pub struct SettingId<T: SettingCategory> {
 
 pub trait AnySettingId
 where
-    Self: std::fmt::Debug + DynClone + 'static + DynEq + DynHash,
+    Self: std::fmt::Debug + DynClone + 'static,
 {
     fn id(&self) -> usize;
     fn calculate_multiplier(
@@ -56,21 +52,7 @@ where
 
 dyn_clone::clone_trait_object!(AnySettingId);
 
-impl Hash for Box<dyn AnySettingId> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.as_ref().dyn_hash(state);
-    }
-}
-
-impl PartialEq for Box<dyn AnySettingId> {
-    fn eq(&self, other: &Self) -> bool {
-        self.as_ref().dyn_eq(other.as_ref())
-    }
-}
-
-impl Eq for Box<dyn AnySettingId> {}
-
-impl<T: SettingCategory + Clone + std::hash::Hash + std::cmp::Eq> AnySettingId for SettingId<T> {
+impl<T: SettingCategory + Clone> AnySettingId for SettingId<T> {
     fn id(&self) -> usize {
         self.id
     }
@@ -100,13 +82,6 @@ impl<T: SettingCategory> SettingId<T> {
             _phantom: std::marker::PhantomData::<T>,
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub enum GeographyLevel {
-    State,
-    County,
-    Tract,
 }
 
 #[derive(Clone, Debug)]
@@ -175,7 +150,6 @@ struct SettingDataContainer {
     // For each setting type, have a map of each setting id and a list of members
     all_members: HashMap<(TypeId, usize), IndexSet<PersonId>>,
     itineraries: HashMap<PersonId, Vec<ItineraryEntry>>,
-    geography_map: HashMap<(GeographyLevel, usize), IndexSet<Box<dyn AnySettingId>>>,
 }
 
 impl SettingDataContainer {
@@ -223,27 +197,6 @@ impl SettingDataContainer {
                 itinerary_entry.ratio,
                 itinerary_entry.setting.get_tuple_id(),
             );
-            // First parse the state
-            let fips_code = itinerary_entry.setting.id().to_string();
-            let (rest, state_id) = parse_state_code(&fips_code).unwrap();
-            let (rest, county_id) = parse_county_code(rest).unwrap();
-            let (_rest, tract_id) = parse_tract_code(rest).unwrap();
-
-            self.add_geography_map_member(
-                GeographyLevel::State,
-                state_id as usize,
-                itinerary_entry.setting.clone(),
-            );
-            self.add_geography_map_member(
-                GeographyLevel::County,
-                county_id as usize,
-                itinerary_entry.setting.clone(),
-            );
-            self.add_geography_map_member(
-                GeographyLevel::Tract,
-                tract_id as usize,
-                itinerary_entry.setting.clone(),
-            );
         }
         Ok(())
     }
@@ -258,26 +211,6 @@ impl SettingDataContainer {
             .entry(setting_identifier)
             .or_default()
             .insert(person_id);
-    }
-
-    fn add_geography_map_member(
-        &mut self,
-        geo_level: GeographyLevel,
-        geo_id: usize,
-        setting: Box<dyn AnySettingId>,
-    ) {
-        self.geography_map
-            .entry((geo_level, geo_id))
-            .or_default()
-            .insert(setting);
-    }
-
-    fn get_settings_by_geography(
-        &self,
-        geo_level: GeographyLevel,
-        geo_id: usize,
-    ) -> Option<&IndexSet<Box<dyn AnySettingId>>> {
-        self.geography_map.get(&(geo_level, geo_id))
     }
 }
 
@@ -331,35 +264,6 @@ trait ContextSettingInternalExt: PluginContext + ContextRandomExt {
 
     fn get_itinerary_internal(&self, person_id: PersonId) -> Option<&Vec<ItineraryEntry>> {
         self.get_data(SettingDataPlugin).get_itinerary(person_id)
-    }
-
-    fn sample_setting_by_geography_internal<T: SettingCategory + Clone>(
-        &self,
-        geo_level: GeographyLevel,
-        geo_id: usize,
-        setting_category: Option<T>,
-    ) -> Option<&dyn AnySettingId> {
-        let container = self.get_data(SettingDataPlugin);
-        if let Some(set) = container.get_settings_by_geography(geo_level, geo_id) {
-            if let Some(ref category) = setting_category {
-                let filtered: Vec<&Box<dyn AnySettingId>> = set
-                    .iter()
-                    .filter(|setting| setting.get_type_id() == category.get_type_id())
-                    .collect();
-                if filtered.is_empty() {
-                    return None;
-                }
-                let setting = filtered[self.sample_range(SettingsRng, 0..filtered.len())];
-                return Some(setting.as_ref());
-            } else {
-                let setting = set
-                    .iter()
-                    .nth(self.sample_range(SettingsRng, 0..set.len()))
-                    .unwrap();
-                return Some(setting.as_ref());
-            }
-        }
-        None
     }
 }
 impl ContextSettingInternalExt for Context {}
@@ -546,24 +450,6 @@ pub trait ContextSettingExt:
         } else {
             None
         }
-    }
-
-    fn get_settings_by_geography(
-        &self,
-        geo_level: GeographyLevel,
-        geo_id: usize,
-    ) -> Option<&IndexSet<Box<dyn AnySettingId>>> {
-        self.get_data(SettingDataPlugin)
-            .get_settings_by_geography(geo_level, geo_id)
-    }
-
-    fn sample_setting_by_geography(
-        &self,
-        geo_level: GeographyLevel,
-        geo_id: usize,
-        setting_category: Option<impl SettingCategory + Clone>,
-    ) -> Option<&dyn AnySettingId> {
-        self.sample_setting_by_geography_internal(geo_level, geo_id, setting_category)
     }
 
     fn sample_setting_members(&self, setting: &dyn AnySettingId) -> Option<PersonId> {
@@ -1224,79 +1110,6 @@ mod test {
             Ok(_) => panic!("Expected an error. Instead, validation passed with no errors."),
         }
     }
-
-    #[test]
-    fn test_get_settings_by_geography() {
-        let mut context = Context::new();
-        context.init_random(42);
-        context
-            .register_setting_category(
-                &CensusTract,
-                SettingProperties {
-                    alpha: 0.01,
-                    itinerary_specification: None,
-                },
-            )
-            .unwrap();
-        let fips_code = 56000000300000001;
-        let binding = fips_code.to_string();
-        let (rest, state_id) = parse_state_code(&binding).unwrap();
-        let (rest, county_id) = parse_county_code(rest).unwrap();
-        let (_rest, tract_id) = parse_tract_code(rest).unwrap();
-        assert_eq!(state_id, 56);
-        assert_eq!(county_id, 0);
-        assert_eq!(tract_id, 300);
-        for i in 0..10 {
-            let person = context.add_person(()).unwrap();
-            let itinerary = vec![ItineraryEntry::new(
-                SettingId::new(CensusTract, fips_code + i),
-                1.0,
-            )];
-            context.add_itinerary(person, itinerary).unwrap();
-        }
-
-        let settings_in_state = context
-            .get_settings_by_geography(GeographyLevel::State, state_id as usize)
-            .unwrap();
-        assert_eq!(settings_in_state.len(), 10);
-        let settings_in_county = context
-            .get_settings_by_geography(GeographyLevel::County, county_id as usize)
-            .unwrap();
-        assert_eq!(settings_in_county.len(), 10);
-        let settings_in_tract = context
-            .get_settings_by_geography(GeographyLevel::Tract, tract_id as usize)
-            .unwrap();
-        assert_eq!(settings_in_tract.len(), 10);
-        let setting = settings_in_tract.iter().next().unwrap();
-        assert_eq!(setting.get_type_id(), TypeId::of::<CensusTract>());
-        assert_eq!(setting.id(), 56000000300000001);
-    }
-
-    // #[test]
-    // fn test_sample_setting_by_geography() {
-    //     let mut context = Context::new();
-    //     context.init_random(42);
-    //     context
-    //         .register_setting_category(
-    //             &CensusTract,
-    //             SettingProperties {
-    //                 alpha: 0.01,
-    //                 itinerary_specification: None,
-    //             },
-    //         )
-    //         .unwrap();
-    //     for i in 0..10 {
-    //         let person = context.add_person(()).unwrap();
-    //         let itinerary = vec![ItineraryEntry::new(SettingId::new(CensusTract, i), 1.0)];
-    //         context.add_itinerary(person, itinerary).unwrap();
-    //     }
-
-    //     let sampled_setting = context
-    //         .sample_setting_by_geography(GeographyLevel::Tract, 5, None)
-    //         .unwrap();
-    //     assert_eq!(sampled_setting.get_type_id(), TypeId::of::<CensusTract>());
-    //     assert_eq!(sampled_setting.id(), 5);
-    // }
 
     define_person_property!(Age, usize);
 
