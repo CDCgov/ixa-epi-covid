@@ -5,7 +5,25 @@ use ixa::{
 use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, path::PathBuf};
 
+use crate::reports::ReportParams;
 use crate::settings::SettingProperties;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum RateFnType {
+    /// A constant rate of infectiousness (constant hazard -> exponential waiting times) for a given
+    /// duration.
+    Constant { rate: f64, duration: f64 },
+    /// A library of empirical rate functions read in from a file.
+    EmpiricalFromFile {
+        /// The path to the library of empirical rates with columns, `id`, `time`, and `value`.
+        file: PathBuf,
+        /// Empirical rate functions are specified as hazard rates. However, the specified hazard
+        /// rates are relative rather than absolute (unlike the constant rate of infectiousness
+        /// which has an absolute rate of infection). We need a scale factor (that is often
+        /// calibrated) to convert the relative hazard rates to absolute rates of infection.
+        scale: f64,
+    },
+}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Hash, PartialEq, Eq)]
 pub enum CoreSettingsTypes {
@@ -29,8 +47,18 @@ pub struct Params {
     pub max_time: f64,
     /// The path to the synthetic population file loaded in `population_loader`
     pub synth_population_file: PathBuf,
+    /// The proportion of initial people who are infectious when we seed the population.
+    pub initial_incidence: f64,
+    /// A library of infection rates to assign to infected people.
+    pub infectiousness_rate_fn: RateFnType,
     /// Setting properties by setting type
     pub settings_properties: HashMap<CoreSettingsTypes, SettingProperties>,
+    /// Prevalence report with a period and name required
+    pub prevalence_report: ReportParams,
+    /// Incidence report with a period and name required
+    pub incidence_report: ReportParams,
+    /// Transmission report with a name required
+    pub transmission_report: ReportParams,
 }
 
 #[allow(clippy::too_many_lines)]
@@ -45,13 +73,13 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
 
 define_global_property!(GlobalParams, Params, validate_inputs);
 
-pub trait ParametersContextExt: PluginContext + ContextGlobalPropertiesExt {
+pub trait ContextParametersExt: PluginContext + ContextGlobalPropertiesExt {
     fn get_params(&self) -> &Params {
         self.get_global_property_value(GlobalParams)
             .expect("Expected GlobalParams to be set")
     }
 }
-impl ParametersContextExt for Context {}
+impl ContextParametersExt for Context {}
 
 impl Default for Params {
     fn default() -> Self {
@@ -59,7 +87,27 @@ impl Default for Params {
             seed: 0,
             max_time: 0.0,
             synth_population_file: PathBuf::new(),
+            initial_incidence: 0.0,
+            infectiousness_rate_fn: RateFnType::Constant {
+                rate: 1.0,
+                duration: 5.0,
+            },
             settings_properties: HashMap::new(),
+            prevalence_report: ReportParams {
+                write: false,
+                filename: None,
+                period: None,
+            },
+            incidence_report: ReportParams {
+                write: false,
+                filename: None,
+                period: None,
+            },
+            transmission_report: ReportParams {
+                write: false,
+                filename: None,
+                period: None,
+            },
         }
     }
 }

@@ -3,6 +3,12 @@
         "seed": 1234,
         "max_time": 100.0,
         "synth_population_file": "input/people_test.csv",
+        "initial_incidence": 0.1,
+        "infectiousness_rate_fn": {"Constant": {
+                "rate": 1.0,
+                "duration": 5.0
+            }
+        },
         "settings_properties": {"Home": {"alpha": 0.0,
                                      "itinerary_specification": {"Constant": {"ratio": 0.25}}},
                             "Workplace": {"alpha": 0.0,

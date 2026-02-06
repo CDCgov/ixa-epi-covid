@@ -1,4 +1,4 @@
-use epimodel::{ParametersContextExt, Params, initialize_model};
+use epimodel::{ContextParametersExt, Params, initialize_model};
 use ixa::{Context, profiling::ProfilingContextExt, run_with_args};
 
 fn main() {

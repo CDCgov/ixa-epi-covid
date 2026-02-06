@@ -1,8 +1,16 @@
+pub mod infection_propagation_loop;
+pub mod infectiousness_manager;
 pub mod model;
+pub mod natural_history_parameter_manager;
 pub mod parameters;
 pub mod population_loader;
+pub mod rate_fns;
+pub mod reports;
 pub mod settings;
+pub mod utils;
 
 pub use model::initialize_model;
-pub use parameters::ParametersContextExt;
+pub use parameters::ContextParametersExt;
 pub use parameters::Params;
+pub use population_loader::Age;
+pub use rate_fns::{ConstantRate, RateFn, load_rate_fns};

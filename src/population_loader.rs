@@ -7,7 +7,7 @@ use ixa_fips::{parser::parse_county_code, parser::parse_state_code, parser::pars
 use serde::Deserialize;
 use std::path::PathBuf;
 
-use crate::parameters::{ParametersContextExt, Params};
+use crate::parameters::{ContextParametersExt, Params};
 use crate::settings::{
     CensusTract, ContextSettingExt, Home, School, SettingId, Workplace, append_itinerary_entry,
 };

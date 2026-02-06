@@ -1,5 +1,5 @@
 use crate::parameters::{
-    CoreSettingsTypes, ItinerarySpecificationType, ParametersContextExt, Params,
+    ContextParametersExt, CoreSettingsTypes, ItinerarySpecificationType, Params,
 };
 
 use indexmap::set::IndexSet;
