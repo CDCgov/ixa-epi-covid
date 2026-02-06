@@ -16,6 +16,20 @@
                             "School": {"alpha": 0.0,
                                        "itinerary_specification": {"Constant": {"ratio": 0.25}}},
                             "CensusTract": {"alpha": 0.0,
-                                            "itinerary_specification": {"Constant": {"ratio": 0.25}}}}
+                                            "itinerary_specification": {"Constant": {"ratio": 0.25}}}},
+        "prevalence_report": {
+            "write": true,
+            "filename": "person_property_count.csv",
+            "period": 1.0
+        },
+        "incidence_report": {
+            "write": true,
+            "filename": "incidence_report.csv",
+            "period": 1.0
+        },
+        "transmission_report": {
+            "write": true,
+            "filename": "transmission_report.csv"
+        }
     }
 }
