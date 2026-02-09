@@ -54,10 +54,7 @@ define_derived_property!(
 /// for a person, given factors related to their environment, such as the number of people
 /// they come in contact with or how close they are.
 /// This is used to scale the intrinsic infectiousness function of that person.
-/// All modifiers of the infector's intrinsic infecitousness are aggregated and returned
-/// as a single float to multiply by the base total infectiousness.
-/// This assumes that transmission modifiers of total infectiousness are independent of
-/// the setting type and are linear
+/// There are no modifiers on intrinsic infectiousness
 pub fn calc_total_infectiousness_multiplier(context: &Context, person_id: PersonId) -> f64 {
     context.calculate_current_infectiousness_multiplier_for_person(person_id)
 }

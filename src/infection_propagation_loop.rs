@@ -107,13 +107,11 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 
 #[cfg(test)]
 mod test {
-    use serde::{Deserialize, Serialize};
     use std::{cell::RefCell, rc::Rc};
 
     use ixa::{
         Context, ContextGlobalPropertiesExt, ContextPeopleExt, ContextRandomExt, ExecutionPhase,
         HashMap, IxaError, PersonId, PersonPropertyChangeEvent,
-        define_person_property_with_default,
     };
 
     use ixa::assert_almost_eq;
@@ -252,35 +250,6 @@ mod test {
             let num_initial_infections_clone: Rc<RefCell<usize>> =
                 Rc::clone(&num_initial_infections);
             let mut context = setup_context(rep, 1.0, 1.0, 5.0);
-            context.set_start_time(-1000.);
-            load_rate_fns(&mut context).unwrap();
-            for _ in 0..pop_size {
-                context.add_person(()).unwrap();
-            }
-            seed_initial_infections(&mut context, incidence);
-            context.add_plan(0.0, move |context| {
-                *num_initial_infections_clone.borrow_mut() +=
-                    context.query_people_count((InfectionStatus, InfectionStatusValue::Infectious));
-            });
-            context.execute();
-        }
-        #[allow(clippy::cast_precision_loss, clippy::cast_lossless)]
-        let observed_incidence =
-            *num_initial_infections.borrow() as f64 / (reps as f64 * pop_size as f64);
-        assert_almost_eq!(incidence, observed_incidence, 0.01);
-    }
-
-    #[test]
-    fn test_binomial_incidence_and_recovery() {
-        let reps = 1000;
-        let incidence = 0.1;
-        let pop_size = 1000;
-        let num_initial_infections = Rc::new(RefCell::new(0));
-        for rep in 0..reps {
-            let num_initial_infections_clone: Rc<RefCell<usize>> =
-                Rc::clone(&num_initial_infections);
-            let mut context = setup_context(rep, 1.0, 1.0, 5.0);
-            context.set_start_time(-1000.);
             load_rate_fns(&mut context).unwrap();
             for _ in 0..pop_size {
                 context.add_person(()).unwrap();
@@ -301,7 +270,6 @@ mod test {
     #[test]
     fn test_init_loop() {
         let mut context = setup_context(42, 1.0, 1.0, 5.0);
-        context.set_start_time(-1000.);
         for _ in 0..10 {
             context.add_person(()).unwrap();
         }
@@ -330,7 +298,6 @@ mod test {
     #[test]
     fn test_zero_rate_no_infections() {
         let mut context = setup_context(0, 0.0, 1.0, 5.0);
-        context.set_start_time(-1000.);
         // Add people -- a lot so we can show that no new infections are added
         for _ in 0..1000 {
             context.add_person(()).unwrap();
@@ -378,17 +345,6 @@ mod test {
         );
     }
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
-    pub enum InfectiousnessProportion {
-        None,
-        Partial,
-    }
-    define_person_property_with_default!(
-        InfectiousnessProportionStatus,
-        InfectiousnessProportion,
-        InfectiousnessProportion::None
-    );
-
     #[test]
     fn test_number_timing_infections_one_time_unit() {
         // Does one infectious person generate the number of infections as expected by the rate?
@@ -430,12 +386,7 @@ mod test {
             // people becoming infectious that lets them transmit.
             load_rate_fns(&mut context).unwrap();
             // Add our infectious fellow.
-            let infectious_person = context
-                .add_person((
-                    InfectiousnessProportionStatus,
-                    InfectiousnessProportion::Partial,
-                ))
-                .unwrap();
+            let infectious_person = context.add_person(()).unwrap();
             set_homogeneous_mixing_itinerary(&mut context, infectious_person).unwrap();
 
             context.infect_person(infectious_person, None, None, None);
@@ -471,6 +422,9 @@ mod test {
 
         #[allow(clippy::cast_precision_loss)]
         let avg_number_infections = *num_infected.borrow() as f64 / num_sims as f64;
+        println!(
+            "Average number of infections over {num_sims} simulations: {avg_number_infections}"
+        );
         assert_almost_eq!(
             avg_number_infections,
             rate * total_infectiousness_multiplier.unwrap(),
