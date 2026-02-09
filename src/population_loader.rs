@@ -2,7 +2,6 @@ use ixa::{
     Context, ContextPeopleExt, IxaError, csv, define_person_property,
     define_person_property_with_default,
 };
-use ixa_fips::{parser::parse_county_code, parser::parse_state_code, parser::parse_tract_code};
 
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -24,9 +23,6 @@ pub struct PeopleRecord<'a> {
 
 define_person_property!(Age, u8);
 define_person_property_with_default!(Alive, bool, true);
-define_person_property!(StateId, u8);
-define_person_property!(CountyId, u16);
-define_person_property!(CensusTractId, u32);
 
 fn create_person_from_record(
     context: &mut Context,
@@ -38,19 +34,8 @@ fn create_person_from_record(
     let school_string: String = String::from_utf8(person_record.schoolId.to_owned())?;
     let workplace_string: String = String::from_utf8(person_record.workplaceId.to_owned())?;
 
-    // First parse the state
-    let fips_code = home_id.clone();
-    let (rest, fips_state) = parse_state_code(&fips_code).unwrap();
-    let (rest, fips_county) = parse_county_code(rest).unwrap();
-    let (_rest, fips_tract) = parse_tract_code(rest).unwrap();
-
     // Add person to context
-    let person_id = context.add_person((
-        (Age, person_record.age),
-        (StateId, fips_state),
-        (CountyId, fips_county),
-        (CensusTractId, fips_tract),
-    ))?;
+    let person_id = context.add_person(((Age, person_record.age),))?;
 
     // Initialize a vector of home and census tract since everyone has these settings
     let mut itinerary = vec![];
@@ -198,9 +183,6 @@ mod test {
         let age = [43, 42];
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
         let census_tract_id = 36_093_033_102;
-        let state_id: u8 = 36;
-        let county_id: u16 = 93;
-        let tract_id: u32 = 33102;
 
         assert_eq!(context.get_current_population(), 2);
 
@@ -221,9 +203,6 @@ mod test {
                 .unwrap()
                 .len()
         );
-        assert_eq!(2, context.query_people_count((StateId, state_id)));
-        assert_eq!(2, context.query_people_count((CountyId, county_id)));
-        assert_eq!(2, context.query_people_count((CensusTractId, tract_id)));
     }
 
     #[test]
