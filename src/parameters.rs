@@ -68,6 +68,82 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
             "The max simulation running time must be non-negative.".to_string(),
         ));
     }
+    // Initial conditions
+    if !(0.0..=1.0).contains(&parameters.initial_incidence) {
+        return Err(IxaError::IxaError(
+            "The initial incidence must be between 0 and 1, inclusive.".to_string(),
+        ));
+    }
+    // Check the infectiousness rate function
+    match parameters.infectiousness_rate_fn {
+        RateFnType::Constant { rate, duration } => {
+            if rate < 0.0 {
+                return Err(IxaError::IxaError(
+                    "The infectiousness rate must be non-negative.".to_string(),
+                ));
+            }
+            if duration < 0.0 {
+                return Err(IxaError::IxaError(
+                    "The infectiousness duration must be non-negative.".to_string(),
+                ));
+            }
+        }
+        RateFnType::EmpiricalFromFile { scale, .. } => {
+            if scale < 0.0 {
+                return Err(IxaError::IxaError(
+                    "The empirical rate function infectiousness scale must be non-negative."
+                        .to_string(),
+                ));
+            }
+        }
+    }
+
+    // If all the itinerary ratios are None, we can't validate them.
+    // If some of them are zero and the rest are none, we still shouldn't fail.
+    // We only want to fail when all of them are 0.
+    // Instead of holding the itinerary ratios in a vector, we sum them because we error if they
+    // are negative, so if their sum is 0.0, they must all be 0.0.
+    let mut itinerary_ratio_sum = None;
+    let mut some_none = false;
+
+    for setting in parameters.settings_properties.values() {
+        let alpha = setting.alpha;
+        let itinerary_ratio = setting
+            .itinerary_specification
+            .map(|ItinerarySpecificationType::Constant { ratio }| ratio);
+        // Check alpha
+        if !(0.0..=1.0).contains(&alpha) {
+            return Err(IxaError::IxaError(
+                "The alpha values for each setting must be between 0 and 1, inclusive.".to_string(),
+            ));
+        }
+        // Check itinerary ratio
+        if let Some(itinerary_ratio) = itinerary_ratio {
+            if itinerary_ratio < 0.0 {
+                return Err(IxaError::IxaError(
+                    "The itinerary ratio for each setting must be non-negative.".to_string(),
+                ));
+            }
+            if let Some(sum) = itinerary_ratio_sum {
+                itinerary_ratio_sum = Some(sum + itinerary_ratio);
+            } else {
+                itinerary_ratio_sum = Some(itinerary_ratio);
+            }
+        } else {
+            // Means that we have a none variant, so even if the sum is 0.0, we can't error because
+            // we don't know how the None itinerary will be specified in the code.
+            some_none = true;
+        }
+    }
+    if let Some(itinerary_ratio_sum) = itinerary_ratio_sum
+        && !some_none
+        && itinerary_ratio_sum == 0.0
+    {
+        return Err(IxaError::IxaError(
+            "At least one itinerary ratio must be greater than zero.".to_string(),
+        ));
+    }
+
     Ok(())
 }
 
@@ -115,7 +191,52 @@ impl Default for Params {
 #[cfg(test)]
 mod tests {
 
+    use ixa::assert_almost_eq;
+
     use super::*;
+
+    #[test]
+    fn test_standard_input_file() {
+        let mut context = Context::new();
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("input/input.json");
+        context
+            .load_global_properties(&path)
+            .expect("Could not load input file");
+        context.get_params();
+    }
+
+    #[test]
+    fn test_default_rate_fn_type() {
+        let Params {
+            infectiousness_rate_fn,
+            ..
+        } = Params::default();
+
+        assert_eq!(
+            infectiousness_rate_fn,
+            RateFnType::Constant {
+                rate: 1.0,
+                duration: 5.0
+            }
+        );
+    }
+
+    #[test]
+    fn test_get_params() {
+        let mut context = Context::new();
+        let parameters = Params {
+            initial_incidence: 0.1,
+            ..Default::default()
+        };
+        context
+            .set_global_property_value(GlobalParams, parameters)
+            .unwrap();
+
+        let &Params {
+            initial_incidence, ..
+        } = context.get_params();
+        assert_almost_eq!(initial_incidence, 0.1, 0.0);
+    }
 
     #[test]
     fn test_validate_max_time() {
@@ -137,5 +258,170 @@ mod tests {
             ),
             None => panic!("Expected an error. Instead, validation passed with no errors."),
         }
+    }
+
+    #[test]
+    fn test_validate_split_zeros() {
+        let parameters = Params {
+            settings_properties: HashMap::from_iter(
+                [
+                    (
+                        CoreSettingsTypes::Home,
+                        SettingProperties {
+                            alpha: 0.5,
+                            itinerary_specification: Some(ItinerarySpecificationType::Constant {
+                                ratio: 0.0,
+                            }),
+                        },
+                    ),
+                    (
+                        CoreSettingsTypes::School,
+                        SettingProperties {
+                            alpha: 0.5,
+                            itinerary_specification: Some(ItinerarySpecificationType::Constant {
+                                ratio: 0.0,
+                            }),
+                        },
+                    ),
+                ]
+                .into_iter()
+                .collect::<HashMap<_, _>>(),
+            ),
+            ..Default::default()
+        };
+        let e = validate_inputs(&parameters).err();
+        match e {
+            Some(IxaError::IxaError(msg)) => {
+                assert_eq!(
+                    msg,
+                    "At least one itinerary ratio must be greater than zero.".to_string()
+                );
+            }
+            Some(ue) => panic!(
+                "Expected an error that at least one itinerary ratio must be greater than zero. Instead got {:?}",
+                ue.to_string()
+            ),
+            None => panic!("Expected an error. Instead, validation passed with no errors."),
+        }
+    }
+
+    #[test]
+    fn test_validate_split_negative() {
+        let parameters = Params {
+            settings_properties: HashMap::from_iter(
+                [
+                    (
+                        CoreSettingsTypes::Home,
+                        SettingProperties {
+                            alpha: 0.5,
+                            itinerary_specification: Some(ItinerarySpecificationType::Constant {
+                                ratio: -0.1,
+                            }),
+                        },
+                    ),
+                    (
+                        CoreSettingsTypes::School,
+                        SettingProperties {
+                            alpha: 0.5,
+                            itinerary_specification: Some(ItinerarySpecificationType::Constant {
+                                ratio: 0.0,
+                            }),
+                        },
+                    ),
+                ]
+                .into_iter()
+                .collect::<HashMap<_, _>>(),
+            ),
+            ..Default::default()
+        };
+        let e = validate_inputs(&parameters).err();
+        match e {
+            Some(IxaError::IxaError(msg)) => {
+                assert_eq!(
+                    msg,
+                    "The itinerary ratio for each setting must be non-negative.".to_string()
+                );
+            }
+            Some(ue) => panic!(
+                "Expected an error that itinerary ratios cannot be negative. Instead got {:?}",
+                ue.to_string()
+            ),
+            None => panic!("Expected an error. Instead, validation passed with no errors."),
+        }
+    }
+
+    #[test]
+    fn test_validation_itinerary_all_none() {
+        let parameters = Params {
+            settings_properties: HashMap::from_iter(
+                [
+                    (
+                        CoreSettingsTypes::Home,
+                        SettingProperties {
+                            alpha: 0.5,
+                            itinerary_specification: None,
+                        },
+                    ),
+                    (
+                        CoreSettingsTypes::School,
+                        SettingProperties {
+                            alpha: 0.5,
+                            itinerary_specification: None,
+                        },
+                    ),
+                ]
+                .into_iter()
+                .collect::<HashMap<_, _>>(),
+            ),
+            ..Default::default()
+        };
+        let e = validate_inputs(&parameters).err();
+        assert!(e.is_none(), "Expected no error, but got: {e:?}");
+    }
+
+    #[test]
+    fn test_validation_itinerary_one_some_zero_rest_none() {
+        let parameters = Params {
+            settings_properties: HashMap::from_iter(
+                [
+                    (
+                        CoreSettingsTypes::Home,
+                        SettingProperties {
+                            alpha: 0.5,
+                            itinerary_specification: Some(ItinerarySpecificationType::Constant {
+                                ratio: 0.0,
+                            }),
+                        },
+                    ),
+                    (
+                        CoreSettingsTypes::School,
+                        SettingProperties {
+                            alpha: 0.5,
+                            itinerary_specification: None,
+                        },
+                    ),
+                ]
+                .into_iter()
+                .collect::<HashMap<_, _>>(),
+            ),
+            ..Default::default()
+        };
+        let e = validate_inputs(&parameters).err();
+        assert!(e.is_none(), "Expected no error, but got: {e:?}");
+    }
+
+    #[test]
+    fn test_deserialization_rates() {
+        let deserialized = serde_json::from_str::<RateFnType>(
+            "{\"Constant\": {\"rate\": 1.0, \"duration\": 5.0}}",
+        )
+        .unwrap();
+        assert_eq!(
+            deserialized,
+            RateFnType::Constant {
+                rate: 1.0,
+                duration: 5.0
+            }
+        );
     }
 }
