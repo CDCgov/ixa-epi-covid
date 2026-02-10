@@ -27,4 +27,3 @@ x <- person_property_report |>
   xlab("Day") +
   ylab("Number of people")
 print(x)
-
