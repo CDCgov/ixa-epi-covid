@@ -9,7 +9,7 @@ name = "epimodel"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-ixa = "0.5.0"
+ixa = "1.0.0"
 serde = "1.0.217"
 serde_json = "1.0.139"
 
