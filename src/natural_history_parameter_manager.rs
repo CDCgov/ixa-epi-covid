@@ -296,33 +296,4 @@ mod test {
         let testing_id = context.get_parameter_id(TestingPatterns, person);
         assert_eq!(culture_id, testing_id);
     }
-
-    // #[test]
-    // fn test_real_file_ids() {
-    //     let mut context = init_context();
-
-    //     let parameters = Params {
-    //         infectiousness_rate_fn: RateFnType::EmpiricalFromFile {
-    //             file: PathBuf::from("./input/library_empirical_rate_fns.csv"),
-    //             scale: 1.0,
-    //         },
-    //         ..Default::default()
-    //     };
-
-    //     context
-    //         .set_global_property_value(GlobalParams, parameters)
-    //         .unwrap();
-
-    //     // Add a person
-    //     let person = context.add_person(()).unwrap();
-    //     // Infect the person -- we have to do this above the call to the symptom progression
-    //     // init because otherwise it panics that the people module has not been initialized?
-    //     context.infect_person(person, None, None, None);
-
-    //     // Initialize symptoms -- reads in the symptom progression library
-    //     load_rate_fns(&mut context).unwrap();
-    //     // Read in the rate function library
-
-    //     // See if the person's symptom id is the same as their rate function id
-    // }
 }
