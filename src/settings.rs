@@ -149,12 +149,6 @@ struct SettingDataContainer {
 
 impl SettingDataContainer {
     fn get_setting_members(&self, setting: &dyn AnySettingId) -> Option<&IndexSet<PersonId>> {
-        println!("{:?}", self.all_members);
-        println!("{:?}", self.setting_categories);
-        println!("{:?}", self.setting_properties);
-        println!("{:?}", self.default_itinerary_ratios);
-        println!("{:?}", self.itineraries);
-
         self.all_members.get(&setting.get_tuple_id())
     }
     fn get_itinerary(&self, person_id: PersonId) -> Option<&Vec<ItineraryEntry>> {
