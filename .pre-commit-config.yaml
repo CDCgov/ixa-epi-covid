@@ -25,6 +25,15 @@ repos:
     - id: ruff-format
       args: ['--line-length', '79']
 #####
+# UV
+- repo: local
+  hooks:
+    - id: uv-sync
+      name: uv sync dependencies
+      entry: uv sync --all-packages --all-extras --dev --locked
+      language: system
+      pass_filenames: false
+#####
 # R
 -   repo: https://github.com/lorenzwalthert/precommit
     rev: v0.4.3.9017
