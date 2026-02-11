@@ -1,19 +1,28 @@
 [project]
-name = "ixa-epi-covid"
+name = "pyepicovid"
 version = "0.1.0"
 description = "Epidemiological models for COVID-19 developed in ixa"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "jupyter>=1.1.1",
+    "matplotlib>=3.10.8",
+    "maturin>=1.11.5",
     "numpy>=2.3.4",
     "pyarrow>=23.0.0",
     "pytest>=9.0.2",
     "scipy>=1.16.3",
+    "seaborn>=0.13.2",
 ]
 
 [build-system]
-requires = ["uv-build>=0.8.13,<0.9.0"]
-build-backend = "uv-build"
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
 
 [tool.uv]
-package = false
+package = true
+
+[tool.uv.workspace]
+members = [
+    "packages/*",
+]

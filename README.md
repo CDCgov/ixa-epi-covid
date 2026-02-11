@@ -12,8 +12,7 @@ Team lead: Guido Camargo España (CDC/IOD/ORR/CFA)
 This repo uses uv for dependency management, be sure that uv is [installed on your machine](https://docs.astral.sh/uv/getting-started/installation/). To run any python script, you will need to initialize the uv environment first:
 
 ```bash
-uv sync --all-packages --all-extras
-uv run python ./path/to/my/script.py
+make uv-sync
 ```bash
 
 To use this model, you need to have Rust and Cargo installed. You can find instructions for installing Rust [here](https://www.rust-lang.org/tools/install).

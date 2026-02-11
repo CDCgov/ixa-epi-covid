@@ -10,6 +10,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 ixa = "0.5.0"
+pyo3 = "0.28.0"
 serde = "1.0.217"
 serde_json = "1.0.139"
 
