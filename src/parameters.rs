@@ -33,11 +33,6 @@ pub enum CoreSettingsTypes {
     CensusTract,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
-pub enum ItinerarySpecificationType {
-    Constant { ratio: f64 },
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Params {
     /// The random seed for the simulation.
@@ -53,6 +48,8 @@ pub struct Params {
     pub infectiousness_rate_fn: RateFnType,
     /// Setting properties by setting type
     pub settings_properties: HashMap<CoreSettingsTypes, SettingProperties>,
+    /// ratios used to initialize indiviiduals itineraries by setting type.
+    pub itinerary_ratios: HashMap<CoreSettingsTypes, f64>,
     /// Prevalence report with a period and name required
     pub prevalence_report: ReportParams,
     /// Incidence report with a period and name required
@@ -98,45 +95,55 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
         }
     }
 
-    // If all the itinerary ratios are None, we can't validate them.
-    // If some of them are zero and the rest are none, we still shouldn't fail.
-    // We only want to fail when all of them are 0.
+    // We only want to fail when all itinerary ratios are 0.
     // Instead of holding the itinerary ratios in a vector, we sum them because we error if they
     // are negative, so if their sum is 0.0, they must all be 0.0.
+    // Need to ensure that keys of setting properties and itinerary ratios match.
+
+    for setting_type in parameters.settings_properties.keys() {
+        if !parameters.itinerary_ratios.contains_key(setting_type) {
+            return Err(IxaError::IxaError(format!(
+                "Itinerary ratios must contain all setting types defined in settings properties. Missing setting type: {:?}.",
+                setting_type
+            )));
+        }
+    }
+
+    for setting_type in parameters.itinerary_ratios.keys() {
+        if !parameters.settings_properties.contains_key(setting_type) {
+            return Err(IxaError::IxaError(format!(
+                "Settings properties must contain all setting types defined in itinerary ratios. Missing setting type: {:?}.",
+                setting_type
+            )));
+        }
+    }
+
     let mut itinerary_ratio_sum = None;
-    let mut some_none = false;
 
     for setting in parameters.settings_properties.values() {
         let alpha = setting.alpha;
-        let itinerary_ratio = setting
-            .itinerary_specification
-            .map(|ItinerarySpecificationType::Constant { ratio }| ratio);
         // Check alpha
         if !(0.0..=1.0).contains(&alpha) {
             return Err(IxaError::IxaError(
                 "The alpha values for each setting must be between 0 and 1, inclusive.".to_string(),
             ));
         }
+    }
+
+    for &itinerary_ratio in parameters.itinerary_ratios.values() {
         // Check itinerary ratio
-        if let Some(itinerary_ratio) = itinerary_ratio {
-            if itinerary_ratio < 0.0 {
-                return Err(IxaError::IxaError(
-                    "The itinerary ratio for each setting must be non-negative.".to_string(),
-                ));
-            }
-            if let Some(sum) = itinerary_ratio_sum {
-                itinerary_ratio_sum = Some(sum + itinerary_ratio);
-            } else {
-                itinerary_ratio_sum = Some(itinerary_ratio);
-            }
+        if itinerary_ratio < 0.0 {
+            return Err(IxaError::IxaError(
+                "The itinerary ratio for each setting must be non-negative.".to_string(),
+            ));
+        }
+        if let Some(sum) = itinerary_ratio_sum {
+            itinerary_ratio_sum = Some(sum + itinerary_ratio);
         } else {
-            // Means that we have a none variant, so even if the sum is 0.0, we can't error because
-            // we don't know how the None itinerary will be specified in the code.
-            some_none = true;
+            itinerary_ratio_sum = Some(itinerary_ratio);
         }
     }
     if let Some(itinerary_ratio_sum) = itinerary_ratio_sum
-        && !some_none
         && itinerary_ratio_sum == 0.0
     {
         return Err(IxaError::IxaError(
@@ -169,6 +176,7 @@ impl Default for Params {
                 duration: 5.0,
             },
             settings_properties: HashMap::new(),
+            itinerary_ratios: HashMap::new(),
             prevalence_report: ReportParams {
                 write: false,
                 filename: None,
@@ -265,24 +273,16 @@ mod tests {
         let parameters = Params {
             settings_properties: HashMap::from_iter(
                 [
-                    (
-                        CoreSettingsTypes::Home,
-                        SettingProperties {
-                            alpha: 0.5,
-                            itinerary_specification: Some(ItinerarySpecificationType::Constant {
-                                ratio: 0.0,
-                            }),
-                        },
-                    ),
-                    (
-                        CoreSettingsTypes::School,
-                        SettingProperties {
-                            alpha: 0.5,
-                            itinerary_specification: Some(ItinerarySpecificationType::Constant {
-                                ratio: 0.0,
-                            }),
-                        },
-                    ),
+                    (CoreSettingsTypes::Home, SettingProperties { alpha: 0.5 }),
+                    (CoreSettingsTypes::School, SettingProperties { alpha: 0.5 }),
+                ]
+                .into_iter()
+                .collect::<HashMap<_, _>>(),
+            ),
+            itinerary_ratios: HashMap::from_iter(
+                [
+                    (CoreSettingsTypes::Home, 0.0),
+                    (CoreSettingsTypes::School, 0.0),
                 ]
                 .into_iter()
                 .collect::<HashMap<_, _>>(),
@@ -310,24 +310,16 @@ mod tests {
         let parameters = Params {
             settings_properties: HashMap::from_iter(
                 [
-                    (
-                        CoreSettingsTypes::Home,
-                        SettingProperties {
-                            alpha: 0.5,
-                            itinerary_specification: Some(ItinerarySpecificationType::Constant {
-                                ratio: -0.1,
-                            }),
-                        },
-                    ),
-                    (
-                        CoreSettingsTypes::School,
-                        SettingProperties {
-                            alpha: 0.5,
-                            itinerary_specification: Some(ItinerarySpecificationType::Constant {
-                                ratio: 0.0,
-                            }),
-                        },
-                    ),
+                    (CoreSettingsTypes::Home, SettingProperties { alpha: 0.5 }),
+                    (CoreSettingsTypes::School, SettingProperties { alpha: 0.5 }),
+                ]
+                .into_iter()
+                .collect::<HashMap<_, _>>(),
+            ),
+            itinerary_ratios: HashMap::from_iter(
+                [
+                    (CoreSettingsTypes::Home, -0.1),
+                    (CoreSettingsTypes::School, 0.0),
                 ]
                 .into_iter()
                 .collect::<HashMap<_, _>>(),
@@ -348,66 +340,6 @@ mod tests {
             ),
             None => panic!("Expected an error. Instead, validation passed with no errors."),
         }
-    }
-
-    #[test]
-    fn test_validation_itinerary_all_none() {
-        let parameters = Params {
-            settings_properties: HashMap::from_iter(
-                [
-                    (
-                        CoreSettingsTypes::Home,
-                        SettingProperties {
-                            alpha: 0.5,
-                            itinerary_specification: None,
-                        },
-                    ),
-                    (
-                        CoreSettingsTypes::School,
-                        SettingProperties {
-                            alpha: 0.5,
-                            itinerary_specification: None,
-                        },
-                    ),
-                ]
-                .into_iter()
-                .collect::<HashMap<_, _>>(),
-            ),
-            ..Default::default()
-        };
-        let e = validate_inputs(&parameters).err();
-        assert!(e.is_none(), "Expected no error, but got: {e:?}");
-    }
-
-    #[test]
-    fn test_validation_itinerary_one_some_zero_rest_none() {
-        let parameters = Params {
-            settings_properties: HashMap::from_iter(
-                [
-                    (
-                        CoreSettingsTypes::Home,
-                        SettingProperties {
-                            alpha: 0.5,
-                            itinerary_specification: Some(ItinerarySpecificationType::Constant {
-                                ratio: 0.0,
-                            }),
-                        },
-                    ),
-                    (
-                        CoreSettingsTypes::School,
-                        SettingProperties {
-                            alpha: 0.5,
-                            itinerary_specification: None,
-                        },
-                    ),
-                ]
-                .into_iter()
-                .collect::<HashMap<_, _>>(),
-            ),
-            ..Default::default()
-        };
-        let e = validate_inputs(&parameters).err();
-        assert!(e.is_none(), "Expected no error, but got: {e:?}");
     }
 
     #[test]

@@ -123,6 +123,7 @@ mod test {
                     "initial_incidence": 0.01,
                     "infectiousness_rate_fn": {"Constant": {"rate": 1.0, "duration": 5.0}},
                     "settings_properties": {},
+                    "itinerary_ratios": {},
                     "prevalence_report": {
                         "write": true,
                         "filename": "prevalence.csv",

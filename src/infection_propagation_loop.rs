@@ -42,24 +42,20 @@ fn schedule_recovery(context: &mut Context, person: PersonId) {
     });
 }
 
-/// Takes susceptible people from the population and changes them according to a provided `seed_fn`.
-/// The total number of people seeded is distributed binomially according to the proportion to seed.
-/// The proportion to seed is calibrated to the population size, not the current number of susceptibles.
-/// This may result in the entire susceptible population being seeded with `seed_fn`
+/// Takes susceptible people from the population and seeds them as infected.
+/// The total number of people seeded is distributed binomially according to the initial incidence to seed.
+/// The initial incidence to seed is relative to the population size, not the current number of susceptibles.
+/// This may result in the entire susceptible population being seeded as infected
 #[allow(clippy::cast_possible_truncation)]
-fn query_susceptibles_and_seed(
-    context: &mut Context,
-    proportion_to_seed: f64,
-    seed_fn: impl Fn(&mut Context, PersonId),
-) {
+fn seed_initial_infections(context: &mut Context, initial_incidence: f64) {
     let binom = Binomial::new(
         context.get_current_population().try_into().unwrap(),
-        proportion_to_seed,
+        initial_incidence,
     )
     .unwrap();
     let k: u64 = context.sample_distr(InfectionRng, binom);
     trace!(
-        "Altering {k} susceptibles with a seeding function using proportion {proportion_to_seed}."
+        "Altering {k} susceptibles with a seeding function using proportion {initial_incidence}."
     );
 
     if k > 0 {
@@ -69,18 +65,12 @@ fn query_susceptibles_and_seed(
             k as usize,
         );
         for person in susceptibles {
-            seed_fn(context, person);
+            trace!("Infecting person {person} as an initial infection.");
+            context.add_plan(0.0, move |context| {
+                context.infect_person(person, None, None, None);
+            });
         }
     }
-}
-
-fn seed_initial_infections(context: &mut Context, initial_incidence: f64) {
-    query_susceptibles_and_seed(context, initial_incidence, |context, person_id| {
-        trace!("Infecting person {person_id} as an initial infection.");
-        context.add_plan(0.0, move |context| {
-            context.infect_person(person_id, None, None, None);
-        });
-    });
 }
 
 pub fn init(context: &mut Context) -> Result<(), IxaError> {
@@ -126,10 +116,7 @@ mod test {
             InfectionContextExt, InfectionData, InfectionDataValue,
             max_total_infectiousness_multiplier,
         },
-        parameters::{
-            ContextParametersExt, CoreSettingsTypes, GlobalParams, ItinerarySpecificationType,
-            Params, RateFnType,
-        },
+        parameters::{ContextParametersExt, CoreSettingsTypes, GlobalParams, Params, RateFnType},
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
         settings::{
             CensusTract, ContextSettingExt, Home, ItineraryEntry, SettingId, SettingProperties,
@@ -159,23 +146,10 @@ mod test {
             infectiousness_rate_fn: RateFnType::Constant { rate, duration },
             settings_properties: HashMap::from_iter(
                 [
-                    (
-                        CoreSettingsTypes::Home,
-                        SettingProperties {
-                            alpha: 0.5,
-                            itinerary_specification: Some(ItinerarySpecificationType::Constant {
-                                ratio: 1.0,
-                            }),
-                        },
-                    ),
+                    (CoreSettingsTypes::Home, SettingProperties { alpha: 0.5 }),
                     (
                         CoreSettingsTypes::Workplace,
-                        SettingProperties {
-                            alpha: 0.5,
-                            itinerary_specification: Some(ItinerarySpecificationType::Constant {
-                                ratio: 1.0,
-                            }),
-                        },
+                        SettingProperties { alpha: 0.5 },
                     ),
                     (
                         CoreSettingsTypes::CensusTract,
@@ -183,13 +157,17 @@ mod test {
                             alpha: 0.5,
                             // Itinerary is specified in the `set_homogeneous_mixing_itinerary` function
                             // so we do not need to set it here.
-                            itinerary_specification: None,
                         },
                     ),
                 ]
                 .into_iter()
                 .collect::<HashMap<_, _>>(),
             ),
+            itinerary_ratios: HashMap::from_iter([
+                (CoreSettingsTypes::Home, 1.0),
+                (CoreSettingsTypes::Workplace, 1.0),
+                (CoreSettingsTypes::CensusTract, 0.0),
+            ]),
             ..Default::default()
         };
         context.init_random(parameters.seed);
@@ -200,15 +178,7 @@ mod test {
         // We also set up a homogenous mixing itinerary so that when we don't call `settings::init`,
         // we still have people in settings.
         context
-            .register_setting_category(
-                &HomogeneousMixing,
-                SettingProperties {
-                    alpha,
-                    itinerary_specification: Some(ItinerarySpecificationType::Constant {
-                        ratio: 1.0,
-                    }),
-                },
-            )
+            .register_setting_category(&HomogeneousMixing, SettingProperties { alpha }, 1.0)
             .unwrap();
         context
     }

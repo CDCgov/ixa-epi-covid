@@ -229,7 +229,7 @@ mod test {
         infectiousness_manager::{
             InfectionData, InfectionDataValue, InfectionStatus, InfectionStatusValue,
         },
-        parameters::{GlobalParams, ItinerarySpecificationType, Params},
+        parameters::{GlobalParams, Params},
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
         settings::{ContextSettingExt, ItineraryEntry, SettingId, SettingProperties},
     };
@@ -266,15 +266,7 @@ mod test {
             .unwrap();
         load_rate_fns(&mut context).unwrap();
         context
-            .register_setting_category(
-                &HomogeneousMixing,
-                SettingProperties {
-                    alpha: 1.0,
-                    itinerary_specification: Some(ItinerarySpecificationType::Constant {
-                        ratio: 1.0,
-                    }),
-                },
-            )
+            .register_setting_category(&HomogeneousMixing, SettingProperties { alpha: 1.0 }, 1.0)
             .unwrap();
 
         context

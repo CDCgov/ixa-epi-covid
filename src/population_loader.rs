@@ -101,7 +101,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::parameters::{CoreSettingsTypes, GlobalParams, ItinerarySpecificationType};
+    use crate::parameters::{CoreSettingsTypes, GlobalParams};
     use crate::settings::{CensusTract, Home, School, SettingId, SettingProperties, Workplace};
     use ixa::{ContextGlobalPropertiesExt, ContextPeopleExt, HashMap};
     use std::io::Write;
@@ -123,46 +123,26 @@ mod test {
             // and that function requires an itinerary write function to be set.
             settings_properties: HashMap::from_iter(
                 [
-                    (
-                        CoreSettingsTypes::Home,
-                        SettingProperties {
-                            alpha: 0.0,
-                            itinerary_specification: Some(ItinerarySpecificationType::Constant {
-                                ratio: 0.25,
-                            }),
-                        },
-                    ),
-                    (
-                        CoreSettingsTypes::School,
-                        SettingProperties {
-                            alpha: 0.0,
-                            itinerary_specification: Some(ItinerarySpecificationType::Constant {
-                                ratio: 0.25,
-                            }),
-                        },
-                    ),
+                    (CoreSettingsTypes::Home, SettingProperties { alpha: 0.0 }),
+                    (CoreSettingsTypes::School, SettingProperties { alpha: 0.0 }),
                     (
                         CoreSettingsTypes::Workplace,
-                        SettingProperties {
-                            alpha: 0.0,
-                            itinerary_specification: Some(ItinerarySpecificationType::Constant {
-                                ratio: 0.25,
-                            }),
-                        },
+                        SettingProperties { alpha: 0.0 },
                     ),
                     (
                         CoreSettingsTypes::CensusTract,
-                        SettingProperties {
-                            alpha: 0.0,
-                            itinerary_specification: Some(ItinerarySpecificationType::Constant {
-                                ratio: 0.25,
-                            }),
-                        },
+                        SettingProperties { alpha: 0.0 },
                     ),
                 ]
                 .into_iter()
                 .collect::<HashMap<_, _>>(),
             ),
+            itinerary_ratios: HashMap::from_iter([
+                (CoreSettingsTypes::Home, 0.25),
+                (CoreSettingsTypes::School, 0.25),
+                (CoreSettingsTypes::Workplace, 0.25),
+                (CoreSettingsTypes::CensusTract, 0.25),
+            ]),
             ..Default::default()
         };
         context
