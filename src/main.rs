@@ -8,12 +8,6 @@ fn main() {
             "No config file provided, must follow `cargo run -- --config path/to/filename.json`"
         );
 
-        // Assert that the binary exists
-        assert!(
-            std::path::Path::new("target/release/ixa-epi-covid").exists(),
-            "Binary target/release/ixa-epi-covid does not exist"
-        );
-
         let &Params { seed, max_time, .. } = context.get_params();
         initialize_model(context, seed, max_time).expect("Model initialization failed");
 
