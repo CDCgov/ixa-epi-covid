@@ -13,16 +13,6 @@ pub enum RateFnType {
     /// A constant rate of infectiousness (constant hazard -> exponential waiting times) for a given
     /// duration.
     Constant { rate: f64, duration: f64 },
-    /// A library of empirical rate functions read in from a file.
-    EmpiricalFromFile {
-        /// The path to the library of empirical rates with columns, `id`, `time`, and `value`.
-        file: PathBuf,
-        /// Empirical rate functions are specified as hazard rates. However, the specified hazard
-        /// rates are relative rather than absolute (unlike the constant rate of infectiousness
-        /// which has an absolute rate of infection). We need a scale factor (that is often
-        /// calibrated) to convert the relative hazard rates to absolute rates of infection.
-        scale: f64,
-    },
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Hash, PartialEq, Eq)]
@@ -82,14 +72,6 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
             if duration < 0.0 {
                 return Err(IxaError::IxaError(
                     "The infectiousness duration must be non-negative.".to_string(),
-                ));
-            }
-        }
-        RateFnType::EmpiricalFromFile { scale, .. } => {
-            if scale < 0.0 {
-                return Err(IxaError::IxaError(
-                    "The empirical rate function infectiousness scale must be non-negative."
-                        .to_string(),
                 ));
             }
         }
