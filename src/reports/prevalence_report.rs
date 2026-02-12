@@ -1,9 +1,9 @@
 use crate::{
-    infectiousness_manager::{InfectionStatus, InfectionStatusValue},
+    infectiousness_manager::InfectionStatus,
     population_loader::{Age, Alive},
 };
-use ixa::prelude::*;
-use ixa::{ExecutionPhase, HashMap, PersonPropertyChangeEvent};
+use ixa::{ExecutionPhase, HashMap};
+use ixa::{impl_derived_property, prelude::*};
 // use ixa::{
 //     define_data_plugin, define_derived_property, define_report, report::ContextReportExt, Context,
 //     ContextPeopleExt, ExecutionPhase, HashMap, IxaError, PersonPropertyChangeEvent,
@@ -14,29 +14,21 @@ use serde::{Deserialize, Serialize};
 struct PersonPropertyReport {
     t: f64,
     age: u8,
-    infection_status: InfectionStatusValue,
+    infection_status: InfectionStatus,
     count: usize,
 }
 
 define_report!(PersonPropertyReport);
 
-#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Copy, Clone, Debug)]
-pub struct PersonPropertyReportValues {
-    age: u8,
-    infection_status: InfectionStatusValue,
-}
+define_multi_property!((Age, SchoolId, WorkplaceId), Person);
 
-define_derived_property!(
-    PersonReportProperties,
-    PersonPropertyReportValues,
-    [Age, InfectionStatus],
-    |age, infection_status| {
-        PersonPropertyReportValues {
-            age,
-            infection_status,
-        }
-    }
-);
+// #[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Copy, Clone, Debug)]
+// pub struct PersonReportProperties {
+//     age: u8,
+//     infection_status: InfectionStatus,
+// }
+
+// impl_derived_property!(PersonReportProperties, Person, ((Age, InfectionStatus)));
 
 struct PropertyReportDataContainer {
     report_map_container: HashMap<PersonPropertyReportValues, usize>,

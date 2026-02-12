@@ -1,7 +1,4 @@
-use ixa::{
-    Context, ContextPeopleExt, ContextRandomExt, PersonId, PluginContext, define_derived_property,
-    define_person_property_with_default, define_rng, trace,
-};
+use ixa::{impl_derived_property, prelude::*};
 use rand_distr::Exp;
 use serde::{Deserialize, Serialize};
 
@@ -9,14 +6,17 @@ use crate::{
     rate_fns::{InfectiousnessRateExt, InfectiousnessRateFn, ScaledRateFn},
     settings::ContextSettingExt,
 };
+
+use crate::population_loader::Person;
+
 use ixa::profiling::{increment_named_count, open_span};
 
-#[derive(Serialize, PartialEq, Debug, Clone, Copy)]
-pub enum InfectionDataValue {
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
+pub enum InfectionData {
     Susceptible,
     Infectious {
         infection_time: f64,
-        infected_by: Option<PersonId>,
+        infected_by: Option<EntityId<Person>>,
         infection_setting_type: Option<&'static str>,
         infection_setting_id: Option<usize>,
     },
@@ -26,27 +26,28 @@ pub enum InfectionDataValue {
     },
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy, Eq, Hash)]
-pub enum InfectionStatusValue {
+impl_property!(
+    InfectionData,
+    Person,
+    default_const = InfectionData::Susceptible
+);
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy, Hash, Eq)]
+pub enum InfectionStatus {
     Susceptible,
     Infectious,
     Recovered,
 }
 
-define_person_property_with_default!(
-    InfectionData,
-    InfectionDataValue,
-    InfectionDataValue::Susceptible
-);
-
-define_derived_property!(
+impl_derived_property!(
     InfectionStatus,
-    InfectionStatusValue,
+    Person,
     [InfectionData],
-    |data| match data {
-        InfectionDataValue::Susceptible => InfectionStatusValue::Susceptible,
-        InfectionDataValue::Infectious { .. } => InfectionStatusValue::Infectious,
-        InfectionDataValue::Recovered { .. } => InfectionStatusValue::Recovered,
+    [],
+    |infection_data| match infection_data {
+        InfectionData::Susceptible => InfectionStatus::Susceptible,
+        InfectionData::Infectious { .. } => InfectionStatus::Infectious,
+        InfectionData::Recovered { .. } => InfectionStatus::Recovered,
     }
 );
 
@@ -55,7 +56,7 @@ define_derived_property!(
 /// they come in contact with or how close they are.
 /// This is used to scale the intrinsic infectiousness function of that person.
 /// There are no modifiers on intrinsic infectiousness
-pub fn calc_total_infectiousness_multiplier(context: &Context, person_id: PersonId) -> f64 {
+pub fn calc_total_infectiousness_multiplier(context: &Context, person_id: EntityId<Person>) -> f64 {
     context.calculate_current_infectiousness_multiplier_for_person(person_id)
 }
 
@@ -63,21 +64,24 @@ pub fn calc_total_infectiousness_multiplier(context: &Context, person_id: Person
 /// for a person, given information we know at the time of a forecast.
 /// The modifier used for intrinsic infectiousness is ignored because all modifiers must
 /// be less than or equal to one.
-pub fn max_total_infectiousness_multiplier(context: &Context, person_id: PersonId) -> f64 {
+pub fn max_total_infectiousness_multiplier(context: &Context, person_id: EntityId<Person>) -> f64 {
     context.calculate_max_infectiousness_multiplier_for_person(person_id)
 }
 
 define_rng!(ForecastRng);
 
 // Infection attempt function for a context and given `PersonId`
-pub fn infection_attempt(context: &mut Context, person_id: PersonId) -> Option<PersonId> {
+pub fn infection_attempt(
+    context: &mut Context,
+    person_id: EntityId<Person>,
+) -> Option<EntityId<Person>> {
     let _span = open_span("infection_attempt");
     if let Some(setting) = context.sample_current_setting(person_id) {
         let next_contact = context
             .sample_from_setting_with_exclusion(person_id, setting)
             .unwrap()?;
-        match context.get_person_property(next_contact, InfectionStatus) {
-            InfectionStatusValue::Susceptible => {
+        match context.get_property::<Person, InfectionStatus>(next_contact) {
+            InfectionStatus::Susceptible => {
                 increment_named_count("infection_success");
                 trace!(
                     "Infection attempt successful. Person {}, setting type {} {}, infecting {}",
@@ -108,7 +112,7 @@ pub struct Forecast {
 
 /// Forecast of the next expected infection time, and the expected rate of
 /// infection at that time.
-pub fn get_forecast(context: &Context, person_id: PersonId) -> Option<Forecast> {
+pub fn get_forecast(context: &Context, person_id: EntityId<Person>) -> Option<Forecast> {
     // Get the person's individual infectiousness
     let rate_fn = context.get_person_rate_fn(person_id);
     // This scales infectiousness by the maximum possible infectiousness across all settings
@@ -135,7 +139,7 @@ pub fn get_forecast(context: &Context, person_id: PersonId) -> Option<Forecast> 
 /// Returns a contact to be infected or None if the forecast is rejected
 pub fn evaluate_forecast(
     context: &mut Context,
-    person_id: PersonId,
+    person_id: EntityId<Person>,
     forecasted_total_infectiousness: f64,
 ) -> bool {
     let rate_fn = context.get_person_rate_fn(person_id);
@@ -168,23 +172,22 @@ pub fn evaluate_forecast(
     true
 }
 
-pub trait InfectionContextExt: PluginContext + ContextPeopleExt + InfectiousnessRateExt {
+pub trait InfectionContextExt: PluginContext + InfectiousnessRateExt {
     // This function should be called from the main loop whenever
     // someone is first infected. It assigns all their properties needed to
     // calculate intrinsic infectiousness
     fn infect_person(
         &mut self,
-        target_id: PersonId,
-        source_id: Option<PersonId>,
+        target_id: EntityId<Person>,
+        source_id: Option<EntityId<Person>>,
         setting_type: Option<&'static str>,
         setting_id: Option<usize>,
     ) {
         let infection_time = self.get_current_time();
         trace!("Person {target_id}: Infected at {infection_time}");
-        self.set_person_property(
+        self.set_property::<Person, InfectionData>(
             target_id,
-            InfectionData,
-            InfectionDataValue::Infectious {
+            InfectionData::Infectious {
                 infection_time,
                 infected_by: source_id,
                 infection_setting_type: setting_type,
@@ -192,25 +195,24 @@ pub trait InfectionContextExt: PluginContext + ContextPeopleExt + Infectiousness
             },
         );
     }
-    fn recover_person(&mut self, person_id: PersonId) {
+    fn recover_person(&mut self, person_id: EntityId<Person>) {
         let recovery_time = self.get_current_time();
-        let InfectionDataValue::Infectious { infection_time, .. } =
-            self.get_person_property(person_id, InfectionData)
+        let InfectionData::Infectious { infection_time, .. } =
+            self.get_property::<Person, InfectionData>(person_id)
         else {
             panic!("Person {person_id} is not infectious")
         };
-        self.set_person_property(
+        self.set_property::<Person, InfectionData>(
             person_id,
-            InfectionData,
-            InfectionDataValue::Recovered {
+            InfectionData::Recovered {
                 recovery_time,
                 infection_time,
             },
         );
     }
-    fn get_elapsed_infection_time(&self, person_id: PersonId) -> f64 {
-        let InfectionDataValue::Infectious { infection_time, .. } =
-            self.get_person_property(person_id, InfectionData)
+    fn get_elapsed_infection_time(&self, person_id: EntityId<Person>) -> f64 {
+        let InfectionData::Infectious { infection_time, .. } =
+            self.get_property::<Person, InfectionData>(person_id)
         else {
             panic!("Person {person_id} is not infectious")
         };
@@ -225,24 +227,21 @@ mod test {
         InfectionContextExt, evaluate_forecast, get_forecast, max_total_infectiousness_multiplier,
     };
     use crate::{
-        define_setting_category,
-        infectiousness_manager::{
-            InfectionData, InfectionDataValue, InfectionStatus, InfectionStatusValue,
-        },
+        Age, define_setting_category,
+        infectiousness_manager::{InfectionData, InfectionStatus},
         parameters::{GlobalParams, Params},
+        population_loader::Person,
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
         settings::{ContextSettingExt, ItineraryEntry, SettingId, SettingProperties},
     };
-    use ixa::assert_almost_eq;
-    use ixa::{
-        Context, ContextGlobalPropertiesExt, ContextPeopleExt, ContextRandomExt, IxaError, PersonId,
-    };
+    use ixa::{Context, ContextGlobalPropertiesExt, ContextRandomExt, IxaError, entity::EntityId};
+    use ixa::{ContextEntitiesExt, assert_almost_eq};
 
     define_setting_category!(HomogeneousMixing);
 
     fn set_homogeneous_mixing_itinerary(
         context: &mut Context,
-        person_id: PersonId,
+        person_id: EntityId<Person>,
     ) -> Result<(), IxaError> {
         let itinerary = vec![ItineraryEntry::new(
             SettingId::new(HomogeneousMixing, 0),
@@ -275,13 +274,13 @@ mod test {
     #[test]
     fn test_infect_person() {
         let mut context = setup_context();
-        let p1 = context.add_person(()).unwrap();
+        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
         context.add_plan(2.0, move |context| {
             context.infect_person(p1, None, None, None);
         });
         context.execute();
-        let InfectionDataValue::Infectious { infection_time, .. } =
-            context.get_person_property(p1, InfectionData)
+        let InfectionData::Infectious { infection_time, .. } =
+            context.get_property::<Person, InfectionData>(p1)
         else {
             panic!("Person {p1} is not infectious")
         };
@@ -292,7 +291,7 @@ mod test {
     #[test]
     fn test_recover_person() {
         let mut context = setup_context();
-        let p1 = context.add_person(()).unwrap();
+        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
         context.add_plan(2.0, move |context| {
             context.infect_person(p1, None, None, None);
         });
@@ -300,10 +299,10 @@ mod test {
             context.recover_person(p1);
         });
         context.execute();
-        let InfectionDataValue::Recovered {
+        let InfectionData::Recovered {
             infection_time,
             recovery_time,
-        } = context.get_person_property(p1, InfectionData)
+        } = context.get_property::<Person, InfectionData>(p1)
         else {
             panic!("Person {p1} is not recovered")
         };
@@ -314,7 +313,7 @@ mod test {
     #[test]
     fn test_get_elapsed_infection_time() {
         let mut context = setup_context();
-        let p1 = context.add_person(()).unwrap();
+        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
         context.add_plan(2.0, move |context| {
             context.infect_person(p1, None, None, None);
         });
@@ -329,7 +328,7 @@ mod test {
     #[test]
     fn test_calc_total_infectiousness_multiplier() {
         let mut context = setup_context();
-        let p1 = context.add_person(()).unwrap();
+        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
 
         assert_almost_eq!(max_total_infectiousness_multiplier(&context, p1), 0.0, 0.0);
     }
@@ -337,9 +336,9 @@ mod test {
     #[test]
     fn test_calc_total_infectiousness_multiplier_with_contact() {
         let mut context = setup_context();
-        let p1 = context.add_person(()).unwrap();
+        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
-        let p2 = context.add_person(()).unwrap();
+        let p2 = context.add_entity::<Person, _>((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p2).unwrap();
 
         assert_almost_eq!(max_total_infectiousness_multiplier(&context, p1), 1.0, 0.0);
@@ -350,12 +349,12 @@ mod test {
     /// Test has potential to stochastically fail if exponential draw is longer than infectious duration
     fn test_forecast() {
         let mut context = setup_context();
-        let p1 = context.add_person(()).unwrap();
+        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
         // Add two additional contacts, which should make the factor 2
-        let p2 = context.add_person(()).unwrap();
+        let p2 = context.add_entity::<Person, _>((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p2).unwrap();
-        let p3 = context.add_person(()).unwrap();
+        let p3 = context.add_entity::<Person, _>((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p3).unwrap();
 
         context.infect_person(p1, None, None, None);
@@ -369,11 +368,11 @@ mod test {
     #[should_panic = "Person 0: Forecasted infectiousness must always be greater than or equal to current infectiousness. Current: 1, Forecasted: 0.9"]
     fn test_assert_evaluate_fails_when_forecast_smaller() {
         let mut context = setup_context();
-        let p1 = context.add_person(()).unwrap();
+        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
         context.infect_person(p1, None, None, None);
         // We need to add another person so that our total infectiousness is 1.
-        let p2 = context.add_person(()).unwrap();
+        let p2 = context.add_entity::<Person, _>((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p2).unwrap();
 
         let invalid_forecast = 1.0 - 0.1;
@@ -383,10 +382,10 @@ mod test {
     #[test]
     fn test_evaluate_still_succeeds_when_forecast_slightly_bigger() {
         let mut context = setup_context();
-        let p1 = context.add_person(()).unwrap();
+        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
         context.infect_person(p1, None, None, None);
-        let p2 = context.add_person(()).unwrap();
+        let p2 = context.add_entity::<Person, _>((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p2).unwrap();
 
         let still_valid_forecast = 1.0 - 9e-11;
@@ -396,23 +395,23 @@ mod test {
     #[test]
     fn test_infected_options() {
         let mut context = setup_context();
-        let index = context.add_person(()).unwrap();
-        let contact = context.add_person(()).unwrap();
+        let index = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let contact = context.add_entity::<Person, _>((Age(30),)).unwrap();
 
         context.infect_person(contact, Some(index), Some("Home"), Some(0));
         context.execute();
 
         assert_eq!(
-            context.get_person_property(contact, InfectionStatus),
-            InfectionStatusValue::Infectious
+            context.get_property::<Person, InfectionStatus>(contact),
+            InfectionStatus::Infectious
         );
 
-        let InfectionDataValue::Infectious {
+        let InfectionData::Infectious {
             infected_by,
             infection_setting_type,
             infection_setting_id,
             ..
-        } = context.get_person_property(contact, InfectionData)
+        } = context.get_property::<Person, InfectionData>(contact)
         else {
             panic!("Person {contact} is not infectious")
         };

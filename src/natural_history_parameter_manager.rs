@@ -4,9 +4,9 @@ use std::{
     collections::{HashMap, hash_map::Entry},
 };
 
-use ixa::{
-    Context, ContextRandomExt, IxaError, PersonId, PluginContext, define_data_plugin, define_rng,
-};
+use ixa::prelude::*;
+
+use crate::population_loader::Person;
 
 define_rng!(NaturalHistoryParameterRng);
 
@@ -21,8 +21,8 @@ pub trait NaturalHistoryParameterLibrary {
 #[derive(Default)]
 #[allow(clippy::type_complexity)]
 struct NaturalHistoryParameterContainer {
-    parameter_id_assigners: HashMap<TypeId, Box<dyn Fn(&Context, PersonId) -> usize>>,
-    ids: RefCell<HashMap<TypeId, HashMap<PersonId, usize>>>,
+    parameter_id_assigners: HashMap<TypeId, Box<dyn Fn(&Context, EntityId<Person>) -> usize>>,
+    ids: RefCell<HashMap<TypeId, HashMap<EntityId<Person>, usize>>>,
 }
 
 define_data_plugin!(
@@ -48,7 +48,7 @@ pub trait ContextNaturalHistoryParameterExt: PluginContext + ContextRandomExt {
     ) -> Result<(), IxaError>
     where
         T: NaturalHistoryParameterLibrary + 'static,
-        S: Fn(&Context, PersonId) -> usize + 'static,
+        S: Fn(&Context, EntityId<Person>) -> usize + 'static,
     {
         let container = self.get_data_mut(NaturalHistoryParameters);
 
@@ -86,12 +86,12 @@ pub trait ContextNaturalHistoryParameterExt: PluginContext + ContextRandomExt {
     /// calling this function again with the same parameter and person will return the same id.
     /// Does not check whether the id returned from an assignment function is in the range of the
     /// library size.
-    fn get_parameter_id<T>(&self, parameter: T, person_id: PersonId) -> usize
+    fn get_parameter_id<T>(&self, parameter: T, person_id: EntityId<Person>) -> usize
     where
         T: NaturalHistoryParameterLibrary + 'static;
 }
 impl ContextNaturalHistoryParameterExt for Context {
-    fn get_parameter_id<T>(&self, parameter: T, person_id: PersonId) -> usize
+    fn get_parameter_id<T>(&self, parameter: T, person_id: EntityId<Person>) -> usize
     where
         T: NaturalHistoryParameterLibrary + 'static,
     {
@@ -141,7 +141,9 @@ impl ContextNaturalHistoryParameterExt for Context {
 mod test {
     use std::any::TypeId;
 
-    use ixa::{ContextPeopleExt, ContextRandomExt, IxaError, context::Context};
+    use ixa::{ContextEntitiesExt, ContextRandomExt, IxaError, context::Context};
+
+    use crate::{Age, population_loader::Person};
 
     use super::{
         ContextNaturalHistoryParameterExt, NaturalHistoryParameterLibrary, NaturalHistoryParameters,
@@ -164,7 +166,7 @@ mod test {
     #[test]
     fn test_register_vanilla_parameter_id_assignment() {
         let mut context = init_context();
-        let person = context.add_person(()).unwrap();
+        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
         context
             .register_parameter_id_assigner(ViralLoad, |_context, _person_id| 0)
             .unwrap();
@@ -215,7 +217,7 @@ mod test {
     #[test]
     fn test_error_register_assignment_after_querying() {
         let mut context = init_context();
-        let person = context.add_person(()).unwrap();
+        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
         // We have to register something to make sure the data container exists.
         context
             .register_parameter_id_assigner(ViralLoad, |_context, _person_id| 0)
@@ -246,7 +248,7 @@ mod test {
     #[test]
     fn test_get_parameter_id_registered_assignment() {
         let mut context = init_context();
-        let person = context.add_person(()).unwrap();
+        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
         context
             .register_parameter_id_assigner(ViralLoad, |_context, _person_id| 0)
             .unwrap();
@@ -257,7 +259,7 @@ mod test {
     #[test]
     fn test_get_parameter_id_already_set() {
         let mut context = init_context();
-        let person = context.add_person(()).unwrap();
+        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
         let container = context.get_data_mut(NaturalHistoryParameters);
         container.ids.borrow_mut().insert(
             TypeId::of::<ViralLoad>(),
@@ -286,7 +288,7 @@ mod test {
     #[test]
     fn test_get_parameter_id_assignment_has_dependencies() {
         let mut context = init_context();
-        let person = context.add_person(()).unwrap();
+        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
         context
             .register_parameter_id_assigner(CulturePositivity, |context, person_id| {
                 context.get_parameter_id(TestingPatterns, person_id)

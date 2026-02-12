@@ -1,16 +1,17 @@
-use crate::infectiousness_manager::{InfectionData, InfectionDataValue};
+use crate::infectiousness_manager::InfectionData;
+use crate::population_loader::Person;
+use ixa::entity::EntityId;
+use ixa::prelude::PropertyChangeEvent;
 use ixa::profiling::open_span;
-use ixa::{
-    Context, IxaError, PersonId, PersonPropertyChangeEvent, define_report, report::ContextReportExt,
-};
+use ixa::{Context, IxaError, define_report, report::ContextReportExt};
 use serde::{Deserialize, Serialize};
 use std::string::ToString;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 struct TransmissionReport {
     time: f64,
-    target_id: PersonId,
-    infected_by: Option<PersonId>,
+    target_id: EntityId<Person>,
+    infected_by: Option<EntityId<Person>>,
     infection_setting_type: Option<String>,
     infection_setting_id: Option<usize>,
 }
@@ -19,8 +20,8 @@ define_report!(TransmissionReport);
 
 fn record_transmission_event(
     context: &mut Context,
-    target_id: PersonId,
-    infected_by: Option<PersonId>,
+    target_id: EntityId<Person>,
+    infected_by: Option<EntityId<Person>>,
     infection_setting_type: Option<String>,
     infection_setting_id: Option<usize>,
 ) {
@@ -40,9 +41,9 @@ fn record_transmission_event(
 /// Will return `IxaError` if the report cannot be added
 pub fn init(context: &mut Context, file_name: &str) -> Result<(), IxaError> {
     context.add_report::<TransmissionReport>(file_name)?;
-    context.subscribe_to_event::<PersonPropertyChangeEvent<InfectionData>>(|context, event| {
+    context.subscribe_to_event::<PropertyChangeEvent<Person, InfectionData>>(|context, event| {
         let _span = open_span("transmission_report");
-        if let InfectionDataValue::Infectious {
+        if let InfectionData::Infectious {
             infected_by,
             infection_setting_type,
             infection_setting_id,
@@ -51,7 +52,7 @@ pub fn init(context: &mut Context, file_name: &str) -> Result<(), IxaError> {
         {
             record_transmission_event(
                 context,
-                event.person_id,
+                event.entity_id,
                 infected_by,
                 infection_setting_type.map(ToString::to_string),
                 infection_setting_id,
@@ -64,13 +65,15 @@ pub fn init(context: &mut Context, file_name: &str) -> Result<(), IxaError> {
 #[cfg(test)]
 mod test {
     use crate::{
+        Age,
         infectiousness_manager::InfectionContextExt,
         parameters::{ContextParametersExt, GlobalParams, Params},
+        population_loader::Person,
         rate_fns::load_rate_fns,
         reports::ReportParams,
     };
     use ixa::{
-        Context, ContextGlobalPropertiesExt, ContextPeopleExt, ContextRandomExt, ContextReportExt,
+        Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt, ContextReportExt,
     };
     use ixa::{assert_almost_eq, csv};
     use std::path::PathBuf;
@@ -106,8 +109,8 @@ mod test {
         let config = context.report_options();
         config.directory(path.clone());
 
-        let source = context.add_person(()).unwrap();
-        let target = context.add_person(()).unwrap();
+        let source = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let target = context.add_entity::<Person, _>((Age(30),)).unwrap();
         let setting_type = Some("test_setting");
         let setting_id: Option<usize> = Some(1);
         let infection_time = 1.0;

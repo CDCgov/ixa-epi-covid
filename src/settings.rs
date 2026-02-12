@@ -1,8 +1,12 @@
-use crate::parameters::{ContextParametersExt, CoreSettingsTypes, Params};
+use crate::{
+    parameters::{ContextParametersExt, CoreSettingsTypes, Params},
+    population_loader::Person,
+};
 
 use indexmap::set::IndexSet;
+use ixa::prelude::*;
 use ixa::{
-    Context, ContextPeopleExt, ContextRandomExt, HashMap, HashMapExt, HashSet, IxaError, PersonId,
+    Context, ContextEntitiesExt, ContextRandomExt, HashMap, HashMapExt, HashSet, IxaError,
     PluginContext, define_data_plugin, define_rng, profiling::open_span,
 };
 use serde::{Deserialize, Serialize};
@@ -37,7 +41,7 @@ where
     fn id(&self) -> usize;
     fn calculate_multiplier(
         &self,
-        members: &IndexSet<PersonId>,
+        members: &IndexSet<EntityId<Person>>,
         setting_properties: SettingProperties,
     ) -> f64;
     fn get_category_id(&self) -> &'static str;
@@ -59,7 +63,7 @@ impl<T: SettingCategory + Clone> AnySettingId for SettingId<T> {
     #[allow(clippy::cast_precision_loss)]
     fn calculate_multiplier(
         &self,
-        members: &IndexSet<PersonId>,
+        members: &IndexSet<EntityId<Person>>,
         setting_properties: SettingProperties,
     ) -> f64 {
         ((members.len() - 1) as f64).powf(setting_properties.alpha)
@@ -143,20 +147,23 @@ struct SettingDataContainer {
     // For each setting type there is a default itinerary ratio
     default_itinerary_ratios: HashMap<TypeId, f64>,
     // For each setting type, have a map of each setting id and a list of members
-    all_members: HashMap<(TypeId, usize), IndexSet<PersonId>>,
-    itineraries: HashMap<PersonId, Vec<ItineraryEntry>>,
+    all_members: HashMap<(TypeId, usize), IndexSet<EntityId<Person>>>,
+    itineraries: HashMap<EntityId<Person>, Vec<ItineraryEntry>>,
 }
 
 impl SettingDataContainer {
-    fn get_setting_members(&self, setting: &dyn AnySettingId) -> Option<&IndexSet<PersonId>> {
+    fn get_setting_members(
+        &self,
+        setting: &dyn AnySettingId,
+    ) -> Option<&IndexSet<EntityId<Person>>> {
         self.all_members.get(&setting.get_tuple_id())
     }
-    fn get_itinerary(&self, person_id: PersonId) -> Option<&Vec<ItineraryEntry>> {
+    fn get_itinerary(&self, person_id: EntityId<Person>) -> Option<&Vec<ItineraryEntry>> {
         self.itineraries.get(&person_id)
     }
-    fn with_itinerary<F>(&self, person_id: PersonId, mut callback: F)
+    fn with_itinerary<F>(&self, person_id: EntityId<Person>, mut callback: F)
     where
-        F: FnMut(&dyn AnySettingId, &SettingProperties, &IndexSet<PersonId>, f64),
+        F: FnMut(&dyn AnySettingId, &SettingProperties, &IndexSet<EntityId<Person>>, f64),
     {
         if let Some(itinerary) = self.get_itinerary(person_id) {
             for entry in itinerary {
@@ -172,7 +179,7 @@ impl SettingDataContainer {
     }
     fn activate_itinerary(
         &mut self,
-        person_id: PersonId,
+        person_id: EntityId<Person>,
         itinerary: &Vec<ItineraryEntry>,
     ) -> Result<(), IxaError> {
         let _span = open_span("activate itinerary");
@@ -195,13 +202,18 @@ impl SettingDataContainer {
         }
         Ok(())
     }
-    fn set_member(&mut self, person_id: PersonId, ratio: f64, setting_identifier: (TypeId, usize)) {
+    fn set_member(
+        &mut self,
+        person_id: EntityId<Person>,
+        ratio: f64,
+        setting_identifier: (TypeId, usize),
+    ) {
         if ratio > 0.0 {
             self.add_member(person_id, setting_identifier);
         }
     }
 
-    fn add_member(&mut self, person_id: PersonId, setting_identifier: (TypeId, usize)) {
+    fn add_member(&mut self, person_id: EntityId<Person>, setting_identifier: (TypeId, usize)) {
         self.all_members
             .entry(setting_identifier)
             .or_default()
@@ -238,12 +250,15 @@ trait ContextSettingInternalExt: PluginContext + ContextRandomExt {
     fn get_setting_members_internal(
         &self,
         setting: &dyn AnySettingId,
-    ) -> Option<&IndexSet<PersonId>> {
+    ) -> Option<&IndexSet<EntityId<Person>>> {
         self.get_data(SettingDataPlugin)
             .get_setting_members(setting)
     }
 
-    fn sample_setting_members_internal(&self, setting: &dyn AnySettingId) -> Option<PersonId> {
+    fn sample_setting_members_internal(
+        &self,
+        setting: &dyn AnySettingId,
+    ) -> Option<EntityId<Person>> {
         if let Some(members) = self
             .get_data(SettingDataPlugin)
             .get_setting_members(setting)
@@ -257,7 +272,7 @@ trait ContextSettingInternalExt: PluginContext + ContextRandomExt {
         None
     }
 
-    fn get_itinerary_internal(&self, person_id: PersonId) -> Option<&Vec<ItineraryEntry>> {
+    fn get_itinerary_internal(&self, person_id: EntityId<Person>) -> Option<&Vec<ItineraryEntry>> {
         self.get_data(SettingDataPlugin).get_itinerary(person_id)
     }
 }
@@ -291,7 +306,7 @@ fn validate_itinerary(itinerary: &[ItineraryEntry]) -> Result<(), IxaError> {
 
 #[allow(private_bounds)]
 pub trait ContextSettingExt:
-    PluginContext + ContextSettingInternalExt + ContextRandomExt + ContextPeopleExt
+    PluginContext + ContextSettingInternalExt + ContextRandomExt + ContextEntitiesExt
 {
     #[allow(dead_code)]
     fn get_setting_properties(
@@ -351,7 +366,7 @@ pub trait ContextSettingExt:
 
     fn add_itinerary(
         &mut self,
-        person_id: PersonId,
+        person_id: EntityId<Person>,
         itinerary: Vec<ItineraryEntry>,
     ) -> Result<(), IxaError> {
         let _span = open_span("add_itinerary");
@@ -380,12 +395,15 @@ pub trait ContextSettingExt:
     }
 
     #[allow(dead_code)]
-    fn get_itinerary(&self, person_id: PersonId) -> Option<&Vec<ItineraryEntry>> {
+    fn get_itinerary(&self, person_id: EntityId<Person>) -> Option<&Vec<ItineraryEntry>> {
         self.get_itinerary_internal(person_id)
     }
 
     #[allow(dead_code)]
-    fn get_setting_members(&self, setting: &dyn AnySettingId) -> Option<&IndexSet<PersonId>> {
+    fn get_setting_members(
+        &self,
+        setting: &dyn AnySettingId,
+    ) -> Option<&IndexSet<EntityId<Person>>> {
         self.get_setting_members_internal(setting)
     }
 
@@ -394,7 +412,10 @@ pub trait ContextSettingExt:
     /// with members filtered as Active and in the Current itinerary
     /// These are generated without modification from the general formula of ratio * (N - 1) ^ alpha
     /// where N is the number of active members in the setting
-    fn calculate_current_infectiousness_multiplier_for_person(&self, person_id: PersonId) -> f64 {
+    fn calculate_current_infectiousness_multiplier_for_person(
+        &self,
+        person_id: EntityId<Person>,
+    ) -> f64 {
         let container = self.get_data(SettingDataPlugin);
         let mut collector = 0.0;
         container.with_itinerary(person_id, |setting, setting_props, members, ratio| {
@@ -411,7 +432,10 @@ pub trait ContextSettingExt:
     /// derived from both the default and modified itineraries of the person.
     /// These are generated without modification from the general formula of ratio * (N - 1) ^ alpha
     /// where N is the number of all active and inactive members in the setting
-    fn calculate_max_infectiousness_multiplier_for_person(&self, person_id: PersonId) -> f64 {
+    fn calculate_max_infectiousness_multiplier_for_person(
+        &self,
+        person_id: EntityId<Person>,
+    ) -> f64 {
         let container = self.get_data(SettingDataPlugin);
         let mut collector = 0.0;
         container.with_itinerary(person_id, |setting, setting_props, members, _ratio| {
@@ -424,9 +448,9 @@ pub trait ContextSettingExt:
 
     fn sample_from_setting_with_exclusion(
         &self,
-        person_id: PersonId,
+        person_id: EntityId<Person>,
         setting: &dyn AnySettingId,
-    ) -> Result<Option<PersonId>, IxaError> {
+    ) -> Result<Option<EntityId<Person>>, IxaError> {
         let _span = open_span("get_contact");
         if let Some(members) = self.get_setting_members_internal(setting) {
             if members.get(&person_id).is_some() && members.len() == 1 {
@@ -445,7 +469,7 @@ pub trait ContextSettingExt:
         Err(IxaError::from("Group membership is None"))
     }
 
-    fn sample_current_setting(&self, person_id: PersonId) -> Option<&dyn AnySettingId> {
+    fn sample_current_setting(&self, person_id: EntityId<Person>) -> Option<&dyn AnySettingId> {
         let _span = open_span("sample_setting");
         let container = self.get_data(SettingDataPlugin);
         let mut itinerary_multiplier = Vec::new();
@@ -468,7 +492,7 @@ pub trait ContextSettingExt:
         }
     }
 
-    fn sample_setting_members(&self, setting: &dyn AnySettingId) -> Option<PersonId> {
+    fn sample_setting_members(&self, setting: &dyn AnySettingId) -> Option<EntityId<Person>> {
         self.sample_setting_members_internal(setting)
     }
 }
@@ -539,10 +563,8 @@ pub fn init(context: &mut Context) {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{parameters::GlobalParams, settings::ContextSettingExt};
-    use ixa::{
-        ContextGlobalPropertiesExt, ContextPeopleExt, assert_almost_eq, define_person_property,
-    };
+    use crate::{Age, parameters::GlobalParams, settings::ContextSettingExt};
+    use ixa::{ContextEntitiesExt, ContextGlobalPropertiesExt, assert_almost_eq};
 
     define_setting_category!(Community);
 
@@ -663,7 +685,7 @@ mod test {
         let mut context = Context::new();
         register_default_settings(&mut context);
 
-        let person = context.add_person(()).unwrap();
+        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
         let itinerary = vec![
             ItineraryEntry::new(SettingId::new(Home, 2), 0.5),
             ItineraryEntry::new(SettingId::new(Home, 2), 0.5),
@@ -685,7 +707,7 @@ mod test {
     fn test_feasible_itinerary_ratio() {
         let mut context = Context::new();
         register_default_settings(&mut context);
-        let person = context.add_person(()).unwrap();
+        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
         let itinerary = vec![ItineraryEntry::new(SettingId::new(Home, 2), -0.5)];
 
         let e = context.add_itinerary(person, itinerary).err();
@@ -705,7 +727,7 @@ mod test {
     fn test_feasible_itinerary_setting() {
         let mut context = Context::new();
         register_default_settings(&mut context);
-        let person = context.add_person(()).unwrap();
+        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
 
         // Community is a defined setting but not registered
         let itinerary = vec![ItineraryEntry::new(SettingId::new(Community, 2), 0.5)];
@@ -727,8 +749,8 @@ mod test {
     fn test_change_activity_members() {
         let mut context = Context::new();
         register_default_settings(&mut context);
-        let active_person = context.add_person(()).unwrap();
-        let inactive_person = context.add_person(()).unwrap();
+        let active_person = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let inactive_person = context.add_entity::<Person, _>((Age(30),)).unwrap();
         let active_itinerary = vec![ItineraryEntry::new(SettingId::new(Home, 1), 1.0)];
         let inactive_itinerary = vec![ItineraryEntry::new(SettingId::new(Home, 1), 0.0)];
         context
@@ -749,7 +771,7 @@ mod test {
     fn test_add_itinerary() {
         let mut context = Context::new();
         register_default_settings(&mut context);
-        let person = context.add_person(()).unwrap();
+        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
         let itinerary = vec![
             ItineraryEntry::new(SettingId::new(Home, 1), 0.5),
             ItineraryEntry::new(SettingId::new(Home, 2), 0.5),
@@ -760,7 +782,7 @@ mod test {
             .unwrap();
         assert_eq!(members.len(), 1);
 
-        let person2 = context.add_person(()).unwrap();
+        let person2 = context.add_entity::<Person, _>((Age(30),)).unwrap();
         let itinerary2 = vec![ItineraryEntry::new(SettingId::new(Home, 2), 1.0)];
         context.add_itinerary(person2, itinerary2).unwrap();
 
@@ -788,7 +810,7 @@ mod test {
     fn test_get_itinerary() {
         let mut context = Context::new();
         register_default_settings(&mut context);
-        let person = context.add_person(()).unwrap();
+        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
         let default_itinerary = vec![
             ItineraryEntry::new(SettingId::new(Home, 1), 0.5),
             ItineraryEntry::new(SettingId::new(Home, 2), 0.5),
@@ -813,7 +835,7 @@ mod test {
             .unwrap();
         for s in 0..5 {
             for _ in 0..5 {
-                let person = context.add_person(()).unwrap();
+                let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
                 let itinerary = vec![
                     ItineraryEntry::new(SettingId::new(Home, s), 0.5),
                     ItineraryEntry::new(SettingId::new(CensusTract, s), 0.5),
@@ -843,7 +865,7 @@ mod test {
             .unwrap();
         for s in 0..5 {
             for _ in 0..5 {
-                let person = context.add_person(()).unwrap();
+                let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
                 let itinerary = vec![
                     ItineraryEntry::new(SettingId::new(Home, s), 1.0),
                     ItineraryEntry::new(SettingId::new(CensusTract, s), 0.0),
@@ -870,14 +892,14 @@ mod test {
         for s in 0..5 {
             // Create 5 people
             for _ in 0..5 {
-                let person = context.add_person(()).unwrap();
+                let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
                 let itinerary = vec![ItineraryEntry::new(SettingId::new(Home, s), 0.5)];
                 context.add_itinerary(person, itinerary).unwrap();
             }
         }
 
         let home_id = 0;
-        let person = context.add_person(()).unwrap();
+        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
         let itinerary = vec![ItineraryEntry::new(SettingId::new(Home, home_id), 0.5)];
         context.add_itinerary(person, itinerary).unwrap();
         let members = context
@@ -901,7 +923,7 @@ mod test {
 
         for s in 0..5 {
             for _ in 0..5 {
-                let person = context.add_person(()).unwrap();
+                let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
                 let itinerary = vec![
                     ItineraryEntry::new(SettingId::new(Home, s), 0.5),
                     ItineraryEntry::new(SettingId::new(CensusTract, s), 0.5),
@@ -911,7 +933,7 @@ mod test {
         }
         // Create a new person and register to home 0
         let itinerary = vec![ItineraryEntry::new(SettingId::new(Home, 0), 1.0)];
-        let person = context.add_person(()).unwrap();
+        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
         context.add_itinerary(person, itinerary).unwrap();
 
         // If only registered at home, total infectiousness multiplier should be (6 - 1) ^ (alpha)
@@ -921,7 +943,7 @@ mod test {
         // If person's itinerary is changed for two settings,
         // CensusTract 0 should have 6 members, Home 0 should have 7 members
         // the total infectiousness should be the sum of infs * proportion
-        let person = context.add_person(()).unwrap();
+        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
         let itinerary_complete = vec![
             ItineraryEntry::new(SettingId::new(Home, 0), 0.5),
             ItineraryEntry::new(SettingId::new(CensusTract, 0), 0.5),
@@ -963,8 +985,8 @@ mod test {
             .register_setting_category(&CensusTract, SettingProperties { alpha: 0.01 }, 1.0)
             .unwrap();
 
-        let person_a = context.add_person(()).unwrap();
-        let person_b = context.add_person(()).unwrap();
+        let person_a = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person_b = context.add_entity::<Person, _>((Age(30),)).unwrap();
         let itinerary_a = vec![
             ItineraryEntry::new(SettingId::new(Home, 0), 0.5),
             ItineraryEntry::new(SettingId::new(CensusTract, 0), 0.5),
@@ -984,7 +1006,7 @@ mod test {
         assert_eq!(setting_id.get_type_id(), TypeId::of::<Home>());
         assert_eq!(setting_id.id(), 0);
 
-        let person_c = context.add_person(()).unwrap();
+        let person_c = context.add_entity::<Person, _>((Age(30),)).unwrap();
         let itinerary_c = vec![ItineraryEntry::new(SettingId::new(CensusTract, 0), 0.5)];
         context.add_itinerary(person_c, itinerary_c).unwrap();
         let setting_id = context.sample_current_setting(person_c).unwrap();
@@ -1005,8 +1027,8 @@ mod test {
             .register_setting_category(&CensusTract, SettingProperties { alpha: 0.01 }, 1.0)
             .unwrap();
 
-        let person_a = context.add_person(()).unwrap();
-        let person_b = context.add_person(()).unwrap();
+        let person_a = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person_b = context.add_entity::<Person, _>((Age(30),)).unwrap();
         let itinerary_a = vec![
             ItineraryEntry::new(SettingId::new(Home, 0), 0.5),
             ItineraryEntry::new(SettingId::new(CensusTract, 0), 0.5),
@@ -1032,7 +1054,7 @@ mod test {
                 .is_none()
         );
 
-        let person_c = context.add_person(()).unwrap();
+        let person_c = context.add_entity::<Person, _>((Age(30),)).unwrap();
         let itinerary_c = vec![ItineraryEntry::new(SettingId::new(CensusTract, 0), 0.5)];
         context.add_itinerary(person_c, itinerary_c).unwrap();
 
@@ -1049,8 +1071,6 @@ mod test {
             Ok(_) => panic!("Expected an error. Instead, validation passed with no errors."),
         }
     }
-
-    define_person_property!(Age, usize);
 
     #[test]
     fn test_default_itinerary_ratio_specification() {
@@ -1158,7 +1178,7 @@ mod test {
     #[test]
     fn test_itinerary_normalized_one() {
         let mut context = Context::new();
-        let person = context.add_person(()).unwrap();
+        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
         context
             .register_setting_category(&Home, SettingProperties { alpha: 0.1 }, 5.0)
             .unwrap();

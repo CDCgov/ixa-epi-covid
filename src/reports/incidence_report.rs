@@ -1,10 +1,10 @@
 use crate::{
-    infectiousness_manager::{InfectionStatus, InfectionStatusValue},
-    population_loader::Age,
+    infectiousness_manager::InfectionStatus,
+    population_loader::{Age, Person},
 };
 use ixa::{
-    Context, ContextPeopleExt, ExecutionPhase, HashMap, HashSet, HashSetExt, IxaError,
-    PersonPropertyChangeEvent, define_data_plugin, define_report, report::ContextReportExt,
+    Context, ContextEntitiesExt, ExecutionPhase, HashMap, HashSet, HashSetExt, IxaError,
+    define_data_plugin, define_report, prelude::PropertyChangeEvent, report::ContextReportExt,
 };
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
@@ -20,7 +20,7 @@ struct PersonPropertyIncidenceReport {
 define_report!(PersonPropertyIncidenceReport);
 
 struct PropertyReportDataContainer {
-    infection_status_change: HashMap<(u8, InfectionStatusValue), u32>,
+    infection_status_change: HashMap<(Age, InfectionStatus), u32>,
 }
 
 define_data_plugin!(
@@ -33,12 +33,10 @@ define_data_plugin!(
 
 fn update_infection_incidence(
     context: &mut Context,
-    event: PersonPropertyChangeEvent<InfectionStatus>,
+    event: PropertyChangeEvent<Person, InfectionStatus>,
 ) {
-    if event.current == InfectionStatusValue::Infectious
-        || event.current == InfectionStatusValue::Recovered
-    {
-        let age = context.get_person_property(event.person_id, Age);
+    if event.current == InfectionStatus::Infectious || event.current == InfectionStatus::Recovered {
+        let age = context.get_property::<Person, Age>(event.entity_id);
         let report_container_mut = context.get_data_mut(PropertyReportDataPlugin);
         report_container_mut
             .infection_status_change
@@ -64,7 +62,7 @@ fn send_incidence_counts(context: &mut Context) {
     for ((age, infection_status), count) in &report_container.infection_status_change {
         context.send_report(PersonPropertyIncidenceReport {
             t_upper,
-            age: *age,
+            age: age.0,
             event: format!("{infection_status:?}"),
             count: *count,
         });
@@ -91,10 +89,7 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), I
     let report_container = context.get_data_mut(PropertyReportDataPlugin);
 
     for age in ages.take() {
-        let inf_vec = [
-            InfectionStatusValue::Infectious,
-            InfectionStatusValue::Recovered,
-        ];
+        let inf_vec = [InfectionStatus::Infectious, InfectionStatus::Recovered];
 
         for inf_value in inf_vec {
             report_container
@@ -103,7 +98,7 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), I
         }
     }
 
-    context.subscribe_to_event::<PersonPropertyChangeEvent<InfectionStatus>>(|context, event| {
+    context.subscribe_to_event::<PropertyChangeEvent<Person, InfectionStatus>>(|context, event| {
         update_infection_incidence(context, event);
     });
 
@@ -121,15 +116,15 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), I
 #[cfg(test)]
 mod test {
     use crate::{
-        Age,
         infectiousness_manager::InfectionContextExt,
         parameters::{ContextParametersExt, GlobalParams, Params},
+        population_loader::{Age, Person},
         rate_fns::load_rate_fns,
         reports::ReportParams,
     };
     use ixa::{
-        Context, ContextGlobalPropertiesExt, ContextPeopleExt, ContextRandomExt, ContextReportExt,
-        csv,
+        Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt,
+        ContextReportExt, csv,
     };
     use std::path::PathBuf;
     use tempfile::tempdir;
@@ -165,8 +160,8 @@ mod test {
         let config = context.report_options();
         config.directory(path.clone());
 
-        let source = context.add_person((Age, 42)).unwrap();
-        let target = context.add_person((Age, 43)).unwrap();
+        let source = context.add_entity((Age(42),)).unwrap();
+        let target = context.add_entity((Age(43),)).unwrap();
         let setting_type = Some("test_setting");
         let setting_id: Option<usize> = Some(1);
         let infection_time = 1.0;
@@ -224,8 +219,8 @@ mod test {
         let config = context.report_options();
         config.directory(path.clone());
 
-        let source = context.add_person((Age, 42)).unwrap();
-        let target = context.add_person((Age, 43)).unwrap();
+        let source = context.add_entity::<Person, _>((Age(42),)).unwrap();
+        let target = context.add_entity::<Person, _>((Age(43),)).unwrap();
         let setting_type = Some("test_setting");
         let setting_id: Option<usize> = Some(1);
         let infection_time = 1.0;
@@ -237,7 +232,7 @@ mod test {
             context.infect_person(target, Some(source), setting_type, setting_id);
         });
         context.add_plan(infection_time - 0.1, move |context| {
-            context.set_person_property(target, Age, 44);
+            context.set_property::<Person, Age>(target, Age(44));
         });
         context.execute();
 
