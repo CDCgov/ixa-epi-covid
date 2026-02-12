@@ -3,7 +3,7 @@ use ixa::{Context, IxaError, info};
 use serde::{Deserialize, Serialize};
 
 // pub mod incidence_report;
-// pub mod prevalence_report;
+pub mod prevalence_report;
 pub mod transmission_report;
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -62,8 +62,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
     let mut report_count = 0;
 
     if let Some((name, period)) = get_period_report_name(&prevalence_report)? {
-        println!("{} {}", name, period);
-        // prevalence_report::init(context, name, period)?;
+        prevalence_report::init(context, name, period)?;
         info!("Generating the prevalence report.");
         report_count += 1;
     }
@@ -74,7 +73,6 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
         report_count += 1;
     }
     if let Some(name) = get_report_name(&transmission_report)? {
-        println!("{}", name);
         transmission_report::init(context, name)?;
         info!("Generating the transmission report.");
         report_count += 1;

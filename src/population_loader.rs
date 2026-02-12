@@ -25,7 +25,7 @@ pub struct Age(pub u8);
 impl_property!(Age, Person);
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct Alive(bool);
+pub struct Alive(pub bool);
 impl_property!(Alive, Person, default_const = Alive(true));
 
 fn create_person_from_record(

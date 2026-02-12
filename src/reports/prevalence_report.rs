@@ -1,9 +1,9 @@
 use crate::{
     infectiousness_manager::InfectionStatus,
-    population_loader::{Age, Alive},
+    population_loader::{Age, Alive, Person},
 };
+use ixa::prelude::*;
 use ixa::{ExecutionPhase, HashMap};
-use ixa::{impl_derived_property, prelude::*};
 // use ixa::{
 //     define_data_plugin, define_derived_property, define_report, report::ContextReportExt, Context,
 //     ContextPeopleExt, ExecutionPhase, HashMap, IxaError, PersonPropertyChangeEvent,
@@ -20,7 +20,7 @@ struct PersonPropertyReport {
 
 define_report!(PersonPropertyReport);
 
-define_multi_property!((Age, SchoolId, WorkplaceId), Person);
+define_multi_property!((Age, InfectionStatus), Person);
 
 // #[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Copy, Clone, Debug)]
 // pub struct PersonReportProperties {
@@ -31,7 +31,7 @@ define_multi_property!((Age, SchoolId, WorkplaceId), Person);
 // impl_derived_property!(PersonReportProperties, Person, ((Age, InfectionStatus)));
 
 struct PropertyReportDataContainer {
-    report_map_container: HashMap<PersonPropertyReportValues, usize>,
+    report_map_container: HashMap<(Age, InfectionStatus), usize>,
 }
 
 define_data_plugin!(
@@ -42,7 +42,7 @@ define_data_plugin!(
     }
 );
 
-type ReportEvent = PersonPropertyChangeEvent<PersonReportProperties>;
+type ReportEvent = PropertyChangeEvent<Person, (Age, InfectionStatus)>;
 
 fn update_property_change_counts(context: &mut Context, event: ReportEvent) {
     let report_container_mut = context.get_data_mut(PropertyReportDataPlugin);
@@ -66,8 +66,8 @@ fn send_property_counts(context: &mut Context) {
     for (values, count_property) in &report_container.report_map_container {
         context.send_report(PersonPropertyReport {
             t: context.get_current_time(),
-            age: values.age,
-            infection_status: values.infection_status,
+            age: values.0.0,
+            infection_status: values.1,
             count: *count_property,
         });
     }
@@ -85,10 +85,10 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), I
     context.add_report::<PersonPropertyReport>(file_name)?;
 
     let mut map_counts = HashMap::default();
-    context.with_query_results((Alive, true), &mut |current_people| {
+    context.with_query_results::<Person, _>((Alive(true),), &mut |current_people| {
         //current_people = results.to_owned_vec();
         for person in current_people {
-            let value = context.get_person_property(*person, PersonReportProperties);
+            let value = context.get_property(*person);
             map_counts
                 .entry(value)
                 .and_modify(|count| *count += 1)
@@ -119,12 +119,13 @@ mod test {
         Age,
         infectiousness_manager::InfectionContextExt,
         parameters::{ContextParametersExt, GlobalParams, Params},
+        population_loader::Person,
         rate_fns::load_rate_fns,
         reports::ReportParams,
     };
     use ixa::{
-        Context, ContextGlobalPropertiesExt, ContextPeopleExt, ContextRandomExt, ContextReportExt,
-        csv,
+        Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt,
+        ContextReportExt, csv,
     };
     use std::path::PathBuf;
     use tempfile::tempdir;
@@ -159,8 +160,8 @@ mod test {
         let config = context.report_options();
         config.directory(path.clone());
 
-        let source = context.add_person((Age, 42)).unwrap();
-        let target = context.add_person((Age, 43)).unwrap();
+        let source = context.add_entity::<Person, _>((Age(42),)).unwrap();
+        let target = context.add_entity::<Person, _>((Age(43),)).unwrap();
         let setting_type = Some("test_setting");
         let setting_id: Option<usize> = Some(1);
         let infection_time = 1.0;
