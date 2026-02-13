@@ -7,14 +7,14 @@ use crate::infectiousness_manager::{
     infection_attempt,
 };
 use crate::parameters::{ContextParametersExt, Params};
-use crate::population_loader::Person;
+use crate::population_loader::{Person, PersonId};
 use crate::rate_fns::{InfectiousnessRateExt, load_rate_fns};
 use ixa::profiling::{increment_named_count, open_span};
 use ixa::{Context, ContextRandomExt, IxaError, define_rng, trace};
 
 define_rng!(InfectionRng);
 
-fn schedule_next_forecasted_infection(context: &mut Context, person: EntityId<Person>) {
+fn schedule_next_forecasted_infection(context: &mut Context, person: PersonId) {
     if let Some(Forecast {
         next_time,
         forecasted_total_infectiousness,
@@ -31,7 +31,7 @@ fn schedule_next_forecasted_infection(context: &mut Context, person: EntityId<Pe
     }
 }
 
-fn schedule_recovery(context: &mut Context, person: EntityId<Person>) {
+fn schedule_recovery(context: &mut Context, person: PersonId) {
     let infection_duration = context.get_person_rate_fn(person).infection_duration();
     let recovery_time = context.get_current_time() + infection_duration;
     context.add_plan(recovery_time, move |context| {
@@ -125,7 +125,7 @@ mod test {
 
     fn set_homogeneous_mixing_itinerary(
         context: &mut Context,
-        person_id: EntityId<Person>,
+        person_id: PersonId,
     ) -> Result<(), IxaError> {
         let itinerary = vec![ItineraryEntry::new(
             SettingId::new(HomogeneousMixing, 0),

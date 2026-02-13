@@ -6,7 +6,7 @@ use std::{
 
 use ixa::prelude::*;
 
-use crate::population_loader::Person;
+use crate::population_loader::PersonId;
 
 define_rng!(NaturalHistoryParameterRng);
 
@@ -21,8 +21,8 @@ pub trait NaturalHistoryParameterLibrary {
 #[derive(Default)]
 #[allow(clippy::type_complexity)]
 struct NaturalHistoryParameterContainer {
-    parameter_id_assigners: HashMap<TypeId, Box<dyn Fn(&Context, EntityId<Person>) -> usize>>,
-    ids: RefCell<HashMap<TypeId, HashMap<EntityId<Person>, usize>>>,
+    parameter_id_assigners: HashMap<TypeId, Box<dyn Fn(&Context, PersonId) -> usize>>,
+    ids: RefCell<HashMap<TypeId, HashMap<PersonId, usize>>>,
 }
 
 define_data_plugin!(
@@ -48,7 +48,7 @@ pub trait ContextNaturalHistoryParameterExt: PluginContext + ContextRandomExt {
     ) -> Result<(), IxaError>
     where
         T: NaturalHistoryParameterLibrary + 'static,
-        S: Fn(&Context, EntityId<Person>) -> usize + 'static,
+        S: Fn(&Context, PersonId) -> usize + 'static,
     {
         let container = self.get_data_mut(NaturalHistoryParameters);
 
@@ -86,12 +86,12 @@ pub trait ContextNaturalHistoryParameterExt: PluginContext + ContextRandomExt {
     /// calling this function again with the same parameter and person will return the same id.
     /// Does not check whether the id returned from an assignment function is in the range of the
     /// library size.
-    fn get_parameter_id<T>(&self, parameter: T, person_id: EntityId<Person>) -> usize
+    fn get_parameter_id<T>(&self, parameter: T, person_id: PersonId) -> usize
     where
         T: NaturalHistoryParameterLibrary + 'static;
 }
 impl ContextNaturalHistoryParameterExt for Context {
-    fn get_parameter_id<T>(&self, parameter: T, person_id: EntityId<Person>) -> usize
+    fn get_parameter_id<T>(&self, parameter: T, person_id: PersonId) -> usize
     where
         T: NaturalHistoryParameterLibrary + 'static,
     {

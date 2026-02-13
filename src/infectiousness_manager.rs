@@ -3,6 +3,7 @@ use rand_distr::Exp;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    population_loader::PersonId,
     rate_fns::{InfectiousnessRateExt, InfectiousnessRateFn, ScaledRateFn},
     settings::ContextSettingExt,
 };
@@ -16,7 +17,7 @@ pub enum InfectionData {
     Susceptible,
     Infectious {
         infection_time: f64,
-        infected_by: Option<EntityId<Person>>,
+        infected_by: Option<PersonId>,
         infection_setting_type: Option<&'static str>,
         infection_setting_id: Option<usize>,
     },
@@ -56,7 +57,7 @@ impl_derived_property!(
 /// they come in contact with or how close they are.
 /// This is used to scale the intrinsic infectiousness function of that person.
 /// There are no modifiers on intrinsic infectiousness
-pub fn calc_total_infectiousness_multiplier(context: &Context, person_id: EntityId<Person>) -> f64 {
+pub fn calc_total_infectiousness_multiplier(context: &Context, person_id: PersonId) -> f64 {
     context.calculate_current_infectiousness_multiplier_for_person(person_id)
 }
 
@@ -64,17 +65,14 @@ pub fn calc_total_infectiousness_multiplier(context: &Context, person_id: Entity
 /// for a person, given information we know at the time of a forecast.
 /// The modifier used for intrinsic infectiousness is ignored because all modifiers must
 /// be less than or equal to one.
-pub fn max_total_infectiousness_multiplier(context: &Context, person_id: EntityId<Person>) -> f64 {
+pub fn max_total_infectiousness_multiplier(context: &Context, person_id: PersonId) -> f64 {
     context.calculate_max_infectiousness_multiplier_for_person(person_id)
 }
 
 define_rng!(ForecastRng);
 
 // Infection attempt function for a context and given `PersonId`
-pub fn infection_attempt(
-    context: &mut Context,
-    person_id: EntityId<Person>,
-) -> Option<EntityId<Person>> {
+pub fn infection_attempt(context: &mut Context, person_id: PersonId) -> Option<PersonId> {
     let _span = open_span("infection_attempt");
     if let Some(setting) = context.sample_current_setting(person_id) {
         let next_contact = context
@@ -112,7 +110,7 @@ pub struct Forecast {
 
 /// Forecast of the next expected infection time, and the expected rate of
 /// infection at that time.
-pub fn get_forecast(context: &Context, person_id: EntityId<Person>) -> Option<Forecast> {
+pub fn get_forecast(context: &Context, person_id: PersonId) -> Option<Forecast> {
     // Get the person's individual infectiousness
     let rate_fn = context.get_person_rate_fn(person_id);
     // This scales infectiousness by the maximum possible infectiousness across all settings
@@ -139,7 +137,7 @@ pub fn get_forecast(context: &Context, person_id: EntityId<Person>) -> Option<Fo
 /// Returns a contact to be infected or None if the forecast is rejected
 pub fn evaluate_forecast(
     context: &mut Context,
-    person_id: EntityId<Person>,
+    person_id: PersonId,
     forecasted_total_infectiousness: f64,
 ) -> bool {
     let rate_fn = context.get_person_rate_fn(person_id);
@@ -178,8 +176,8 @@ pub trait InfectionContextExt: PluginContext + InfectiousnessRateExt {
     // calculate intrinsic infectiousness
     fn infect_person(
         &mut self,
-        target_id: EntityId<Person>,
-        source_id: Option<EntityId<Person>>,
+        target_id: PersonId,
+        source_id: Option<PersonId>,
         setting_type: Option<&'static str>,
         setting_id: Option<usize>,
     ) {
@@ -195,7 +193,7 @@ pub trait InfectionContextExt: PluginContext + InfectiousnessRateExt {
             },
         );
     }
-    fn recover_person(&mut self, person_id: EntityId<Person>) {
+    fn recover_person(&mut self, person_id: PersonId) {
         let recovery_time = self.get_current_time();
         let InfectionData::Infectious { infection_time, .. } =
             self.get_property::<Person, InfectionData>(person_id)
@@ -210,7 +208,7 @@ pub trait InfectionContextExt: PluginContext + InfectiousnessRateExt {
             },
         );
     }
-    fn get_elapsed_infection_time(&self, person_id: EntityId<Person>) -> f64 {
+    fn get_elapsed_infection_time(&self, person_id: PersonId) -> f64 {
         let InfectionData::Infectious { infection_time, .. } =
             self.get_property::<Person, InfectionData>(person_id)
         else {
@@ -234,14 +232,14 @@ mod test {
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
         settings::{ContextSettingExt, ItineraryEntry, SettingId, SettingProperties},
     };
-    use ixa::{Context, ContextGlobalPropertiesExt, ContextRandomExt, IxaError, entity::EntityId};
+    use ixa::{Context, ContextGlobalPropertiesExt, ContextRandomExt, IxaError};
     use ixa::{ContextEntitiesExt, assert_almost_eq};
 
     define_setting_category!(HomogeneousMixing);
 
     fn set_homogeneous_mixing_itinerary(
         context: &mut Context,
-        person_id: EntityId<Person>,
+        person_id: PersonId,
     ) -> Result<(), IxaError> {
         let itinerary = vec![ItineraryEntry::new(
             SettingId::new(HomogeneousMixing, 0),

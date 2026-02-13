@@ -1,6 +1,5 @@
 use crate::infectiousness_manager::InfectionData;
-use crate::population_loader::Person;
-use ixa::entity::EntityId;
+use crate::population_loader::{Person, PersonId};
 use ixa::prelude::PropertyChangeEvent;
 use ixa::profiling::open_span;
 use ixa::{Context, IxaError, define_report, report::ContextReportExt};
@@ -10,8 +9,8 @@ use std::string::ToString;
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 struct TransmissionReport {
     time: f64,
-    target_id: EntityId<Person>,
-    infected_by: Option<EntityId<Person>>,
+    target_id: PersonId,
+    infected_by: Option<PersonId>,
     infection_setting_type: Option<String>,
     infection_setting_id: Option<usize>,
 }
@@ -20,8 +19,8 @@ define_report!(TransmissionReport);
 
 fn record_transmission_event(
     context: &mut Context,
-    target_id: EntityId<Person>,
-    infected_by: Option<EntityId<Person>>,
+    target_id: PersonId,
+    infected_by: Option<PersonId>,
     infection_setting_type: Option<String>,
     infection_setting_id: Option<usize>,
 ) {

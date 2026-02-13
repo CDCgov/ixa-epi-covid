@@ -3,7 +3,7 @@ use crate::{
         ContextNaturalHistoryParameterExt, NaturalHistoryParameterLibrary,
     },
     parameters::{ContextParametersExt, RateFnType},
-    population_loader::Person,
+    population_loader::PersonId,
 };
 use ixa::prelude::*;
 
@@ -35,7 +35,7 @@ pub trait InfectiousnessRateExt: PluginContext + ContextNaturalHistoryParameterE
         container.rates.push(Box::new(dist));
     }
 
-    fn get_person_rate_fn(&self, person_id: EntityId<Person>) -> &dyn InfectiousnessRateFn {
+    fn get_person_rate_fn(&self, person_id: PersonId) -> &dyn InfectiousnessRateFn {
         let id = self.get_parameter_id(RateFn, person_id);
         self.get_data(RateFnPlugin).rates[id].as_ref()
     }
