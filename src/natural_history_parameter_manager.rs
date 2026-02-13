@@ -1,0 +1,299 @@
+use std::{
+    any::TypeId,
+    cell::RefCell,
+    collections::{HashMap, hash_map::Entry},
+};
+
+use ixa::{
+    Context, ContextRandomExt, IxaError, PersonId, PluginContext, define_data_plugin, define_rng,
+};
+
+define_rng!(NaturalHistoryParameterRng);
+
+/// Methods to specify a natural history parameter library
+pub trait NaturalHistoryParameterLibrary {
+    /// Returns the size of a library of natural history parameters. Used to return a random index
+    /// in the range of the library size when querying an id for a natural history parameter that
+    /// has no assignment function previously registered.
+    fn library_size(&self, context: &Context) -> usize;
+}
+
+#[derive(Default)]
+#[allow(clippy::type_complexity)]
+struct NaturalHistoryParameterContainer {
+    parameter_id_assigners: HashMap<TypeId, Box<dyn Fn(&Context, PersonId) -> usize>>,
+    ids: RefCell<HashMap<TypeId, HashMap<PersonId, usize>>>,
+}
+
+define_data_plugin!(
+    NaturalHistoryParameters,
+    NaturalHistoryParameterContainer,
+    NaturalHistoryParameterContainer::default()
+);
+
+/// Provides methods for specifying relationships between libraries of natural history parameters.
+pub trait ContextNaturalHistoryParameterExt: PluginContext + ContextRandomExt {
+    /// Register the function used to assign a particular index from a natural history parameter
+    /// // library `T` to a person. The function is evaluated when the id is requested, so it can
+    /// depend on other parameters and takes `&Context` and `PersonId` as arguments. Values from
+    /// the registered function are returned when `context.get_parameter_id` is called.
+    /// # Errors
+    /// - If an assignment function for the parameter has already been registered
+    /// - If an id for the parameter has been queried for a person (i.e., defaulting to random
+    ///   assignment) prior to registering an assignment function.
+    fn register_parameter_id_assigner<T, S>(
+        &mut self,
+        _parameter: T,
+        assignment_fn: S,
+    ) -> Result<(), IxaError>
+    where
+        T: NaturalHistoryParameterLibrary + 'static,
+        S: Fn(&Context, PersonId) -> usize + 'static,
+    {
+        let container = self.get_data_mut(NaturalHistoryParameters);
+
+        // We shouldn't be registering assignment functions for parameters where we've already been
+        // asked to provide an id and defaulted to random assignment. In this case, the assignment
+        // function would not apply to all ids, so the id assignment is ambiguous.
+        if container.ids.borrow().contains_key(&TypeId::of::<T>()) {
+            return Err(IxaError::IxaError(
+                "An id for this parameter has been previously queried, so a new assignment function cannot be specified.".to_string() +
+                " If this is desired behavior, register an assignment function that changes from random to the specified" +
+                " behavior at the time at which this assignment is registered."
+            ));
+        }
+
+        // Only register this assignment function if this parameter does not have a previously
+        // registered assignment function.
+        match container.parameter_id_assigners.entry(TypeId::of::<T>()) {
+            Entry::Vacant(entry) => {
+                entry.insert(Box::new(assignment_fn));
+                Ok(())
+            }
+
+            Entry::Occupied(_) => Err(IxaError::IxaError(
+                "An assignment function for this parameter has already been registered."
+                    .to_string(),
+            )),
+        }
+    }
+
+    /// Get the id for a natural history parameter for a person. If an id for the parameter has
+    /// already been assigned for this person, returns that id. If no id has been assigned, first
+    /// checks whether an assignment function has been registered for the parameter. If so, evaluates
+    /// the assignment function and returns the computed id. Otherwise, returns a random id between
+    /// 0 (inclusive) and the parameter's library size (exclusive). Stores the assigned id so that
+    /// calling this function again with the same parameter and person will return the same id.
+    /// Does not check whether the id returned from an assignment function is in the range of the
+    /// library size.
+    fn get_parameter_id<T>(&self, parameter: T, person_id: PersonId) -> usize
+    where
+        T: NaturalHistoryParameterLibrary + 'static;
+}
+impl ContextNaturalHistoryParameterExt for Context {
+    fn get_parameter_id<T>(&self, parameter: T, person_id: PersonId) -> usize
+    where
+        T: NaturalHistoryParameterLibrary + 'static,
+    {
+        let container = self.get_data(NaturalHistoryParameters);
+        // Is there already an id for this person for this parameter?
+        if let Some(potential_id) = container
+            .ids
+            .borrow()
+            .get(&TypeId::of::<T>())
+            .and_then(|ids| ids.get(&person_id))
+        {
+            return *potential_id;
+        }
+
+        // Is there an assignment function for this parameter?
+        if let Some(assigner) = container
+            .parameter_id_assigners
+            .get(&TypeId::of::<T>())
+            .map(|x| x.as_ref())
+        {
+            // Get the id from the assignment function
+            let id = assigner(self, person_id);
+            // Store the id for this person
+            container
+                .ids
+                .borrow_mut()
+                .entry(TypeId::of::<T>())
+                .or_default()
+                .insert(person_id, id);
+            return id;
+        }
+
+        // Else make a default random assignment and store it
+        let library_size = parameter.library_size(self);
+        let id = self.sample_range(NaturalHistoryParameterRng, 0..library_size);
+        container
+            .ids
+            .borrow_mut()
+            .entry(TypeId::of::<T>())
+            .or_default()
+            .insert(person_id, id);
+        id
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::any::TypeId;
+
+    use ixa::{ContextPeopleExt, ContextRandomExt, IxaError, context::Context};
+
+    use super::{
+        ContextNaturalHistoryParameterExt, NaturalHistoryParameterLibrary, NaturalHistoryParameters,
+    };
+
+    struct ViralLoad;
+
+    impl NaturalHistoryParameterLibrary for ViralLoad {
+        fn library_size(&self, _context: &Context) -> usize {
+            1
+        }
+    }
+
+    fn init_context() -> Context {
+        let mut context = Context::new();
+        context.init_random(0);
+        context
+    }
+
+    #[test]
+    fn test_register_vanilla_parameter_id_assignment() {
+        let mut context = init_context();
+        let person = context.add_person(()).unwrap();
+        context
+            .register_parameter_id_assigner(ViralLoad, |_context, _person_id| 0)
+            .unwrap();
+        let container = context.get_data(NaturalHistoryParameters);
+        assert_eq!(container.parameter_id_assigners.len(), 1);
+        let assigner = container
+            .parameter_id_assigners
+            .get(&TypeId::of::<ViralLoad>())
+            .unwrap()
+            .as_ref();
+        assert_eq!(assigner(&context, person), 0);
+    }
+
+    #[test]
+    fn test_error_register_two_assignments_same_parameter() {
+        let mut context = init_context();
+        context
+            .register_parameter_id_assigner(ViralLoad, |_context, _person_id| 0)
+            .unwrap();
+        let result = context.register_parameter_id_assigner(ViralLoad, |_context, _person_id| 1);
+        let e = result.err();
+        match e {
+            Some(IxaError::IxaError(msg)) => {
+                assert_eq!(
+                    msg,
+                    "An assignment function for this parameter has already been registered."
+                        .to_string()
+                );
+            }
+            Some(ue) => panic!(
+                "Expected an error that an assignment function for this parameter has already been registered. Instead got {:?}",
+                ue.to_string()
+            ),
+            None => {
+                panic!("Expected an error. Instead, function registration passed with no errors.")
+            }
+        }
+    }
+
+    struct AntigenPositivity;
+
+    impl NaturalHistoryParameterLibrary for AntigenPositivity {
+        fn library_size(&self, _context: &Context) -> usize {
+            1
+        }
+    }
+
+    #[test]
+    fn test_error_register_assignment_after_querying() {
+        let mut context = init_context();
+        let person = context.add_person(()).unwrap();
+        // We have to register something to make sure the data container exists.
+        context
+            .register_parameter_id_assigner(ViralLoad, |_context, _person_id| 0)
+            .unwrap();
+        // This section also tests that we default to random assignment in library range for
+        // parameters not previously seen if some registration has occured previously.
+        let result = context.get_parameter_id(AntigenPositivity, person);
+        assert_eq!(result, 0);
+        let result =
+            context.register_parameter_id_assigner(AntigenPositivity, |_context, _person_id| 1);
+        let e = result.err();
+        match e {
+            Some(IxaError::IxaError(msg)) => {
+                assert_eq!(msg, "An id for this parameter has been previously queried, so a new assignment function cannot be specified.".to_string() +
+                " If this is desired behavior, register an assignment function that changes from random to the specified" +
+                " behavior at the time at which this assignment is registered.");
+            }
+            Some(ue) => panic!(
+                "Expected an error that an id for this parameter has been previously queried so an assignment function cannot be registered. Instead got {:?}",
+                ue.to_string()
+            ),
+            None => {
+                panic!("Expected an error. Instead, function registration passed with no errors.")
+            }
+        }
+    }
+
+    #[test]
+    fn test_get_parameter_id_registered_assignment() {
+        let mut context = init_context();
+        let person = context.add_person(()).unwrap();
+        context
+            .register_parameter_id_assigner(ViralLoad, |_context, _person_id| 0)
+            .unwrap();
+        let id = context.get_parameter_id(ViralLoad, person);
+        assert_eq!(id, 0);
+    }
+
+    #[test]
+    fn test_get_parameter_id_already_set() {
+        let mut context = init_context();
+        let person = context.add_person(()).unwrap();
+        let container = context.get_data_mut(NaturalHistoryParameters);
+        container.ids.borrow_mut().insert(
+            TypeId::of::<ViralLoad>(),
+            vec![(person, 0)].into_iter().collect(),
+        );
+        let id = context.get_parameter_id(ViralLoad, person);
+        assert_eq!(id, 0);
+    }
+
+    struct CulturePositivity;
+
+    impl NaturalHistoryParameterLibrary for CulturePositivity {
+        fn library_size(&self, _context: &Context) -> usize {
+            10000
+        }
+    }
+
+    struct TestingPatterns;
+
+    impl NaturalHistoryParameterLibrary for TestingPatterns {
+        fn library_size(&self, _context: &Context) -> usize {
+            10000
+        }
+    }
+
+    #[test]
+    fn test_get_parameter_id_assignment_has_dependencies() {
+        let mut context = init_context();
+        let person = context.add_person(()).unwrap();
+        context
+            .register_parameter_id_assigner(CulturePositivity, |context, person_id| {
+                context.get_parameter_id(TestingPatterns, person_id)
+            })
+            .unwrap();
+        let culture_id = context.get_parameter_id(CulturePositivity, person);
+        let testing_id = context.get_parameter_id(TestingPatterns, person);
+        assert_eq!(culture_id, testing_id);
+    }
+}
