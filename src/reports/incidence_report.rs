@@ -3,11 +3,10 @@ use crate::{
     population_loader::{Age, Person},
 };
 use ixa::{
-    Context, ContextEntitiesExt, ExecutionPhase, HashMap, HashSet, HashSetExt, IxaError,
-    define_data_plugin, define_report, prelude::PropertyChangeEvent, report::ContextReportExt,
+    Context, ContextEntitiesExt, ExecutionPhase, HashMap, IxaError, define_data_plugin,
+    define_report, prelude::PropertyChangeEvent, report::ContextReportExt,
 };
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 struct PersonPropertyIncidenceReport {
@@ -20,7 +19,7 @@ struct PersonPropertyIncidenceReport {
 define_report!(PersonPropertyIncidenceReport);
 
 struct PropertyReportDataContainer {
-    infection_status_change: HashMap<(Age, InfectionStatus), u32>,
+    infection_status_change: HashMap<(u8, InfectionStatus), u32>,
 }
 
 define_data_plugin!(
@@ -40,7 +39,7 @@ fn update_infection_incidence(
         let report_container_mut = context.get_data_mut(PropertyReportDataPlugin);
         report_container_mut
             .infection_status_change
-            .entry((age, event.current))
+            .entry((age.0, event.current))
             .and_modify(|v| *v += 1)
             .or_insert(1);
     }
@@ -62,7 +61,7 @@ fn send_incidence_counts(context: &mut Context) {
     for ((age, infection_status), count) in &report_container.infection_status_change {
         context.send_report(PersonPropertyIncidenceReport {
             t_upper,
-            age: age.0,
+            age: *age,
             event: format!("{infection_status:?}"),
             count: *count,
         });
@@ -80,15 +79,23 @@ fn send_incidence_counts(context: &mut Context) {
 pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), IxaError> {
     context.add_report::<PersonPropertyIncidenceReport>(file_name)?;
 
-    let tabulator = (Age,);
-    let ages: RefCell<HashSet<u8>> = RefCell::new(HashSet::new());
-    context.tabulate_person_properties(&tabulator, |_context, values, _count| {
-        ages.borrow_mut().insert(values[0].parse::<u8>().unwrap());
-    });
+    // let tabulator = (Age,);
+    // let ages: RefCell<HashSet<u8>> = RefCell::new(HashSet::new());
+    // context.tabulate_person_properties(&tabulator, |_context, values, _count| {
+    //     ages.borrow_mut().insert(values[0].parse::<u8>().unwrap());
+    // });
+
+    let mut ages: Vec<u8> = Vec::new();
+    for person in context.get_entity_iterator::<Person>() {
+        let age = context.get_property::<Person, Age>(person).0;
+        if !ages.contains(&age) {
+            ages.push(age);
+        }
+    }
 
     let report_container = context.get_data_mut(PropertyReportDataPlugin);
 
-    for age in ages.take() {
+    for age in ages {
         let inf_vec = [InfectionStatus::Infectious, InfectionStatus::Recovered];
 
         for inf_value in inf_vec {

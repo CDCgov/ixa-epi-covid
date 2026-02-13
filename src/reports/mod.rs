@@ -2,7 +2,7 @@ use crate::parameters::{ContextParametersExt, Params};
 use ixa::{Context, IxaError, info};
 use serde::{Deserialize, Serialize};
 
-// pub mod incidence_report;
+pub mod incidence_report;
 pub mod prevalence_report;
 pub mod transmission_report;
 
@@ -67,8 +67,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
         report_count += 1;
     }
     if let Some((name, period)) = get_period_report_name(&incidence_report)? {
-        println!("{} {}", name, period);
-        // incidence_report::init(context, name, period)?;
+        incidence_report::init(context, name, period)?;
         info!("Generating the incidence report.");
         report_count += 1;
     }
