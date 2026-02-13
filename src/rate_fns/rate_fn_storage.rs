@@ -68,6 +68,7 @@ mod test {
     use crate::{
         Age,
         parameters::{GlobalParams, Params},
+        population_loader::PersonId,
     };
 
     use super::*;
@@ -105,7 +106,7 @@ mod test {
     #[test]
     fn test_add_rate_fn_and_get_random() {
         let mut context = init_context();
-        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity((Age(30),)).unwrap();
 
         let rate_fn = TestRateFn {};
         context.add_rate_fn(rate_fn);

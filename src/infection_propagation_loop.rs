@@ -104,6 +104,7 @@ mod test {
 
     use crate::Age;
     use crate::infectiousness_manager::InfectionData;
+    use crate::population_loader::PersonId;
     use crate::{
         define_setting_category,
         infection_propagation_loop::{
@@ -183,7 +184,7 @@ mod test {
     fn test_seed_initial_conditions() {
         let mut context = setup_context(0, 1.0, 1.0, 5.0);
         load_rate_fns(&mut context).unwrap();
-        let initial_infected = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let initial_infected: PersonId = context.add_entity((Age(30),)).unwrap();
         seed_initial_infections(&mut context, 1.0);
         // we check at time 0 to since individuals infections begin before time 0
         context.add_plan(0.0, move |context| {
@@ -198,7 +199,7 @@ mod test {
     fn test_seed_initial_conditions_empty() {
         let mut context = setup_context(0, 1.0, 1.0, 5.0);
         load_rate_fns(&mut context).unwrap();
-        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity((Age(30),)).unwrap();
         seed_initial_infections(&mut context, 0.0);
         assert_eq!(
             context.get_property::<Person, InfectionStatus>(person),
@@ -342,14 +343,14 @@ mod test {
             // We only run the simulation for 1.0 time units.
             context.add_plan_with_phase(1.0, ixa::Context::shutdown, ExecutionPhase::Last);
             // Add a a person who will get infected.
-            let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+            let p1: PersonId = context.add_entity((Age(30),)).unwrap();
             set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
             // We don't want infectious people beyond our index case to be able to transmit, so we
             // have to do setup on our own since just calling `init` will trigger a watcher for
             // people becoming infectious that lets them transmit.
             load_rate_fns(&mut context).unwrap();
             // Add our infectious fellow.
-            let infectious_person = context.add_entity::<Person, _>((Age(30),)).unwrap();
+            let infectious_person: PersonId = context.add_entity((Age(30),)).unwrap();
             set_homogeneous_mixing_itinerary(&mut context, infectious_person).unwrap();
 
             context.infect_person(infectious_person, None, None, None);
@@ -426,7 +427,7 @@ mod test {
         // Create a simulation with an infected person and schedule their recovery.
         let mut context = setup_context(0, 0.0, 1.0, 5.0);
         load_rate_fns(&mut context).unwrap();
-        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity((Age(30),)).unwrap();
         context.infect_person(person, None, None, None);
         // For later, we need to get the recovery time from the rate function.
         context.execute();
@@ -489,10 +490,10 @@ mod test {
                 crate::settings::init(&mut context);
 
                 // Add a a person who will get infected.
-                let infectious_person = context.add_entity::<Person, _>((Age(30),)).unwrap();
-                let person_home = context.add_entity::<Person, _>((Age(30),)).unwrap();
-                let person_censustract = context.add_entity::<Person, _>((Age(30),)).unwrap();
-                let person_workplace = context.add_entity::<Person, _>((Age(30),)).unwrap();
+                let infectious_person: PersonId = context.add_entity((Age(30),)).unwrap();
+                let person_home: PersonId = context.add_entity((Age(30),)).unwrap();
+                let person_censustract: PersonId = context.add_entity((Age(30),)).unwrap();
+                let person_workplace: PersonId = context.add_entity((Age(30),)).unwrap();
                 let itinerary_all = vec![
                     ItineraryEntry::new(SettingId::new(Home, 0), ratio[0]),
                     ItineraryEntry::new(SettingId::new(CensusTract, 0), ratio[1]),

@@ -563,7 +563,9 @@ pub fn init(context: &mut Context) {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{Age, parameters::GlobalParams, settings::ContextSettingExt};
+    use crate::{
+        Age, parameters::GlobalParams, population_loader::PersonId, settings::ContextSettingExt,
+    };
     use ixa::{ContextEntitiesExt, ContextGlobalPropertiesExt, assert_almost_eq};
 
     define_setting_category!(Community);
@@ -685,7 +687,7 @@ mod test {
         let mut context = Context::new();
         register_default_settings(&mut context);
 
-        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity((Age(30),)).unwrap();
         let itinerary = vec![
             ItineraryEntry::new(SettingId::new(Home, 2), 0.5),
             ItineraryEntry::new(SettingId::new(Home, 2), 0.5),
@@ -707,7 +709,7 @@ mod test {
     fn test_feasible_itinerary_ratio() {
         let mut context = Context::new();
         register_default_settings(&mut context);
-        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity((Age(30),)).unwrap();
         let itinerary = vec![ItineraryEntry::new(SettingId::new(Home, 2), -0.5)];
 
         let e = context.add_itinerary(person, itinerary).err();
@@ -727,7 +729,7 @@ mod test {
     fn test_feasible_itinerary_setting() {
         let mut context = Context::new();
         register_default_settings(&mut context);
-        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity((Age(30),)).unwrap();
 
         // Community is a defined setting but not registered
         let itinerary = vec![ItineraryEntry::new(SettingId::new(Community, 2), 0.5)];
@@ -749,8 +751,8 @@ mod test {
     fn test_change_activity_members() {
         let mut context = Context::new();
         register_default_settings(&mut context);
-        let active_person = context.add_entity::<Person, _>((Age(30),)).unwrap();
-        let inactive_person = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let active_person: PersonId = context.add_entity((Age(30),)).unwrap();
+        let inactive_person: PersonId = context.add_entity((Age(30),)).unwrap();
         let active_itinerary = vec![ItineraryEntry::new(SettingId::new(Home, 1), 1.0)];
         let inactive_itinerary = vec![ItineraryEntry::new(SettingId::new(Home, 1), 0.0)];
         context
@@ -771,7 +773,7 @@ mod test {
     fn test_add_itinerary() {
         let mut context = Context::new();
         register_default_settings(&mut context);
-        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity((Age(30),)).unwrap();
         let itinerary = vec![
             ItineraryEntry::new(SettingId::new(Home, 1), 0.5),
             ItineraryEntry::new(SettingId::new(Home, 2), 0.5),
@@ -782,7 +784,7 @@ mod test {
             .unwrap();
         assert_eq!(members.len(), 1);
 
-        let person2 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person2: PersonId = context.add_entity((Age(30),)).unwrap();
         let itinerary2 = vec![ItineraryEntry::new(SettingId::new(Home, 2), 1.0)];
         context.add_itinerary(person2, itinerary2).unwrap();
 
@@ -810,7 +812,7 @@ mod test {
     fn test_get_itinerary() {
         let mut context = Context::new();
         register_default_settings(&mut context);
-        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity((Age(30),)).unwrap();
         let default_itinerary = vec![
             ItineraryEntry::new(SettingId::new(Home, 1), 0.5),
             ItineraryEntry::new(SettingId::new(Home, 2), 0.5),
@@ -835,7 +837,7 @@ mod test {
             .unwrap();
         for s in 0..5 {
             for _ in 0..5 {
-                let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
+                let person: PersonId = context.add_entity((Age(30),)).unwrap();
                 let itinerary = vec![
                     ItineraryEntry::new(SettingId::new(Home, s), 0.5),
                     ItineraryEntry::new(SettingId::new(CensusTract, s), 0.5),
@@ -865,7 +867,7 @@ mod test {
             .unwrap();
         for s in 0..5 {
             for _ in 0..5 {
-                let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
+                let person: PersonId = context.add_entity((Age(30),)).unwrap();
                 let itinerary = vec![
                     ItineraryEntry::new(SettingId::new(Home, s), 1.0),
                     ItineraryEntry::new(SettingId::new(CensusTract, s), 0.0),
@@ -892,14 +894,14 @@ mod test {
         for s in 0..5 {
             // Create 5 people
             for _ in 0..5 {
-                let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
+                let person: PersonId = context.add_entity((Age(30),)).unwrap();
                 let itinerary = vec![ItineraryEntry::new(SettingId::new(Home, s), 0.5)];
                 context.add_itinerary(person, itinerary).unwrap();
             }
         }
 
         let home_id = 0;
-        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity((Age(30),)).unwrap();
         let itinerary = vec![ItineraryEntry::new(SettingId::new(Home, home_id), 0.5)];
         context.add_itinerary(person, itinerary).unwrap();
         let members = context
@@ -923,7 +925,7 @@ mod test {
 
         for s in 0..5 {
             for _ in 0..5 {
-                let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
+                let person: PersonId = context.add_entity((Age(30),)).unwrap();
                 let itinerary = vec![
                     ItineraryEntry::new(SettingId::new(Home, s), 0.5),
                     ItineraryEntry::new(SettingId::new(CensusTract, s), 0.5),
@@ -933,7 +935,7 @@ mod test {
         }
         // Create a new person and register to home 0
         let itinerary = vec![ItineraryEntry::new(SettingId::new(Home, 0), 1.0)];
-        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity((Age(30),)).unwrap();
         context.add_itinerary(person, itinerary).unwrap();
 
         // If only registered at home, total infectiousness multiplier should be (6 - 1) ^ (alpha)
@@ -943,7 +945,7 @@ mod test {
         // If person's itinerary is changed for two settings,
         // CensusTract 0 should have 6 members, Home 0 should have 7 members
         // the total infectiousness should be the sum of infs * proportion
-        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity((Age(30),)).unwrap();
         let itinerary_complete = vec![
             ItineraryEntry::new(SettingId::new(Home, 0), 0.5),
             ItineraryEntry::new(SettingId::new(CensusTract, 0), 0.5),
@@ -985,8 +987,8 @@ mod test {
             .register_setting_category(&CensusTract, SettingProperties { alpha: 0.01 }, 1.0)
             .unwrap();
 
-        let person_a = context.add_entity::<Person, _>((Age(30),)).unwrap();
-        let person_b = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person_a: PersonId = context.add_entity((Age(30),)).unwrap();
+        let person_b: PersonId = context.add_entity((Age(30),)).unwrap();
         let itinerary_a = vec![
             ItineraryEntry::new(SettingId::new(Home, 0), 0.5),
             ItineraryEntry::new(SettingId::new(CensusTract, 0), 0.5),
@@ -1006,7 +1008,7 @@ mod test {
         assert_eq!(setting_id.get_type_id(), TypeId::of::<Home>());
         assert_eq!(setting_id.id(), 0);
 
-        let person_c = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person_c: PersonId = context.add_entity((Age(30),)).unwrap();
         let itinerary_c = vec![ItineraryEntry::new(SettingId::new(CensusTract, 0), 0.5)];
         context.add_itinerary(person_c, itinerary_c).unwrap();
         let setting_id = context.sample_current_setting(person_c).unwrap();
@@ -1027,8 +1029,8 @@ mod test {
             .register_setting_category(&CensusTract, SettingProperties { alpha: 0.01 }, 1.0)
             .unwrap();
 
-        let person_a = context.add_entity::<Person, _>((Age(30),)).unwrap();
-        let person_b = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person_a: PersonId = context.add_entity((Age(30),)).unwrap();
+        let person_b: PersonId = context.add_entity((Age(30),)).unwrap();
         let itinerary_a = vec![
             ItineraryEntry::new(SettingId::new(Home, 0), 0.5),
             ItineraryEntry::new(SettingId::new(CensusTract, 0), 0.5),
@@ -1054,7 +1056,7 @@ mod test {
                 .is_none()
         );
 
-        let person_c = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person_c: PersonId = context.add_entity((Age(30),)).unwrap();
         let itinerary_c = vec![ItineraryEntry::new(SettingId::new(CensusTract, 0), 0.5)];
         context.add_itinerary(person_c, itinerary_c).unwrap();
 
@@ -1178,7 +1180,7 @@ mod test {
     #[test]
     fn test_itinerary_normalized_one() {
         let mut context = Context::new();
-        let person = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity((Age(30),)).unwrap();
         context
             .register_setting_category(&Home, SettingProperties { alpha: 0.1 }, 5.0)
             .unwrap();

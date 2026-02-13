@@ -230,7 +230,7 @@ mod test {
         Age, define_setting_category,
         infectiousness_manager::{InfectionData, InfectionStatus},
         parameters::{GlobalParams, Params},
-        population_loader::Person,
+        population_loader::{Person, PersonId},
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
         settings::{ContextSettingExt, ItineraryEntry, SettingId, SettingProperties},
     };
@@ -274,7 +274,7 @@ mod test {
     #[test]
     fn test_infect_person() {
         let mut context = setup_context();
-        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let p1: PersonId = context.add_entity((Age(30),)).unwrap();
         context.add_plan(2.0, move |context| {
             context.infect_person(p1, None, None, None);
         });
@@ -291,7 +291,7 @@ mod test {
     #[test]
     fn test_recover_person() {
         let mut context = setup_context();
-        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let p1: PersonId = context.add_entity((Age(30),)).unwrap();
         context.add_plan(2.0, move |context| {
             context.infect_person(p1, None, None, None);
         });
@@ -313,7 +313,7 @@ mod test {
     #[test]
     fn test_get_elapsed_infection_time() {
         let mut context = setup_context();
-        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let p1: PersonId = context.add_entity((Age(30),)).unwrap();
         context.add_plan(2.0, move |context| {
             context.infect_person(p1, None, None, None);
         });
@@ -328,7 +328,7 @@ mod test {
     #[test]
     fn test_calc_total_infectiousness_multiplier() {
         let mut context = setup_context();
-        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let p1: PersonId = context.add_entity((Age(30),)).unwrap();
 
         assert_almost_eq!(max_total_infectiousness_multiplier(&context, p1), 0.0, 0.0);
     }
@@ -336,9 +336,9 @@ mod test {
     #[test]
     fn test_calc_total_infectiousness_multiplier_with_contact() {
         let mut context = setup_context();
-        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let p1: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
-        let p2 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let p2: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p2).unwrap();
 
         assert_almost_eq!(max_total_infectiousness_multiplier(&context, p1), 1.0, 0.0);
@@ -349,12 +349,12 @@ mod test {
     /// Test has potential to stochastically fail if exponential draw is longer than infectious duration
     fn test_forecast() {
         let mut context = setup_context();
-        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let p1: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
         // Add two additional contacts, which should make the factor 2
-        let p2 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let p2: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p2).unwrap();
-        let p3 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let p3: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p3).unwrap();
 
         context.infect_person(p1, None, None, None);
@@ -368,11 +368,11 @@ mod test {
     #[should_panic = "Person 0: Forecasted infectiousness must always be greater than or equal to current infectiousness. Current: 1, Forecasted: 0.9"]
     fn test_assert_evaluate_fails_when_forecast_smaller() {
         let mut context = setup_context();
-        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let p1: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
         context.infect_person(p1, None, None, None);
         // We need to add another person so that our total infectiousness is 1.
-        let p2 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let p2: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p2).unwrap();
 
         let invalid_forecast = 1.0 - 0.1;
@@ -382,10 +382,10 @@ mod test {
     #[test]
     fn test_evaluate_still_succeeds_when_forecast_slightly_bigger() {
         let mut context = setup_context();
-        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let p1: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
         context.infect_person(p1, None, None, None);
-        let p2 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let p2: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p2).unwrap();
 
         let still_valid_forecast = 1.0 - 9e-11;
@@ -395,8 +395,8 @@ mod test {
     #[test]
     fn test_infected_options() {
         let mut context = setup_context();
-        let index = context.add_entity::<Person, _>((Age(30),)).unwrap();
-        let contact = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let index: PersonId = context.add_entity((Age(30),)).unwrap();
+        let contact: PersonId = context.add_entity((Age(30),)).unwrap();
 
         context.infect_person(contact, Some(index), Some("Home"), Some(0));
         context.execute();

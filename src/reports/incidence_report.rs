@@ -35,7 +35,7 @@ fn update_infection_incidence(
     event: PropertyChangeEvent<Person, InfectionStatus>,
 ) {
     if event.current == InfectionStatus::Infectious || event.current == InfectionStatus::Recovered {
-        let age = context.get_property::<Person, Age>(event.entity_id);
+        let age: Age = context.get_property(event.entity_id);
         let report_container_mut = context.get_data_mut(PropertyReportDataPlugin);
         report_container_mut
             .infection_status_change
@@ -87,9 +87,9 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), I
 
     let mut ages: Vec<u8> = Vec::new();
     for person in context.get_entity_iterator::<Person>() {
-        let age = context.get_property::<Person, Age>(person).0;
-        if !ages.contains(&age) {
-            ages.push(age);
+        let age: Age = context.get_property(person);
+        if !ages.contains(&age.0) {
+            ages.push(age.0);
         }
     }
 
