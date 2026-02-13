@@ -39,9 +39,7 @@ fn create_person_from_record(
     let workplace_string: String = String::from_utf8(person_record.workplaceId.to_owned())?;
 
     // Add person to context
-    let person_id = context
-        .add_entity::<Person, _>((Age(person_record.age),))
-        .unwrap();
+    let person_id: PersonId = context.add_entity((Age(person_record.age),)).unwrap();
 
     // Initialize a vector of home and census tract since everyone has these settings
     let mut itinerary = vec![];

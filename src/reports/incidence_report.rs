@@ -125,7 +125,7 @@ mod test {
     use crate::{
         infectiousness_manager::InfectionContextExt,
         parameters::{ContextParametersExt, GlobalParams, Params},
-        population_loader::{Age, Person},
+        population_loader::{Age, Person, PersonId},
         rate_fns::load_rate_fns,
         reports::ReportParams,
     };
@@ -167,8 +167,8 @@ mod test {
         let config = context.report_options();
         config.directory(path.clone());
 
-        let source = context.add_entity((Age(42),)).unwrap();
-        let target = context.add_entity((Age(43),)).unwrap();
+        let source: PersonId = context.add_entity((Age(42),)).unwrap();
+        let target: PersonId = context.add_entity((Age(43),)).unwrap();
         let setting_type = Some("test_setting");
         let setting_id: Option<usize> = Some(1);
         let infection_time = 1.0;
@@ -226,8 +226,8 @@ mod test {
         let config = context.report_options();
         config.directory(path.clone());
 
-        let source = context.add_entity::<Person, _>((Age(42),)).unwrap();
-        let target = context.add_entity::<Person, _>((Age(43),)).unwrap();
+        let source: PersonId = context.add_entity((Age(42),)).unwrap();
+        let target: PersonId = context.add_entity((Age(43),)).unwrap();
         let setting_type = Some("test_setting");
         let setting_id: Option<usize> = Some(1);
         let infection_time = 1.0;
