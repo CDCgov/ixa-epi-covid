@@ -1,9 +1,6 @@
-use ixa::{
-    Context, ContextPeopleExt, IxaError, csv, define_person_property,
-    define_person_property_with_default,
-};
+use ixa::{csv, prelude::*};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::parameters::{ContextParametersExt, Params};
@@ -11,6 +8,8 @@ use crate::settings::{
     CensusTract, ContextSettingExt, Home, School, SettingId, Workplace, append_itinerary_entry,
 };
 use ixa::profiling::open_span;
+
+define_entity!(Person);
 
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
@@ -21,8 +20,13 @@ pub struct PeopleRecord<'a> {
     workplaceId: &'a [u8],
 }
 
-define_person_property!(Age, u8);
-define_person_property_with_default!(Alive, bool, true);
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+pub struct Age(pub u8);
+impl_property!(Age, Person);
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+pub struct Alive(pub bool);
+impl_property!(Alive, Person, default_const = Alive(true));
 
 fn create_person_from_record(
     context: &mut Context,
@@ -35,7 +39,7 @@ fn create_person_from_record(
     let workplace_string: String = String::from_utf8(person_record.workplaceId.to_owned())?;
 
     // Add person to context
-    let person_id = context.add_person(((Age, person_record.age),))?;
+    let person_id: PersonId = context.add_entity((Age(person_record.age),)).unwrap();
 
     // Initialize a vector of home and census tract since everyone has these settings
     let mut itinerary = vec![];
@@ -103,7 +107,7 @@ mod test {
     use super::*;
     use crate::parameters::{CoreSettingsTypes, GlobalParams};
     use crate::settings::{CensusTract, Home, School, SettingId, SettingProperties, Workplace};
-    use ixa::{ContextGlobalPropertiesExt, ContextPeopleExt, HashMap};
+    use ixa::HashMap;
     use std::io::Write;
     use std::path::PathBuf;
     use tempfile::NamedTempFile;
@@ -164,10 +168,10 @@ mod test {
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
         let census_tract_id = 36_093_033_102;
 
-        assert_eq!(context.get_current_population(), 2);
+        assert_eq!(context.get_entity_count::<Person>(), 2);
 
         for i in 0..1 {
-            assert_eq!(1, context.query_people_count((Age, age[i])));
+            assert_eq!(1, context.query_entity_count::<Person, _>((Age(age[i]),)));
             assert_eq!(
                 1,
                 context
@@ -208,10 +212,10 @@ mod test {
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
         let census_tract_id = 36_093_033_102;
 
-        assert_eq!(context.get_current_population(), 2);
+        assert_eq!(context.get_entity_count::<Person>(), 2);
 
         for i in 0..1 {
-            assert_eq!(1, context.query_people_count((Age, age[i])));
+            assert_eq!(1, context.query_entity_count::<Person, _>((Age(age[i]),)));
             assert_eq!(
                 1,
                 context
@@ -249,10 +253,10 @@ mod test {
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
         let census_tract_id = 36_093_033_102;
 
-        assert_eq!(context.get_current_population(), 2);
+        assert_eq!(context.get_entity_count::<Person>(), 2);
 
         for i in 0..1 {
-            assert_eq!(1, context.query_people_count(((Age, age[i]),)));
+            assert_eq!(1, context.query_entity_count::<Person, _>((Age(age[i]),)));
             assert_eq!(
                 1,
                 context

@@ -1,5 +1,5 @@
 use crate::parameters::{ContextParametersExt, Params};
-use ixa::{Context, IxaError, info};
+use ixa::prelude::*;
 use serde::{Deserialize, Serialize};
 
 pub mod incidence_report;

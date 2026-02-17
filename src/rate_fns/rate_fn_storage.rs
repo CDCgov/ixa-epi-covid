@@ -3,10 +3,9 @@ use crate::{
         ContextNaturalHistoryParameterExt, NaturalHistoryParameterLibrary,
     },
     parameters::{ContextParametersExt, RateFnType},
+    population_loader::PersonId,
 };
-use ixa::{
-    Context, ContextRandomExt, IxaError, PersonId, PluginContext, define_data_plugin, define_rng,
-};
+use ixa::prelude::*;
 
 use super::{ConstantRate, rate_fn::InfectiousnessRateFn};
 
@@ -66,12 +65,14 @@ pub fn load_rate_fns(context: &mut Context) -> Result<(), IxaError> {
 
 #[cfg(test)]
 mod test {
-    use crate::parameters::{GlobalParams, Params};
+    use crate::{
+        Age,
+        parameters::{GlobalParams, Params},
+        population_loader::PersonId,
+    };
 
     use super::*;
     use ixa::assert_almost_eq;
-    use ixa::{Context, ContextGlobalPropertiesExt, ContextPeopleExt};
-
     struct TestRateFn;
 
     impl InfectiousnessRateFn for TestRateFn {
@@ -105,7 +106,7 @@ mod test {
     #[test]
     fn test_add_rate_fn_and_get_random() {
         let mut context = init_context();
-        let person = context.add_person(()).unwrap();
+        let person: PersonId = context.add_entity((Age(30),)).unwrap();
 
         let rate_fn = TestRateFn {};
         context.add_rate_fn(rate_fn);

@@ -1,5 +1,5 @@
 use epimodel::{ContextParametersExt, Params, initialize_model};
-use ixa::{Context, profiling::ProfilingContextExt, run_with_args};
+use ixa::{prelude::*, profiling::ProfilingContextExt, run_with_args};
 
 fn main() {
     let mut context = run_with_args(|context: &mut Context, args, _| {
