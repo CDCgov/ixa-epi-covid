@@ -1,12 +1,10 @@
 use crate::{
-    parameters::{ContextParametersExt, CoreSettingsTypes, Params},
-    population_loader::PersonId, settings_entities,
-};
+    population_loader::PersonId,};
 
 use indexmap::set::IndexSet;
 
 use ixa::{
-    Context, ContextEntitiesExt, ContextRandomExt, HashMap, HashMapExt, HashSet, IxaError, PluginContext, define_data_plugin, define_entity, define_rng, impl_property, profiling::open_span
+    Context, ContextEntitiesExt, ContextRandomExt, HashMapExt, IxaError, PluginContext, define_entity, define_rng, impl_property
 };
 use serde::{Deserialize, Serialize};
 
@@ -39,6 +37,17 @@ impl_property!(
 );
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
+pub struct GeographyProperties {
+    pub fips_code: f64,
+}
+
+impl_property!(
+    GeographyProperties,
+    Setting
+);
+
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
 pub struct DefaultItineraryProperties {
     pub ratio: f64,
 }
@@ -47,15 +56,6 @@ impl_property!(
     DefaultItineraryProperties,
     Setting
 );
-
-// pub struct SettingCode{
-//     pub setting_id: usize,
-// }
-
-// impl_property!(
-//     SettingCode,
-//     Setting
-// );
 
 #[derive(Clone, Debug)]
 pub struct ItineraryEntry {
@@ -85,19 +85,39 @@ pub fn append_itinerary_entry(
 
     let ratio = match nondefault_ratio {
             Some(user_input) => user_input,
-            None => get_itinerary_ratio(context, &setting)?,
+            None => get_default_itinerary_ratio(context, &setting),
         };
-        itinerary.push(ItineraryEntry::new(setting, ratio));
-    }
+    itinerary.push(ItineraryEntry::new(setting, ratio));
     Ok(())
 }
 
-fn get_itinerary_ratio(context: &Context, setting: &SettingId) -> Result<f64, IxaError> {
-    let itinerary_ratio = context.get_property<Setting, DefaultItineraryProperties>(setting);
-
-    match itinerary_ratio {
-        Some(ratio) => Ok(*ratio),
-        None => Err(IxaError::from("Itinerary ratio not specified")),
-    }
+fn get_default_itinerary_ratio(context: &Context, setting: &SettingId) -> f64 {
+    context.get_property::<Setting, DefaultItineraryProperties>(*setting).ratio
 }
 
+trait ContextSettingExt: PluginContext + ContextRandomExt {
+    fn get_setting_members(
+        &self,
+        setting: SettingId,
+    ) -> Option<&IndexSet<PersonId>> {
+        self.query_result_iterator::<Person, _>(())
+    }
+
+    fn sample_setting_members_internal(&self, setting: &dyn AnySettingId) -> Option<PersonId> {
+        if let Some(members) = self
+            .get_data(SettingDataPlugin)
+            .get_setting_members(setting)
+        {
+            if members.is_empty() {
+                return None;
+            }
+            let person = members[self.sample_range(SettingsRng, 0..members.len())];
+            return Some(person);
+        }
+        None
+    }
+
+    fn get_itinerary_internal(&self, person_id: PersonId) -> Option<&Vec<ItineraryEntry>> {
+        self.get_data(SettingDataPlugin).get_itinerary(person_id)
+    }
+}

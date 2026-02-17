@@ -3,10 +3,8 @@ use ixa::{csv, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::parameters::{ContextParametersExt, Params};
-use crate::settings::{
-    CensusTract, ContextSettingExt, Home, School, SettingId, Workplace, append_itinerary_entry,
-};
+use crate::{parameters::{ContextParametersExt, Params}, settings_entities::SettingId};
+
 use ixa::profiling::open_span;
 
 define_entity!(Person);
@@ -28,54 +26,88 @@ impl_property!(Age, Person);
 pub struct Alive(pub bool);
 impl_property!(Alive, Person, default_const = Alive(true));
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+pub struct HomeId(pub SettingId);
+impl_property!(HomeId, Person);
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+pub struct SchoolId(pub Option<SettingId>);
+impl_property!(SchoolId, Person);
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+pub struct WorkplaceId(pub Option<SettingId>);
+impl_property!(WorkplaceId, Person);
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+pub struct CensusTractId(pub SettingId);
+impl_property!(CensusTractId, Person);
+
 fn create_person_from_record(
     context: &mut Context,
     person_record: &PeopleRecord,
 ) -> Result<(), IxaError> {
     // Create itinerary entries for all setting memberships in input file
-    let tract: String = String::from_utf8(person_record.homeId[..11].to_owned())?;
-    let home_id: String = String::from_utf8(person_record.homeId.to_owned())?;
+    let tract: SettingId = String::from_utf8(person_record.homeId[..11].to_owned())?.parse()?;
+    let home_id: SettingId = String::from_utf8(person_record.homeId.to_owned())?.parse()?;
     let school_string: String = String::from_utf8(person_record.schoolId.to_owned())?;
     let workplace_string: String = String::from_utf8(person_record.workplaceId.to_owned())?;
 
+    let school_id = if school_string.is_empty() {
+        None
+    } else {
+        let school_id: SettingId = school_string.parse()?;
+        Some(school_id)
+    };
+
+    let workplace_id = if workplace_string.is_empty() {
+        None
+    } else {
+        let workplace_id: SettingId = workplace_string.parse()?;
+        Some(workplace_id)
+    };
+
+
     // Add person to context
-    let person_id: PersonId = context.add_entity((Age(person_record.age),)).unwrap();
+    let person_id: PersonId = context.add_entity((Age(person_record.age), HomeId(home_id), SchoolId(school_id), WorkplaceId(workplace_id), CensusTractId(tract))).unwrap();
+    context.index_property::<Person, HomeId>();
+    context.index_property::<Person, SchoolId>();
+    context.index_property::<Person, WorkplaceId>();
+    context.index_property::<Person, CensusTractId>();
 
-    // Initialize a vector of home and census tract since everyone has these settings
-    let mut itinerary = vec![];
-    append_itinerary_entry(
-        &mut itinerary,
-        context,
-        SettingId::new(Home, home_id.parse()?),
-        None,
-    )?;
-    append_itinerary_entry(
-        &mut itinerary,
-        context,
-        SettingId::new(CensusTract, tract.parse()?),
-        None,
-    )?;
+    // // Initialize a vector of home and census tract since everyone has these settings
+    // let mut itinerary = vec![];
+    // append_itinerary_entry(
+    //     &mut itinerary,
+    //     context,
+    //     SettingId::new(Home, home_id.parse()?),
+    //     None,
+    // )?;
+    // append_itinerary_entry(
+    //     &mut itinerary,
+    //     context,
+    //     SettingId::new(CensusTract, tract.parse()?),
+    //     None,
+    // )?;
 
-    // Check for school and work memberships
-    if !school_string.is_empty() {
-        append_itinerary_entry(
-            &mut itinerary,
-            context,
-            SettingId::new(School, school_string.parse()?),
-            None,
-        )?;
-    }
-    if !workplace_string.is_empty() {
-        append_itinerary_entry(
-            &mut itinerary,
-            context,
-            SettingId::new(Workplace, workplace_string.parse()?),
-            None,
-        )?;
-    }
+    // // Check for school and work memberships
+    // if !school_string.is_empty() {
+    //     append_itinerary_entry(
+    //         &mut itinerary,
+    //         context,
+    //         SettingId::new(School, school_string.parse()?),
+    //         None,
+    //     )?;
+    // }
+    // if !workplace_string.is_empty() {
+    //     append_itinerary_entry(
+    //         &mut itinerary,
+    //         context,
+    //         SettingId::new(Workplace, workplace_string.parse()?),
+    //         None,
+    //     )?;
+    // }
 
-    // Create the itinerary using write rules stored in Context
-    context.add_itinerary(person_id, itinerary)?;
+    // // Create the itinerary using write rules stored in Context
+    // context.add_itinerary(person_id, itinerary)?;
 
     Ok(())
 }

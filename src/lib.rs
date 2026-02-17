@@ -8,6 +8,7 @@ pub mod rate_fns;
 pub mod reports;
 pub mod settings;
 pub mod settings_entities;
+pub mod setting_loader;
 
 pub use model::initialize_model;
 pub use parameters::ContextParametersExt;
