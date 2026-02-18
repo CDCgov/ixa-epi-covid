@@ -105,6 +105,7 @@ mod test {
     use crate::Age;
     use crate::infectiousness_manager::InfectionData;
     use crate::population_loader::PersonId;
+    use crate::setting_loader::{SettingCategory, SettingEntityProperties};
     use crate::{
         define_setting_category,
         infection_propagation_loop::{
@@ -112,7 +113,7 @@ mod test {
             seed_initial_infections,
         },
         infectiousness_manager::{InfectionContextExt, max_total_infectiousness_multiplier},
-        parameters::{ContextParametersExt, CoreSettingsTypes, GlobalParams, Params, RateFnType},
+        parameters::{ContextParametersExt, GlobalParams, Params, RateFnType},
         population_loader::Person,
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
         settings::{
@@ -143,14 +144,17 @@ mod test {
             infectiousness_rate_fn: RateFnType::Constant { rate, duration },
             settings_properties: HashMap::from_iter(
                 [
-                    (CoreSettingsTypes::Home, SettingProperties { alpha: 0.5 }),
                     (
-                        CoreSettingsTypes::Workplace,
-                        SettingProperties { alpha: 0.5 },
+                        SettingCategory::Home,
+                        SettingEntityProperties { alpha: 0.5 },
                     ),
                     (
-                        CoreSettingsTypes::CensusTract,
-                        SettingProperties {
+                        SettingCategory::Workplace,
+                        SettingEntityProperties { alpha: 0.5 },
+                    ),
+                    (
+                        SettingCategory::CensusTract,
+                        SettingEntityProperties {
                             alpha: 0.5,
                             // Itinerary is specified in the `set_homogeneous_mixing_itinerary` function
                             // so we do not need to set it here.
@@ -161,9 +165,9 @@ mod test {
                 .collect::<HashMap<_, _>>(),
             ),
             itinerary_ratios: HashMap::from_iter([
-                (CoreSettingsTypes::Home, 1.0),
-                (CoreSettingsTypes::Workplace, 1.0),
-                (CoreSettingsTypes::CensusTract, 0.0),
+                (SettingCategory::Home, 1.0),
+                (SettingCategory::Workplace, 1.0),
+                (SettingCategory::CensusTract, 0.0),
             ]),
             ..Default::default()
         };

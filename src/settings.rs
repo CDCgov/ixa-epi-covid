@@ -488,49 +488,49 @@ pub fn init(context: &mut Context) {
     let itinerary_ratios = itinerary_ratios.clone();
     for (setting_category, setting_properties) in settings_properties.clone() {
         match setting_category {
-            CoreSettingsTypes::Home => {
+            SettingCategory::Home => {
                 context
                     .register_setting_category(
                         &Home,
                         setting_properties,
                         itinerary_ratios
-                            .get(&CoreSettingsTypes::Home)
+                            .get(&SettingCategory::Home)
                             .cloned()
                             .unwrap_or(0.0),
                     )
                     .unwrap();
             }
-            CoreSettingsTypes::CensusTract => {
+            SettingCategory::CensusTract => {
                 context
                     .register_setting_category(
                         &CensusTract,
                         setting_properties,
                         itinerary_ratios
-                            .get(&CoreSettingsTypes::CensusTract)
+                            .get(&SettingCategory::CensusTract)
                             .cloned()
                             .unwrap_or(0.0),
                     )
                     .unwrap();
             }
-            CoreSettingsTypes::School => {
+            SettingCategory::School => {
                 context
                     .register_setting_category(
                         &School,
                         setting_properties,
                         itinerary_ratios
-                            .get(&CoreSettingsTypes::School)
+                            .get(&SettingCategory::School)
                             .cloned()
                             .unwrap_or(0.0),
                     )
                     .unwrap();
             }
-            CoreSettingsTypes::Workplace => {
+            SettingCategory::Workplace => {
                 context
                     .register_setting_category(
                         &Workplace,
                         setting_properties,
                         itinerary_ratios
-                            .get(&CoreSettingsTypes::Workplace)
+                            .get(&SettingCategory::Workplace)
                             .cloned()
                             .unwrap_or(0.0),
                     )
@@ -1124,12 +1124,12 @@ mod test {
         let mut context = Context::new();
         let parameters = Params {
             settings_properties: HashMap::from_iter(
-                [(CoreSettingsTypes::Home, SettingProperties { alpha: 0.5 })]
+                [(SettingCategory::Home, SettingProperties { alpha: 0.5 })]
                     .into_iter()
                     .collect::<HashMap<_, _>>(),
             ),
             itinerary_ratios: HashMap::from_iter(
-                [(CoreSettingsTypes::Home, 0.5)]
+                [(SettingCategory::Home, 0.5)]
                     .into_iter()
                     .collect::<HashMap<_, _>>(),
             ),
