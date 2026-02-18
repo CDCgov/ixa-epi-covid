@@ -5,10 +5,16 @@ description = "Epidemiological models for COVID-19 developed in ixa"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "census>=0.8.25",
+    "dotenv>=0.9.9",
+    "jupyter>=1.1.1",
+    "matplotlib>=3.10.8",
     "numpy>=2.3.4",
     "pyarrow>=23.0.0",
     "pytest>=9.0.2",
     "scipy>=1.16.3",
+    "seaborn>=0.13.2",
+    "us>=3.2.0",
 ]
 
 [build-system]
@@ -17,3 +23,8 @@ build-backend = "uv-build"
 
 [tool.uv]
 package = false
+
+[tool.uv.workspace]
+members = [
+    "packages/*",
+]

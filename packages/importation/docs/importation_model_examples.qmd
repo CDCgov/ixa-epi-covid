@@ -1,0 +1,242 @@
+---
+title: "Importation Module Description"
+date: "2026-02-04"
+format: pdf
+---
+
+# Overview
+
+The `importation` module is designed to simulate and analyze the importation of cases into a specific region.
+
+The main feature of the importation library is the `ImportationModel` class, which allows us to create and analyze synthetic infection importation data. The goal of the `ImportationModel` is to produce time series simulations fo the count of imported infections per day (regardless of detection) into a jurisdiction (e.g., Indiana).
+
+## Methods description
+Currently, only one specification is available for the national model specification, `'multinomial'`, which is based on the methods described in *Perkins et al. 2020*. Briefly, this method uses a multinomial model of undetected infections to estimate the number of imported infections into the US based on reported importations and a set of parameters related to the reporting and natural history of COVID-19.
+
+The input data for the `'multinomial'` model consist of linelist detected international imported cases and deaths. Using assumptions about the probability of symptomatic infections, detection rates, and case fatality ratios, the model estimates the total number of infections imported. Using these parameters and conditioning on the cumulative number of detected imported cases and imported deaths (which are by definition detected), it is possible to calculate the probability of various possible values of the total number of importations. The synthetic importation dates are then sampled from the observed distribution of onset dates of detected imported cases.
+
+To generate state-level data from this national model, we can use the `'proportional'` method, which samples a fraction of the synthetic importation data. For example, in the Indiana case study below, we assume that the importations into the state are proportional to the US importations based on Indiana's population proportion.
+
+There are some limitations to this approach:
+1. It does not model within-US transmission and the implications for domestic inter-state importation.
+2. It assumes that the probability of detection (even of international importations) is constant through time.
+
+In the future, we can implement domestic transmission models or travel gravity models to better capture the dynamics of importation within the US.
+
+## Creating an `ImportationModel` object
+
+To create an `ImportationModel` object, we require `data`, `parameters`, and a specification of regional model types. Here is an example of a set of values for the parameters required for the `'multinomial'` method, which are a set of plausible values chosen for illustrative purposes based on the posterior distribution estimates from *Perkins et al. 2020*:
+```{python}
+from importation import ImportationModel
+import importation
+
+importation_params = {
+    "symptomatic_reporting_prob": 0.5,
+    "case_fatality_ratio": 0.01,
+    "proportion_asymptomatic": 0.7,
+}
+
+seed = 42
+perkins_et_al_data = importation.get_linelist_data()
+
+importation_model = ImportationModel(
+    data=perkins_et_al_data,
+    parameters=importation_params,
+    national_model="multinomial",
+    state_model="proportional",
+    seed=seed, # Optional argument to set the model seed
+)
+
+```
+
+This model assumes that the importation into a state is proportional to the US importation, and that we are using the multinomial model of undetected infections from *Perkins et al. 2020* to determine the importation of all infections into the US. The data is automatically validated for the national model method selected by the user.
+
+If we wanted to use the methods from *Perkins et al. 2020* to sample from linelist state-level importation data directly, we could forego specifying a national model and making the assumption about proportional state importation. For example, if `nyc_importation_data` contains linelist data for detected imported cases and deaths into New York state, we could create an `ImportationModel` object as follows:
+
+```{python}
+#| eval: false
+importation_model_ny = ImportationModel(
+    data=nyc_importation_data,
+    parameters=importation_params,
+    national_model=None,
+    state_model="multinomial",
+    seed=seed,
+)
+```
+
+# Example: Indiana Case Study
+
+This example demonstrates how to use the `importation` module to simulate the importation of COVID-19 infections into Indiana, based on the methods described in *Perkins et al. 2020*. We assume that Indiana represents 1/50th of the US population and that importation to Indiana is proportional to US importation.
+The simulation is run with the following parameters:
+
+- **Maximum infections**: 20,000
+- **Random seed**: 42
+
+The `importation` module provides tools to fetch data, create proportional state imports, and visualize cumulative infection importation counts.
+
+## Sampling importation data
+
+In order to sample the importation of infections into the state of Indiana, we use the class function `sample_state_importation_incidence`, which first calls a sample of the national model given the supplied data and then uses that national importation curve to sample the state importation curve. The function returns a Polars DataFrame with the daily number of imported infections into Indiana for each call of the function. For the `'proportional'` method, a state parameter must be specified.
+```{python}
+imported_infections_indiana = (
+    importation_model.sample_state_importation_incidence(
+        state="Indiana"
+    )
+)
+```
+
+Alternatively, we could obtain proportion data from a specific year, use abbreviations for the state, or override the state selection with a manual proprotion specification.
+
+```{python}
+#| eval: false
+
+# Specify the year to get the population proportion for that year.
+# Default is the most recent year available.
+imported_infections_2020 = (
+    importation_model.sample_state_importation_incidence(
+        state="Indiana",
+        year=2020
+    )
+)
+
+# Equivalent to the first example, but using the state abbreviation.
+# Options include 'Indiana', 'indiana', 'IN', or 'in'.
+imported_infections_abbreviation = (
+    importation_model.sample_state_importation_incidence(
+        state="IN"
+    )
+)
+
+imported_infections_manual_proportion = (
+    importation_model.sample_state_importation_incidence(
+        proportion=0.02
+    )
+)
+```
+
+We can use this function to visualize the cumulative number of imported infections into Indiana across a certain number of replicates.
+
+```{python}
+import polars as pl
+
+replicates = 500
+all_importation_curves = []
+for rep in range(replicates):
+    replicate_data =(
+        importation_model
+        .sample_state_importation_incidence(
+            state="indiana",
+            seed=seed+rep # Optional overwrite the model seed
+        )
+    )
+    all_importation_curves.append(
+        replicate_data.with_columns(
+            pl.lit(rep).alias("replicate")
+        )
+    )
+
+all_importation_curves_df = pl.concat(all_importation_curves)
+```
+
+And then we can plot to see the variability in importation curves associated with the stochasticity of the importation process with single set of fixed parameters.
+```{python}
+#| echo: false
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+cumulative_importation = (
+    all_importation_curves_df
+    .with_columns(
+        pl.col("imported_infections")
+        .cum_sum()
+        .over('replicate', order_by='time')
+        .alias("cumulative_count")
+    )
+)
+
+sns.lineplot(
+    data=cumulative_importation,
+    x="time",
+    y="cumulative_count",
+    units="replicate",
+    estimator=None,
+    alpha=0.1
+)
+
+plt.xlabel("Report Day")
+plt.ylabel("Cumulative Imported Infections")
+plt.title("Cumulative Imported Infections into Indiana")
+plt.show()
+```
+
+
+Alternatively, we can sample from the posterior distribution of national parameters from *Perkins et al. 2020* for the `multinomial` method, which is provided as a convenience function in the `importation.etl` module.
+```{python}
+import ixa_epi_utils as utils
+
+## Sample from the Perkins et al posterior estimates
+importation_priors = importation.get_importation_parameter_dict()
+importation_params_sample = utils.sample_from_distributions(
+    distributions=importation_priors,
+    seed=seed,
+)
+```
+
+```{python}
+# | echo: false
+import json
+print(json.dumps(importation_params_sample, indent=4))
+```
+
+We can account for the variability arising from parameter uncertainty by looping over values sampled from the *Perkins et al. 2020* posterior distribution. We can contrast this higher variability plot that incorporates stochastic differences and parameter uncertainty with the previous plot that only incorporates stochastic differences with fixed parameters.
+```{python}
+#| echo: false
+all_importation_curves_param_var = []
+for rep in range(replicates):
+    importation_params_sample = utils.sample_from_distributions(
+        distributions=importation_priors,
+        seed=seed+rep,
+    )
+    importation_model_param_var = ImportationModel(
+        data=perkins_et_al_data,
+        parameters=importation_params_sample,
+        national_model="multinomial",
+        state_model="proportional",
+        seed=seed+rep,
+    )
+    replicate_data =(
+        importation_model_param_var
+        .sample_state_importation_incidence(
+            state="indiana",
+            seed=seed+rep
+        )
+    )
+    all_importation_curves_param_var.append(
+        replicate_data.with_columns(
+            pl.lit(rep).alias("replicate")
+        )
+    )
+all_importation_curves_param_var_df = pl.concat(all_importation_curves_param_var)
+
+cumulative_importation_param_var = (
+    all_importation_curves_param_var_df
+    .with_columns(
+        pl.col("imported_infections")
+        .cum_sum()
+        .over('replicate', order_by='time')
+        .alias("cumulative_count")
+    )
+)
+sns.lineplot(
+    data=cumulative_importation_param_var,
+    x="time",
+    y="cumulative_count",
+    units="replicate",
+    estimator=None,
+    alpha=0.1
+)
+plt.xlabel("Report Day")
+plt.ylabel("Cumulative Imported Infections")
+plt.title("Cumulative Imported Infections into Indiana (with Parameter Uncertainty)")
+plt.show()
+```
