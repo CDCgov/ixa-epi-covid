@@ -1,4 +1,4 @@
-use ixa::{Context, ContextRandomExt, ExecutionPhase, IxaError};
+use ixa::{ExecutionPhase, prelude::*};
 
 use crate::{infection_propagation_loop, population_loader, reports, settings};
 

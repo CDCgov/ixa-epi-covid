@@ -1,7 +1,4 @@
-use ixa::{
-    Context, ContextGlobalPropertiesExt, HashMap, HashMapExt, IxaError, PluginContext,
-    define_global_property,
-};
+use ixa::{HashMap, HashMapExt, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, path::PathBuf};
 

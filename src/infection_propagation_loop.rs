@@ -1,17 +1,16 @@
 use core::f64;
+use ixa::prelude::*;
 use rand_distr::Binomial;
 
 use crate::infectiousness_manager::{
-    Forecast, InfectionContextExt, InfectionStatus, InfectionStatusValue, evaluate_forecast,
-    get_forecast, infection_attempt,
+    Forecast, InfectionContextExt, InfectionStatus, evaluate_forecast, get_forecast,
+    infection_attempt,
 };
 use crate::parameters::{ContextParametersExt, Params};
+use crate::population_loader::{Person, PersonId};
 use crate::rate_fns::{InfectiousnessRateExt, load_rate_fns};
 use ixa::profiling::{increment_named_count, open_span};
-use ixa::{
-    Context, ContextPeopleExt, ContextRandomExt, IxaError, PersonId, PersonPropertyChangeEvent,
-    define_rng, trace,
-};
+use ixa::{Context, ContextRandomExt, IxaError, define_rng, trace};
 
 define_rng!(InfectionRng);
 
@@ -49,7 +48,7 @@ fn schedule_recovery(context: &mut Context, person: PersonId) {
 #[allow(clippy::cast_possible_truncation)]
 fn seed_initial_infections(context: &mut Context, initial_incidence: f64) {
     let binom = Binomial::new(
-        context.get_current_population().try_into().unwrap(),
+        context.get_entity_count::<Person>() as u64,
         initial_incidence,
     )
     .unwrap();
@@ -59,9 +58,9 @@ fn seed_initial_infections(context: &mut Context, initial_incidence: f64) {
     );
 
     if k > 0 {
-        let susceptibles = context.sample_people(
+        let susceptibles = context.sample_entities::<Person, _, _>(
             InfectionRng,
-            (InfectionStatus, InfectionStatusValue::Susceptible),
+            (InfectionStatus::Susceptible,),
             k as usize,
         );
         for person in susceptibles {
@@ -83,12 +82,12 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 
     // Subscribe to the person becoming infectious to trigger the infection propagation loop
     context.subscribe_to_event(
-        |context, event: PersonPropertyChangeEvent<InfectionStatus>| {
-            if event.current != InfectionStatusValue::Infectious {
+        |context, event: PropertyChangeEvent<Person, InfectionStatus>| {
+            if event.current != InfectionStatus::Infectious {
                 return;
             }
-            schedule_next_forecasted_infection(context, event.person_id);
-            schedule_recovery(context, event.person_id);
+            schedule_next_forecasted_infection(context, event.entity_id);
+            schedule_recovery(context, event.entity_id);
         },
     );
 
@@ -99,24 +98,22 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 mod test {
     use std::{cell::RefCell, rc::Rc};
 
-    use ixa::{
-        Context, ContextGlobalPropertiesExt, ContextPeopleExt, ContextRandomExt, ExecutionPhase,
-        HashMap, IxaError, PersonId, PersonPropertyChangeEvent,
-    };
+    use ixa::{ExecutionPhase, prelude::*};
 
-    use ixa::assert_almost_eq;
+    use ixa::{HashMap, assert_almost_eq};
 
+    use crate::Age;
+    use crate::infectiousness_manager::InfectionData;
+    use crate::population_loader::PersonId;
     use crate::{
         define_setting_category,
         infection_propagation_loop::{
-            InfectionStatus, InfectionStatusValue, init, schedule_next_forecasted_infection,
-            schedule_recovery, seed_initial_infections,
+            InfectionStatus, init, schedule_next_forecasted_infection, schedule_recovery,
+            seed_initial_infections,
         },
-        infectiousness_manager::{
-            InfectionContextExt, InfectionData, InfectionDataValue,
-            max_total_infectiousness_multiplier,
-        },
+        infectiousness_manager::{InfectionContextExt, max_total_infectiousness_multiplier},
         parameters::{ContextParametersExt, CoreSettingsTypes, GlobalParams, Params, RateFnType},
+        population_loader::Person,
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
         settings::{
             CensusTract, ContextSettingExt, Home, ItineraryEntry, SettingId, SettingProperties,
@@ -187,13 +184,13 @@ mod test {
     fn test_seed_initial_conditions() {
         let mut context = setup_context(0, 1.0, 1.0, 5.0);
         load_rate_fns(&mut context).unwrap();
-        let initial_infected = context.add_person(()).unwrap();
+        let initial_infected: PersonId = context.add_entity((Age(30),)).unwrap();
         seed_initial_infections(&mut context, 1.0);
         // we check at time 0 to since individuals infections begin before time 0
         context.add_plan(0.0, move |context| {
             assert_eq!(
-                context.get_person_property(initial_infected, InfectionStatus),
-                InfectionStatusValue::Infectious
+                context.get_property::<Person, InfectionStatus>(initial_infected),
+                InfectionStatus::Infectious
             );
         });
     }
@@ -202,11 +199,11 @@ mod test {
     fn test_seed_initial_conditions_empty() {
         let mut context = setup_context(0, 1.0, 1.0, 5.0);
         load_rate_fns(&mut context).unwrap();
-        let person = context.add_person(()).unwrap();
+        let person: PersonId = context.add_entity((Age(30),)).unwrap();
         seed_initial_infections(&mut context, 0.0);
         assert_eq!(
-            context.get_person_property(person, InfectionStatus),
-            InfectionStatusValue::Susceptible
+            context.get_property::<Person, InfectionStatus>(person),
+            InfectionStatus::Susceptible
         );
     }
 
@@ -222,12 +219,12 @@ mod test {
             let mut context = setup_context(rep, 1.0, 1.0, 5.0);
             load_rate_fns(&mut context).unwrap();
             for _ in 0..pop_size {
-                context.add_person(()).unwrap();
+                context.add_entity::<Person, _>((Age(30),)).unwrap();
             }
             seed_initial_infections(&mut context, incidence);
             context.add_plan(0.0, move |context| {
                 *num_initial_infections_clone.borrow_mut() +=
-                    context.query_people_count((InfectionStatus, InfectionStatusValue::Infectious));
+                    context.query_entity_count::<Person, _>((InfectionStatus::Infectious,));
             });
             context.execute();
         }
@@ -241,7 +238,7 @@ mod test {
     fn test_init_loop() {
         let mut context = setup_context(42, 1.0, 1.0, 5.0);
         for _ in 0..10 {
-            context.add_person(()).unwrap();
+            context.add_entity::<Person, _>((Age(30),)).unwrap();
         }
 
         init(&mut context).unwrap();
@@ -252,13 +249,10 @@ mod test {
             0.0,
             move |context| {
                 assert!(
-                    !context
-                        .query_people_count((InfectionStatus, InfectionStatusValue::Infectious))
-                        == 0
+                    !context.query_entity_count::<Person, _>((InfectionStatus::Infectious,)) == 0
                 );
                 assert!(
-                    !context.query_people_count((InfectionStatus, InfectionStatusValue::Recovered))
-                        == 0
+                    !context.query_entity_count::<Person, _>((InfectionStatus::Recovered,)) == 0
                 );
             },
             ExecutionPhase::Last,
@@ -270,7 +264,7 @@ mod test {
         let mut context = setup_context(0, 0.0, 1.0, 5.0);
         // Add people -- a lot so we can show that no new infections are added
         for _ in 0..1000 {
-            context.add_person(()).unwrap();
+            context.add_entity::<Person, _>((Age(30),)).unwrap();
         }
 
         init(&mut context).unwrap();
@@ -283,7 +277,7 @@ mod test {
             // Count the number of initial infections and recovered actually created from the binomial
             // sampling
             *num_initial_infections_clone.borrow_mut() =
-                context.query_people_count((InfectionStatus, InfectionStatusValue::Infectious));
+                context.query_entity_count::<Person, _>((InfectionStatus::Infectious,));
         });
 
         // We want to count the number of new infections that are created to ensure this is equal to
@@ -292,8 +286,8 @@ mod test {
         let num_new_infections_clone = Rc::clone(&num_new_infections);
 
         context.subscribe_to_event(
-            move |_context, event: PersonPropertyChangeEvent<InfectionStatus>| {
-                if event.current == InfectionStatusValue::Infectious {
+            move |_context, event: PropertyChangeEvent<Person, InfectionStatus>| {
+                if event.current == InfectionStatus::Infectious {
                     *num_new_infections_clone.borrow_mut() += 1;
                 }
             },
@@ -310,7 +304,7 @@ mod test {
 
         // And that recovereds is equal to the initial infectious (who have recovered) + recovered
         assert_eq!(
-            context.query_people_count((InfectionStatus, InfectionStatusValue::Recovered)),
+            context.query_entity_count::<Person, _>((InfectionStatus::Recovered,)),
             *num_initial_infections.borrow(),
         );
     }
@@ -349,14 +343,14 @@ mod test {
             // We only run the simulation for 1.0 time units.
             context.add_plan_with_phase(1.0, ixa::Context::shutdown, ExecutionPhase::Last);
             // Add a a person who will get infected.
-            let p1 = context.add_person(()).unwrap();
+            let p1: PersonId = context.add_entity((Age(30),)).unwrap();
             set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
             // We don't want infectious people beyond our index case to be able to transmit, so we
             // have to do setup on our own since just calling `init` will trigger a watcher for
             // people becoming infectious that lets them transmit.
             load_rate_fns(&mut context).unwrap();
             // Add our infectious fellow.
-            let infectious_person = context.add_person(()).unwrap();
+            let infectious_person: PersonId = context.add_entity((Age(30),)).unwrap();
             set_homogeneous_mixing_itinerary(&mut context, infectious_person).unwrap();
 
             context.infect_person(infectious_person, None, None, None);
@@ -368,19 +362,15 @@ mod test {
                 ));
             }
             // Add a watcher for when people are infected to record the infection times.
-            context.subscribe_to_event::<PersonPropertyChangeEvent<InfectionStatus>>(
+            context.subscribe_to_event::<PropertyChangeEvent<Person, InfectionStatus>>(
                 move |context, event| {
-                    if event.current == InfectionStatusValue::Infectious {
+                    if event.current == InfectionStatus::Infectious {
                         let current_time = context.get_current_time();
                         infection_times_clone.borrow_mut().push(current_time);
                         // Reset the person to susceptible.
-                        if event.person_id != infectious_person {
+                        if event.entity_id != infectious_person {
                             *num_infected_clone.borrow_mut() += 1;
-                            context.set_person_property(
-                                event.person_id,
-                                InfectionData,
-                                InfectionDataValue::Susceptible,
-                            );
+                            context.set_property(event.entity_id, InfectionData::Susceptible);
                         }
                     }
                 },
@@ -392,9 +382,6 @@ mod test {
 
         #[allow(clippy::cast_precision_loss)]
         let avg_number_infections = *num_infected.borrow() as f64 / num_sims as f64;
-        println!(
-            "Average number of infections over {num_sims} simulations: {avg_number_infections}"
-        );
         assert_almost_eq!(
             avg_number_infections,
             rate * total_infectiousness_multiplier.unwrap(),
@@ -440,7 +427,7 @@ mod test {
         // Create a simulation with an infected person and schedule their recovery.
         let mut context = setup_context(0, 0.0, 1.0, 5.0);
         load_rate_fns(&mut context).unwrap();
-        let person = context.add_person(()).unwrap();
+        let person: PersonId = context.add_entity((Age(30),)).unwrap();
         context.infect_person(person, None, None, None);
         // For later, we need to get the recovery time from the rate function.
         context.execute();
@@ -449,8 +436,8 @@ mod test {
         context.execute();
         // Make sure person is recovered.
         assert_eq!(
-            context.get_person_property(person, InfectionData),
-            InfectionDataValue::Recovered {
+            context.get_property::<Person, InfectionData>(person),
+            InfectionData::Recovered {
                 infection_time: 0.0,
                 recovery_time
             }
@@ -503,10 +490,10 @@ mod test {
                 crate::settings::init(&mut context);
 
                 // Add a a person who will get infected.
-                let infectious_person = context.add_person(()).unwrap();
-                let person_home = context.add_person(()).unwrap();
-                let person_censustract = context.add_person(()).unwrap();
-                let person_workplace = context.add_person(()).unwrap();
+                let infectious_person: PersonId = context.add_entity((Age(30),)).unwrap();
+                let person_home: PersonId = context.add_entity((Age(30),)).unwrap();
+                let person_censustract: PersonId = context.add_entity((Age(30),)).unwrap();
+                let person_workplace: PersonId = context.add_entity((Age(30),)).unwrap();
                 let itinerary_all = vec![
                     ItineraryEntry::new(SettingId::new(Home, 0), ratio[0]),
                     ItineraryEntry::new(SettingId::new(CensusTract, 0), ratio[1]),
@@ -542,15 +529,15 @@ mod test {
                     ));
                 }
                 // Add a watcher for when people are infected to record their infection settings.
-                context.subscribe_to_event::<PersonPropertyChangeEvent<InfectionStatus>>(
+                context.subscribe_to_event::<PropertyChangeEvent<Person, InfectionStatus>>(
                     move |context, event| {
-                        if event.current == InfectionStatusValue::Infectious {
+                        if event.current == InfectionStatus::Infectious {
                             // Reset the person to susceptible.
-                            if event.person_id == person_home {
+                            if event.entity_id == person_home {
                                 *num_infected_home_clone.borrow_mut() += 1;
-                            } else if event.person_id == person_censustract {
+                            } else if event.entity_id == person_censustract {
                                 *num_infected_cenustract_clone.borrow_mut() += 1;
-                            } else if event.person_id == person_workplace {
+                            } else if event.entity_id == person_workplace {
                                 *num_infected_workplace_clone.borrow_mut() += 1;
                             }
                             context.shutdown();
@@ -601,7 +588,7 @@ mod test {
             context.init_random(seed);
             // Add our people
             for _ in 0..num_people {
-                context.add_person(()).unwrap();
+                context.add_entity::<Person, _>((Age(30),)).unwrap();
             }
             init(&mut context).unwrap();
             // Add a plan to shutdown after the seeding so we can count infected and recovereds
@@ -609,7 +596,7 @@ mod test {
             context.execute();
             // Count number of initial infections and recovereds
             num_initial_infections +=
-                context.query_people_count((InfectionStatus, InfectionStatusValue::Infectious));
+                context.query_entity_count::<Person, _>((InfectionStatus::Infectious,));
         }
         // Check that the proportion of people is close to the expected proportion
         assert_almost_eq!(
