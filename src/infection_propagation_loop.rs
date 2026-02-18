@@ -1,6 +1,8 @@
 use core::f64;
-use ixa::prelude::*;
+use ixa::{csv, prelude::*};
 use rand_distr::Binomial;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 use crate::infectiousness_manager::{
     Forecast, InfectionContextExt, InfectionStatus, evaluate_forecast, get_forecast,
@@ -41,6 +43,26 @@ fn schedule_recovery(context: &mut Context, person: PersonId) {
     });
 }
 
+/// Infects `infection_count` people at `infection_time` time. This is used for both seeding initial infections and importing infections from a file
+fn plan_n_infections(context: &mut Context, infection_count: usize, infection_time: f64) {
+    if infection_count > 0 {
+        context.add_plan(infection_time, move |context| {
+            let susceptibles = context.sample_entities::<Person, _, _>(
+                InfectionRng,
+                (InfectionStatus::Susceptible,),
+                infection_count,
+            );
+
+            for person in susceptibles {
+                trace!(
+                    "Infecting person {person} at time {infection_time} from a plan_n_infections."
+                );
+                context.infect_person(person, None, None, None);
+            }
+        });
+    }
+}
+
 /// Takes susceptible people from the population and seeds them as infected.
 /// The total number of people seeded is distributed binomially according to the initial incidence to seed.
 /// The initial incidence to seed is relative to the population size, not the current number of susceptibles.
@@ -57,28 +79,58 @@ fn seed_initial_infections(context: &mut Context, initial_incidence: f64) {
         "Altering {k} susceptibles with a seeding function using proportion {initial_incidence}."
     );
 
-    if k > 0 {
-        let susceptibles = context.sample_entities::<Person, _, _>(
-            InfectionRng,
-            (InfectionStatus::Susceptible,),
-            k as usize,
-        );
-        for person in susceptibles {
-            trace!("Infecting person {person} as an initial infection.");
-            context.add_plan(0.0, move |context| {
-                context.infect_person(person, None, None, None);
-            });
-        }
+    plan_n_infections(context, k as usize, 0.0);
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct ImportCasesFromFile {
+    pub on: bool,
+    pub filename: Option<PathBuf>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ImportationRecord {
+    time: f64,
+    imported_infections: usize,
+}
+
+fn load_imported_infection_plan(
+    context: &mut Context,
+    importations_file: PathBuf,
+) -> Result<(), IxaError> {
+    let mut reader = csv::Reader::from_path(importations_file)?;
+    let mut raw_record = csv::ByteRecord::new();
+    let headers = reader.byte_headers()?.clone();
+
+    while reader.read_byte_record(&mut raw_record)? {
+        let record: ImportationRecord = raw_record.deserialize(Some(&headers))?;
+        plan_n_infections(context, record.imported_infections, record.time);
     }
+    Ok(())
 }
 
 pub fn init(context: &mut Context) -> Result<(), IxaError> {
-    let &Params {
-        initial_incidence, ..
+    let Params {
+        initial_incidence,
+        import_cases_from_file,
+        ..
     } = context.get_params();
+    let initial_incidence = *initial_incidence;
+    let import_cases_from_file = import_cases_from_file.clone();
 
     load_rate_fns(context)?;
-    seed_initial_infections(context, initial_incidence);
+    if initial_incidence > 0.0 {
+        seed_initial_infections(context, initial_incidence);
+    }
+    if import_cases_from_file.on {
+        if let Some(filename) = import_cases_from_file.filename {
+            load_imported_infection_plan(context, filename)?;
+        } else {
+            return Err(IxaError::IxaError(
+                "Importation from file is turned on but no filename was provided.".to_string(),
+            ));
+        }
+    }
 
     // Subscribe to the person becoming infectious to trigger the infection propagation loop
     context.subscribe_to_event(

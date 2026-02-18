@@ -2,6 +2,7 @@ use ixa::{HashMap, HashMapExt, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, path::PathBuf};
 
+use crate::infection_propagation_loop::ImportCasesFromFile;
 use crate::reports::ReportParams;
 use crate::settings::SettingProperties;
 
@@ -31,6 +32,8 @@ pub struct Params {
     pub synth_population_file: PathBuf,
     /// The proportion of initial people who are infectious when we seed the population.
     pub initial_incidence: f64,
+    /// A flag to indicate whether to import cases from a file.
+    pub import_cases_from_file: ImportCasesFromFile,
     /// A library of infection rates to assign to infected people.
     pub infectiousness_rate_fn: RateFnType,
     /// Setting properties by setting type
@@ -150,6 +153,10 @@ impl Default for Params {
             max_time: 0.0,
             synth_population_file: PathBuf::new(),
             initial_incidence: 0.0,
+            import_cases_from_file: ImportCasesFromFile {
+                on: false,
+                filename: None,
+            },
             infectiousness_rate_fn: RateFnType::Constant {
                 rate: 1.0,
                 duration: 5.0,
