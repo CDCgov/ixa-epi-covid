@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use crate::{
     parameters::{ContextParametersExt, Params},
-    setting_loader::{GeographyProperties, Setting, SettingCategory, SettingId},
+    setting_loader::{GeographyProperties, Setting, SettingCategory, SettingId}, settings_entities::get_default_itinerary_ratio,
 };
 
 use ixa::profiling::open_span;
@@ -44,6 +44,20 @@ impl_property!(WorkplaceId, Person);
 pub struct CensusTractId(pub SettingId);
 impl_property!(CensusTractId, Person);
 
+#[derive(Debug, PartialEq, Clone, Copy, Serialize)]
+pub struct ItineraryEntry {
+    pub home_ratio: Option<f64>,
+    pub school_ratio: Option<f64>,
+    pub workplace_ratio: Option<f64>,
+    pub census_tract_ratio: Option<f64>,
+}
+impl_property!(ItineraryEntry, Person, default_const = ItineraryEntry {
+    home_ratio: None,
+    school_ratio: None,
+    workplace_ratio: None,
+    census_tract_ratio: None,
+});
+
 fn create_person_from_record(
     context: &mut Context,
     person_record: &PeopleRecord,
@@ -78,7 +92,7 @@ fn create_person_from_record(
     };
 
     // Add person to context
-    let _person_id: PersonId = context
+    let person_id: PersonId = context
         .add_entity((
             Age(person_record.age),
             HomeId(home_setting_id),
@@ -87,6 +101,18 @@ fn create_person_from_record(
             CensusTractId(tract_setting_id),
         ))
         .unwrap();
+    context.set_property(Person, ItineraryEntry {
+        home_ratio: home_setting_id.map(|setting_id| {
+            Some(get_default_itinerary_ratio(context, &setting_id))
+        }),
+        school_ratio: school_setting_id.map(|setting_id| {
+            Some(get_default_itinerary_ratio(context, &setting_id))
+        }),
+        workplace_ratio: workplace_setting_id.map(|setting_id| {
+            Some(get_default_itinerary_ratio(context, &setting_id))
+        }),
+        census_tract_ratio: Some(get_default_itinerary_ratio(context, &tract_setting_id)),
+    });
 
     Ok(())
 }
