@@ -101,19 +101,12 @@ fn create_person_from_record(
             CensusTractId(tract_setting_id),
         ))
         .unwrap();
-    context.set_property(Person, ItineraryEntry {
-        home_ratio: home_setting_id.map(|setting_id| {
-            Some(get_default_itinerary_ratio(context, &setting_id))
-        }),
-        school_ratio: school_setting_id.map(|setting_id| {
-            Some(get_default_itinerary_ratio(context, &setting_id))
-        }),
-        workplace_ratio: workplace_setting_id.map(|setting_id| {
-            Some(get_default_itinerary_ratio(context, &setting_id))
-        }),
+    context.set_property(person_id, ItineraryEntry {
+        home_ratio: Some(get_default_itinerary_ratio(context, &home_setting_id)),
+        school_ratio: school_setting_id.map(|id| get_default_itinerary_ratio(context, &id)),
+        workplace_ratio: workplace_setting_id.map(|id| get_default_itinerary_ratio(context, &id)),
         census_tract_ratio: Some(get_default_itinerary_ratio(context, &tract_setting_id)),
     });
-
     Ok(())
 }
 

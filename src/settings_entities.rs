@@ -1,38 +1,38 @@
 use crate::{
-    population_loader::{CensusTractId, HomeId, Person, PersonId, SchoolId, WorkplaceId},
+    population_loader::{CensusTractId, HomeId, Person, PersonId, SchoolId, WorkplaceId, ItineraryEntry},
     setting_loader::{DefaultItineraryProperties, SettingEntityProperties, Setting, SettingCategory, SettingId},
 };
 
 use ixa::{entity::EntitySetIterator, prelude::*};
 
 define_rng!(SettingsRng);
-#[allow(dead_code)]
-#[derive(Clone, Debug)]
-pub struct ItineraryEntry {
-    pub setting: SettingId,
-    ratio: f64,
-}
+// #[allow(dead_code)]
+// #[derive(Clone, Debug)]
+// pub struct ItineraryEntry {
+//     pub setting: SettingId,
+//     ratio: f64,
+// }
 
-impl ItineraryEntry {
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn new(setting: SettingId, ratio: f64) -> ItineraryEntry {
-        ItineraryEntry { setting, ratio }
-    }
-}
+// impl ItineraryEntry {
+//     #[allow(clippy::needless_pass_by_value)]
+//     pub fn new(setting: SettingId, ratio: f64) -> ItineraryEntry {
+//         ItineraryEntry { setting, ratio }
+//     }
+// }
 
-pub fn append_itinerary_entry(
-    itinerary: &mut Vec<ItineraryEntry>,
-    context: &Context,
-    setting: SettingId,
-    nondefault_ratio: Option<f64>,
-) -> Result<(), IxaError> {
-    let ratio = match nondefault_ratio {
-        Some(user_input) => user_input,
-        None => get_default_itinerary_ratio(context, &setting),
-    };
-    itinerary.push(ItineraryEntry::new(setting, ratio));
-    Ok(())
-}
+// pub fn append_itinerary_entry(
+//     itinerary: &mut Vec<ItineraryEntry>,
+//     context: &Context,
+//     setting: SettingId,
+//     nondefault_ratio: Option<f64>,
+// ) -> Result<(), IxaError> {
+//     let ratio = match nondefault_ratio {
+//         Some(user_input) => user_input,
+//         None => get_default_itinerary_ratio(context, &setting),
+//     };
+//     itinerary.push(ItineraryEntry::new(setting, ratio));
+//     Ok(())
+// }
 
 pub fn get_default_itinerary_ratio(context: &Context, setting: &SettingId) -> f64 {
     context
@@ -121,6 +121,7 @@ pub trait ContextSettingExt: PluginContext + ContextRandomExt {
 
     fn sample_setting(&mut self, person_id: PersonId) -> SettingId {
         let settings = self.get_settings(person_id);
+        let itinerary_entry: ItineraryEntry = self.get_property::<Person, ItineraryEntry>(person_id);
         settings[self.sample_range(SettingsRng, 0..settings.len())]
     }
 
