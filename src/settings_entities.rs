@@ -1,43 +1,47 @@
 use crate::{
-    population_loader::{CensusTractId, HomeId, Person, PersonId, SchoolId, WorkplaceId, ItineraryEntry},
-    setting_loader::{DefaultItineraryProperties, SettingEntityProperties, Setting, SettingCategory, SettingId},
+    population_loader::{CensusTractId, HomeId, Person, PersonId, SchoolId, WorkplaceId},
 };
 
 use ixa::{entity::EntitySetIterator, prelude::*};
+use serde::{Deserialize, Serialize};
 
 define_rng!(SettingsRng);
-// #[allow(dead_code)]
-// #[derive(Clone, Debug)]
-// pub struct ItineraryEntry {
-//     pub setting: SettingId,
-//     ratio: f64,
-// }
 
-// impl ItineraryEntry {
-//     #[allow(clippy::needless_pass_by_value)]
-//     pub fn new(setting: SettingId, ratio: f64) -> ItineraryEntry {
-//         ItineraryEntry { setting, ratio }
-//     }
-// }
+define_entity!(Setting);
 
-// pub fn append_itinerary_entry(
-//     itinerary: &mut Vec<ItineraryEntry>,
-//     context: &Context,
-//     setting: SettingId,
-//     nondefault_ratio: Option<f64>,
-// ) -> Result<(), IxaError> {
-//     let ratio = match nondefault_ratio {
-//         Some(user_input) => user_input,
-//         None => get_default_itinerary_ratio(context, &setting),
-//     };
-//     itinerary.push(ItineraryEntry::new(setting, ratio));
-//     Ok(())
-// }
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
+pub struct SettingCode (pub usize);
+impl_property!(SettingCode, Setting);
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
+pub struct StateCode(pub usize);
+impl_property!(StateCode, Setting);
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
+pub struct CountyCode(pub usize);
+impl_property!(CountyCode, Setting);
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
+pub struct CensusTractCode(pub usize);
+impl_property!(CensusTractCode, Setting);
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy, Hash)]
+pub enum SettingCategory {
+    Home,
+    Workplace,
+    School,
+    CensusTract,
+}
+
+impl_property!(SettingCategory, Setting);
+
+define_property!(struct Alpha(pub f64), Setting);
+
+define_property!(struct DefaultItineraryRatio(pub f64), Setting);
 
 pub fn get_default_itinerary_ratio(context: &Context, setting: &SettingId) -> f64 {
     context
-        .get_property::<Setting, DefaultItineraryProperties>(*setting)
-        .ratio
+        .get_property::<Setting, DefaultItineraryRatio>(*setting)
+        .0
 }
 
 pub trait ContextSettingExt: PluginContext + ContextRandomExt {
@@ -110,18 +114,17 @@ pub trait ContextSettingExt: PluginContext + ContextRandomExt {
         &self, 
         setting: SettingId
     ) -> f64 {
-        let setting_props = self.get_property::<Setting, SettingEntityProperties>(setting);
+        let alpha = self.get_property::<Setting, Alpha>(setting);
         let members = self.get_setting_members(setting).collect::<Vec<_>>();
         if members.is_empty() {
             0.0
         } else {
-            setting_props.alpha * (members.len() - 1) as f64
+            alpha.0 * (members.len() - 1) as f64
         }
     }
 
     fn sample_setting(&mut self, person_id: PersonId) -> SettingId {
         let settings = self.get_settings(person_id);
-        let itinerary_entry: ItineraryEntry = self.get_property::<Person, ItineraryEntry>(person_id);
         settings[self.sample_range(SettingsRng, 0..settings.len())]
     }
 

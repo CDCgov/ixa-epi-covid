@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use crate::{
     parameters::{ContextParametersExt, Params},
-    setting_loader::{GeographyProperties, Setting, SettingCategory, SettingId}, settings_entities::get_default_itinerary_ratio,
+    settings_entities::{Alpha, CensusTractCode, CountyCode, DefaultItineraryRatio, Setting, SettingCategory, SettingCode, SettingId, StateCode},
 };
 
 use ixa::profiling::open_span;
@@ -44,20 +44,6 @@ impl_property!(WorkplaceId, Person);
 pub struct CensusTractId(pub SettingId);
 impl_property!(CensusTractId, Person);
 
-#[derive(Debug, PartialEq, Clone, Copy, Serialize)]
-pub struct ItineraryEntry {
-    pub home_ratio: Option<f64>,
-    pub school_ratio: Option<f64>,
-    pub workplace_ratio: Option<f64>,
-    pub census_tract_ratio: Option<f64>,
-}
-impl_property!(ItineraryEntry, Person, default_const = ItineraryEntry {
-    home_ratio: None,
-    school_ratio: None,
-    workplace_ratio: None,
-    census_tract_ratio: None,
-});
-
 fn create_person_from_record(
     context: &mut Context,
     person_record: &PeopleRecord,
@@ -92,7 +78,7 @@ fn create_person_from_record(
     };
 
     // Add person to context
-    let person_id: PersonId = context
+    let _person_id: PersonId = context
         .add_entity((
             Age(person_record.age),
             HomeId(home_setting_id),
@@ -101,12 +87,6 @@ fn create_person_from_record(
             CensusTractId(tract_setting_id),
         ))
         .unwrap();
-    context.set_property(person_id, ItineraryEntry {
-        home_ratio: Some(get_default_itinerary_ratio(context, &home_setting_id)),
-        school_ratio: school_setting_id.map(|id| get_default_itinerary_ratio(context, &id)),
-        workplace_ratio: workplace_setting_id.map(|id| get_default_itinerary_ratio(context, &id)),
-        census_tract_ratio: Some(get_default_itinerary_ratio(context, &tract_setting_id)),
-    });
     Ok(())
 }
 
@@ -115,16 +95,74 @@ fn get_setting_id_from_string(
     setting_category: SettingCategory,
     setting_string: String,
 ) -> Result<SettingId, IxaError> {
-    let fips_code: usize = setting_string
+    println!("Getting setting ID for category {:?} and string {}", setting_category, setting_string);
+    let setting_code: usize = setting_string
         .parse()
         .map_err(|_| IxaError::IxaError(format!("Invalid FIPS code: {}", setting_string)))?;
+    if let Some(setting_id) = context
+        .query_result_iterator::<Setting, _>((SettingCode(setting_code), setting_category))
+        .next() {
+            return Ok(setting_id);
+        }
+    let fips = get_fips_from_string(setting_string.clone())?;
+    let alpha = *get_default_setting_properties(context, setting_category)?;
+    let itinerary_ratio = get_default_itinerary_ratio(context, setting_category)?;
+    println!("Itinerary ratio: {}", itinerary_ratio);
+    println!("Default alpha: {:?}", alpha);
+    println!("Creating setting with code {} and category {:?} with FIPS {:?}", setting_code, setting_category, fips);
     let setting_id: SettingId = context
-        .query_result_iterator::<Setting, _>((GeographyProperties { fips_code }, setting_category))
-        .next()
-        .ok_or_else(|| {
-            IxaError::IxaError(format!("No setting found with string: {}", setting_string))
-        })?;
+        .add_entity::<Setting, _>((
+            SettingCode(setting_code),
+            StateCode(fips.0),
+            CountyCode(fips.1),
+            CensusTractCode(fips.2),
+            setting_category,
+            Alpha(alpha),
+            DefaultItineraryRatio(itinerary_ratio),
+        ))?;
+    // context.set_property::<Setting, Alpha>(setting_id, Alpha(alpha));
+    // context.set_property::<Setting, DefaultItineraryRatio>(setting_id, DefaultItineraryRatio(itinerary_ratio));
     Ok(setting_id)
+}
+
+fn get_fips_from_string(setting_string: String) -> Result<(usize, usize, usize), IxaError> {
+    if setting_string.len() < 11 {
+        return Err(IxaError::IxaError(format!("Invalid FIPS code length: {}", setting_string)));
+    }
+    let state_code: usize = setting_string[0..2]
+        .parse()
+        .map_err(|_| IxaError::IxaError(format!("Invalid state code in FIPS: {}", setting_string)))?;
+    let county_code: usize = setting_string[2..5]
+        .parse()
+        .map_err(|_| IxaError::IxaError(format!("Invalid county code in FIPS: {}", setting_string)))?;
+    let tract_code: usize = setting_string[5..11]
+        .parse()
+        .map_err(|_| IxaError::IxaError(format!("Invalid tract code in FIPS: {}", setting_string)))?;
+    Ok((state_code, county_code, tract_code))
+}
+
+fn get_default_setting_properties(
+    context: &Context,
+    setting_category: SettingCategory,
+) -> Result<&f64, IxaError> {
+    let Params {
+        settings_properties,
+        ..
+    } = context.get_params();
+    settings_properties
+        .get(&setting_category)
+        .ok_or_else(|| IxaError::IxaError(format!("No properties found for setting category: {:?}", setting_category)))
+}
+
+fn get_default_itinerary_ratio(context: &Context, setting_category: SettingCategory) -> Result<f64, IxaError> {
+    let Params {
+        itinerary_ratios,
+        ..
+    } = context.get_params();
+    itinerary_ratios
+        .get(&setting_category)
+        .cloned()
+        .ok_or_else(|| IxaError::IxaError(format!("No itinerary ratio found for setting category: {:?}", setting_category)))
 }
 
 fn load_synth_population(context: &mut Context, synth_input_file: PathBuf) -> Result<(), IxaError> {
@@ -157,7 +195,6 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 mod test {
     use super::*;
     use crate::parameters::GlobalParams;
-    use crate::setting_loader::{SettingEntityProperties, load_settings};
     use crate::settings_entities::ContextSettingExt;
     use ixa::{ContextGlobalPropertiesExt, HashMap};
     use std::io::Write;
@@ -181,19 +218,19 @@ mod test {
                 [
                     (
                         SettingCategory::Home,
-                        SettingEntityProperties { alpha: 0.0 },
+                        0.0,
                     ),
                     (
                         SettingCategory::School,
-                        SettingEntityProperties { alpha: 0.0 },
+                        0.0,
                     ),
                     (
                         SettingCategory::Workplace,
-                        SettingEntityProperties { alpha: 0.0 },
+                        0.0,
                     ),
                     (
                         SettingCategory::CensusTract,
-                        SettingEntityProperties { alpha: 0.0 },
+                        0.0,
                     ),
                 ]
                 .into_iter()
@@ -218,27 +255,6 @@ mod test {
     fn check_synth_file_tract() {
         let mut context = setup();
 
-        let (settings_properties, itinerary_ratios) = {
-            let Params {
-                settings_properties,
-                itinerary_ratios,
-                ..
-            } = context.get_params();
-            (settings_properties.clone(), itinerary_ratios.clone())
-        };
-
-        let setting_input = String::from(
-            "setting_category,setting_code\nhomeId,360930331020001\nhomeId,360930331020002\ncensustractId,36093033102",
-        );
-        let setting_file = persist_tmp_csv(&setting_input);
-        load_settings(
-            &mut context,
-            setting_file,
-            settings_properties,
-            itinerary_ratios,
-        )
-        .unwrap();
-
         let input = String::from(
             "age,homeId,schoolId,workplaceId\n43,360930331020001,,\n42,360930331020002,,",
         );
@@ -258,27 +274,21 @@ mod test {
 
         let home_setting_id_1 = context
             .query_result_iterator::<Setting, _>((
-                GeographyProperties {
-                    fips_code: home_id[0],
-                },
+                SettingCode(home_id[0]),
                 SettingCategory::Home,
             ))
             .next()
             .unwrap();
         let home_setting_id_2 = context
             .query_result_iterator::<Setting, _>((
-                GeographyProperties {
-                    fips_code: home_id[1],
-                },
+                SettingCode(home_id[1]),
                 SettingCategory::Home,
             ))
             .next()
             .unwrap();
         let census_tract_setting_id = context
             .query_result_iterator::<Setting, _>((
-                GeographyProperties {
-                    fips_code: census_tract_id,
-                },
+                SettingCode(census_tract_id),
                 SettingCategory::CensusTract,
             ))
             .next()
@@ -312,27 +322,6 @@ mod test {
     fn check_synth_file_school() {
         let mut context = setup();
 
-        let (settings_properties, itinerary_ratios) = {
-            let Params {
-                settings_properties,
-                itinerary_ratios,
-                ..
-            } = context.get_params();
-            (settings_properties.clone(), itinerary_ratios.clone())
-        };
-
-        let setting_input = String::from(
-            "setting_category,setting_code\nhomeId,360930331020001\nhomeId,360930331020002\ncensustractId,36093033102\nschoolId,1\nschoolId,2",
-        );
-        let setting_file = persist_tmp_csv(&setting_input);
-        load_settings(
-            &mut context,
-            setting_file,
-            settings_properties,
-            itinerary_ratios,
-        )
-        .unwrap();
-
         let input = String::from(
             "age,homeId,schoolId,workplaceId\n43,360930331020001,1,\n42,360930331020002,2,",
         );
@@ -348,45 +337,35 @@ mod test {
 
         let home_setting_id_1 = context
             .query_result_iterator::<Setting, _>((
-                GeographyProperties {
-                    fips_code: home_id[0],
-                },
+                SettingCode(home_id[0]),
                 SettingCategory::Home,
             ))
             .next()
             .unwrap();
         let home_setting_id_2 = context
             .query_result_iterator::<Setting, _>((
-                GeographyProperties {
-                    fips_code: home_id[1],
-                },
+                SettingCode(home_id[1]),
                 SettingCategory::Home,
             ))
             .next()
             .unwrap();
         let census_tract_setting_id = context
             .query_result_iterator::<Setting, _>((
-                GeographyProperties {
-                    fips_code: census_tract_id,
-                },
+                SettingCode(census_tract_id),
                 SettingCategory::CensusTract,
             ))
             .next()
             .unwrap();
         let school_setting_id_1 = context
             .query_result_iterator::<Setting, _>((
-                GeographyProperties {
-                    fips_code: school_id[0],
-                },
+                SettingCode(school_id[0]),
                 SettingCategory::School,
             ))
             .next()
             .unwrap();
         let school_setting_id_2 = context
             .query_result_iterator::<Setting, _>((
-                GeographyProperties {
-                    fips_code: school_id[1],
-                },
+                SettingCode(school_id[1]),
                 SettingCategory::School,
             ))
             .next()
@@ -409,27 +388,6 @@ mod test {
     fn check_synth_file_workplace() {
         let mut context = setup();
 
-        let (settings_properties, itinerary_ratios) = {
-            let Params {
-                settings_properties,
-                itinerary_ratios,
-                ..
-            } = context.get_params();
-            (settings_properties.clone(), itinerary_ratios.clone())
-        };
-
-        let setting_input = String::from(
-            "setting_category,setting_code\nhomeId,360930331020001\nhomeId,360930331020002\ncensustractId,36093033102\nworkplaceId,1\nworkplaceId,2",
-        );
-        let setting_file = persist_tmp_csv(&setting_input);
-        load_settings(
-            &mut context,
-            setting_file,
-            settings_properties,
-            itinerary_ratios,
-        )
-        .unwrap();
-
         let input = String::from(
             "age,homeId,schoolId,workplaceId\n43,360930331020001,,1\n42,360930331020002,,2",
         );
@@ -441,49 +399,39 @@ mod test {
         let census_tract_id = 36_093_033_102;
 
         assert_eq!(context.get_entity_count::<Person>(), 2);
-        assert_eq!(context.get_entity_count::<Setting>(), 5);
+            assert_eq!(context.get_entity_count::<Setting>(), 5);
 
         let home_setting_id_1 = context
             .query_result_iterator::<Setting, _>((
-                GeographyProperties {
-                    fips_code: home_id[0],
-                },
+                SettingCode(home_id[0]),
                 SettingCategory::Home,
             ))
             .next()
             .unwrap();
         let home_setting_id_2 = context
             .query_result_iterator::<Setting, _>((
-                GeographyProperties {
-                    fips_code: home_id[1],
-                },
+                SettingCode(home_id[1]),
                 SettingCategory::Home,
             ))
             .next()
             .unwrap();
         let census_tract_setting_id = context
             .query_result_iterator::<Setting, _>((
-                GeographyProperties {
-                    fips_code: census_tract_id,
-                },
+                SettingCode(census_tract_id),
                 SettingCategory::CensusTract,
             ))
             .next()
             .unwrap();
         let workplace_setting_id_1 = context
             .query_result_iterator::<Setting, _>((
-                GeographyProperties {
-                    fips_code: workplace_id[0],
-                },
+                SettingCode(workplace_id[0]),
                 SettingCategory::Workplace,
             ))
             .next()
             .unwrap();
         let workplace_setting_id_2 = context
             .query_result_iterator::<Setting, _>((
-                GeographyProperties {
-                    fips_code: workplace_id[1],
-                },
+                SettingCode(workplace_id[1]),
                 SettingCategory::Workplace,
             ))
             .next()
