@@ -148,10 +148,10 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 
 #[cfg(test)]
 mod test {
+    use std::io::Write;
+    use std::path::PathBuf;
     use std::{cell::RefCell, rc::Rc};
     use tempfile::NamedTempFile;
-    use std::path::PathBuf;
-    use std::io::Write;
 
     use ixa::{ExecutionPhase, prelude::*};
 
@@ -163,8 +163,8 @@ mod test {
     use crate::{
         define_setting_category,
         infection_propagation_loop::{
-            InfectionStatus, init, schedule_next_forecasted_infection, schedule_recovery,
-            seed_initial_infections, ImportCasesFromFile,
+            ImportCasesFromFile, InfectionStatus, init, schedule_next_forecasted_infection,
+            schedule_recovery, seed_initial_infections,
         },
         infectiousness_manager::{InfectionContextExt, max_total_infectiousness_multiplier},
         parameters::{ContextParametersExt, CoreSettingsTypes, GlobalParams, Params, RateFnType},
@@ -175,7 +175,7 @@ mod test {
             Workplace,
         },
     };
-    
+
     fn persist_tmp_csv(content: &String) -> PathBuf {
         let mut file = NamedTempFile::new().unwrap();
         file.write_all(content.as_bytes()).unwrap();
@@ -196,16 +196,19 @@ mod test {
         context.add_itinerary(person_id, itinerary)
     }
 
-    fn setup_context(seed: u64, rate: f64, alpha: f64, duration: f64, initial_incidence: f64, imported_infections_info: Option<ImportCasesFromFile>) -> Context {
+    fn setup_context(
+        seed: u64,
+        rate: f64,
+        alpha: f64,
+        duration: f64,
+        initial_incidence: f64,
+        imported_infections_info: Option<ImportCasesFromFile>,
+    ) -> Context {
         let mut context = Context::new();
-        let import_cases_from_file = if imported_infections_info.is_some() {
-            imported_infections_info.unwrap()
-        } else {
-            ImportCasesFromFile {
-                include: false,
-                filename: None,
-            }
-        };
+        let import_cases_from_file = imported_infections_info.unwrap_or(ImportCasesFromFile {
+            include: false,
+            filename: None,
+        });
 
         let parameters = Params {
             seed,
@@ -374,9 +377,7 @@ mod test {
             *num_initial_infections.borrow()
         );
 
-        assert!(
-            *num_initial_infections.borrow() > 0
-        );
+        assert!(*num_initial_infections.borrow() > 0);
 
         // And that recovereds is equal to the initial infectious (who have recovered) + recovered
         assert_eq!(
@@ -387,13 +388,11 @@ mod test {
 
     #[test]
     fn test_zero_incidence_zero_rate_import_infections() {
-        let input: String = String::from(
-            "time,imported_infections\n1.0,2\n3.0,3\n",
-        );
+        let input: String = String::from("time,imported_infections\n1.0,2\n3.0,3\n");
         let synth_file = persist_tmp_csv(&input);
         let imported_infections_info = ImportCasesFromFile {
             include: true,
-            filename: Some(synth_file)
+            filename: Some(synth_file),
         };
         let mut context = setup_context(0, 0.0, 1.0, 5.0, 0.0, Some(imported_infections_info));
 
@@ -435,10 +434,7 @@ mod test {
 
         // Make sure that the only people who pass through infectious are those that we imported
         // as the initial infectious
-        assert_eq!(
-            *num_new_infections.borrow(),
-            5
-        );
+        assert_eq!(*num_new_infections.borrow(), 5);
         // And that recovereds is equal to the initial infectious (who have recovered) + recovered
         assert_eq!(
             context.query_entity_count::<Person, _>((InfectionStatus::Recovered,)),
@@ -448,18 +444,30 @@ mod test {
 
     #[test]
     fn test_no_filename_include_importation() {
-        let mut context = setup_context(0, 0.0, 1.0, 5.0, 0.0, Some(ImportCasesFromFile {
-            include: true,
-            filename: None
-        }));
+        let mut context = setup_context(
+            0,
+            0.0,
+            1.0,
+            5.0,
+            0.0,
+            Some(ImportCasesFromFile {
+                include: true,
+                filename: None,
+            }),
+        );
 
         let result = init(&mut context).err();
         match result {
             Some(IxaError::IxaError(message)) => {
-                assert_eq!(message, "Importation from file is turned on but no filename was provided.".to_string());
-            },
+                assert_eq!(
+                    message,
+                    "Importation from file is turned on but no filename was provided.".to_string()
+                );
+            }
             None => panic!("Expected an IxaError but got no error at all."),
-            Some(_) => panic!("Expected an IxaError with a specific message, but got a different error or no error at all."),
+            Some(_) => panic!(
+                "Expected an IxaError with a specific message, but got a different error or no error at all."
+            ),
         }
     }
 
