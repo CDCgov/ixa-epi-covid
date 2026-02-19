@@ -149,6 +149,9 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 #[cfg(test)]
 mod test {
     use std::{cell::RefCell, rc::Rc};
+    use tempfile::NamedTempFile;
+    use std::path::PathBuf;
+    use std::io::Write;
 
     use ixa::{ExecutionPhase, prelude::*};
 
@@ -161,7 +164,7 @@ mod test {
         define_setting_category,
         infection_propagation_loop::{
             InfectionStatus, init, schedule_next_forecasted_infection, schedule_recovery,
-            seed_initial_infections,
+            seed_initial_infections, ImportCasesFromFile,
         },
         infectiousness_manager::{InfectionContextExt, max_total_infectiousness_multiplier},
         parameters::{ContextParametersExt, CoreSettingsTypes, GlobalParams, Params, RateFnType},
@@ -172,6 +175,13 @@ mod test {
             Workplace,
         },
     };
+    
+    fn persist_tmp_csv(content: &String) -> PathBuf {
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        let (_file, path) = file.keep().unwrap();
+        path
+    }
 
     define_setting_category!(HomogeneousMixing);
 
@@ -186,12 +196,22 @@ mod test {
         context.add_itinerary(person_id, itinerary)
     }
 
-    fn setup_context(seed: u64, rate: f64, alpha: f64, duration: f64) -> Context {
+    fn setup_context(seed: u64, rate: f64, alpha: f64, duration: f64, initial_incidence: f64, imported_infections_info: Option<ImportCasesFromFile>) -> Context {
         let mut context = Context::new();
+        let import_cases_from_file = if imported_infections_info.is_some() {
+            imported_infections_info.unwrap()
+        } else {
+            ImportCasesFromFile {
+                include: false,
+                filename: None,
+            }
+        };
+
         let parameters = Params {
             seed,
             max_time: 100.0,
-            initial_incidence: 0.1, // 10% of the population
+            initial_incidence,
+            import_cases_from_file,
             infectiousness_rate_fn: RateFnType::Constant { rate, duration },
             settings_properties: HashMap::from_iter(
                 [
@@ -234,7 +254,7 @@ mod test {
 
     #[test]
     fn test_seed_initial_conditions() {
-        let mut context = setup_context(0, 1.0, 1.0, 5.0);
+        let mut context = setup_context(0, 1.0, 1.0, 5.0, 0.1, None);
         load_rate_fns(&mut context).unwrap();
         let initial_infected: PersonId = context.add_entity((Age(30),)).unwrap();
         seed_initial_infections(&mut context, 1.0);
@@ -249,7 +269,7 @@ mod test {
 
     #[test]
     fn test_seed_initial_conditions_empty() {
-        let mut context = setup_context(0, 1.0, 1.0, 5.0);
+        let mut context = setup_context(0, 1.0, 1.0, 5.0, 0.1, None);
         load_rate_fns(&mut context).unwrap();
         let person: PersonId = context.add_entity((Age(30),)).unwrap();
         seed_initial_infections(&mut context, 0.0);
@@ -268,7 +288,7 @@ mod test {
         for rep in 0..reps {
             let num_initial_infections_clone: Rc<RefCell<usize>> =
                 Rc::clone(&num_initial_infections);
-            let mut context = setup_context(rep, 1.0, 1.0, 5.0);
+            let mut context = setup_context(rep, 1.0, 1.0, 5.0, 0.1, None);
             load_rate_fns(&mut context).unwrap();
             for _ in 0..pop_size {
                 context.add_entity::<Person, _>((Age(30),)).unwrap();
@@ -288,7 +308,7 @@ mod test {
 
     #[test]
     fn test_init_loop() {
-        let mut context = setup_context(42, 1.0, 1.0, 5.0);
+        let mut context = setup_context(42, 1.0, 1.0, 5.0, 0.1, None);
         for _ in 0..10 {
             context.add_entity::<Person, _>((Age(30),)).unwrap();
         }
@@ -313,7 +333,7 @@ mod test {
 
     #[test]
     fn test_zero_rate_no_infections() {
-        let mut context = setup_context(0, 0.0, 1.0, 5.0);
+        let mut context = setup_context(0, 0.0, 1.0, 5.0, 0.1, None);
         // Add people -- a lot so we can show that no new infections are added
         for _ in 0..1000 {
             context.add_entity::<Person, _>((Age(30),)).unwrap();
@@ -354,11 +374,93 @@ mod test {
             *num_initial_infections.borrow()
         );
 
+        assert!(
+            *num_initial_infections.borrow() > 0
+        );
+
         // And that recovereds is equal to the initial infectious (who have recovered) + recovered
         assert_eq!(
             context.query_entity_count::<Person, _>((InfectionStatus::Recovered,)),
             *num_initial_infections.borrow(),
         );
+    }
+
+    #[test]
+    fn test_zero_incidence_zero_rate_import_infections() {
+        let input: String = String::from(
+            "time,imported_infections\n1.0,2\n3.0,3\n",
+        );
+        let synth_file = persist_tmp_csv(&input);
+        let imported_infections_info = ImportCasesFromFile {
+            include: true,
+            filename: Some(synth_file)
+        };
+        let mut context = setup_context(0, 0.0, 1.0, 5.0, 0.0, Some(imported_infections_info));
+
+        for _ in 0..1000 {
+            context.add_entity::<Person, _>((Age(30),)).unwrap();
+        }
+        init(&mut context).unwrap();
+
+        // We want to count the number of new infections that are created to ensure this is equal to
+        // the number of initial infections seeded.
+        let num_new_infections = Rc::new(RefCell::new(0));
+        let num_new_infections_clone = Rc::clone(&num_new_infections);
+
+        context.subscribe_to_event(
+            move |_context, event: PropertyChangeEvent<Person, InfectionStatus>| {
+                if event.current == InfectionStatus::Infectious {
+                    *num_new_infections_clone.borrow_mut() += 1;
+                }
+            },
+        );
+
+        context.add_plan(1.0, move |context| {
+            // At time 1.0, we should have 2 infections from the import file
+            assert_eq!(
+                context.query_entity_count::<Person, _>((InfectionStatus::Infectious,)),
+                2
+            );
+        });
+
+        context.add_plan(3.0, move |context| {
+            // At time 3.0, we should have 3 additional infections from the import file (5 total)
+            assert_eq!(
+                context.query_entity_count::<Person, _>((InfectionStatus::Infectious,)),
+                5
+            );
+        });
+
+        context.execute();
+
+        // Make sure that the only people who pass through infectious are those that we imported
+        // as the initial infectious
+        assert_eq!(
+            *num_new_infections.borrow(),
+            5
+        );
+        // And that recovereds is equal to the initial infectious (who have recovered) + recovered
+        assert_eq!(
+            context.query_entity_count::<Person, _>((InfectionStatus::Recovered,)),
+            5
+        );
+    }
+
+    #[test]
+    fn test_no_filename_include_importation() {
+        let mut context = setup_context(0, 0.0, 1.0, 5.0, 0.0, Some(ImportCasesFromFile {
+            include: true,
+            filename: None
+        }));
+
+        let result = init(&mut context).err();
+        match result {
+            Some(IxaError::IxaError(message)) => {
+                assert_eq!(message, "Importation from file is turned on but no filename was provided.".to_string());
+            },
+            None => panic!("Expected an IxaError but got no error at all."),
+            Some(_) => panic!("Expected an IxaError with a specific message, but got a different error or no error at all."),
+        }
     }
 
     #[test]
@@ -390,7 +492,7 @@ mod test {
         for seed in 0..num_sims {
             let infection_times_clone = Rc::clone(&infection_times);
             let num_infected_clone = Rc::clone(&num_infected);
-            let mut context = setup_context(seed, rate, alpha, duration);
+            let mut context = setup_context(seed, rate, alpha, duration, 0.1, None);
 
             // We only run the simulation for 1.0 time units.
             context.add_plan_with_phase(1.0, ixa::Context::shutdown, ExecutionPhase::Last);
@@ -477,7 +579,7 @@ mod test {
     #[test]
     fn test_schedule_recovery() {
         // Create a simulation with an infected person and schedule their recovery.
-        let mut context = setup_context(0, 0.0, 1.0, 5.0);
+        let mut context = setup_context(0, 0.0, 1.0, 5.0, 0.1, None);
         load_rate_fns(&mut context).unwrap();
         let person: PersonId = context.add_entity((Age(30),)).unwrap();
         context.infect_person(person, None, None, None);
@@ -538,7 +640,7 @@ mod test {
                 let num_infected_home_clone = Rc::clone(&num_infected_home);
                 let num_infected_cenustract_clone = Rc::clone(&num_infected_censustract);
                 let num_infected_workplace_clone = Rc::clone(&num_infected_workplace);
-                let mut context = setup_context(seed, rate, alpha, 5.0);
+                let mut context = setup_context(seed, rate, alpha, 5.0, 0.1, None);
                 crate::settings::init(&mut context);
 
                 // Add a a person who will get infected.
@@ -632,7 +734,7 @@ mod test {
         let num_sims = 10;
         let mut initial_incidence = None;
         for seed in 0..num_sims {
-            let mut context = setup_context(seed, 0.0, 0.0, 1.0);
+            let mut context = setup_context(seed, 0.0, 0.0, 1.0, 0.1, None);
             if initial_incidence.is_none() {
                 // If we don't have an initial incidence, get it
                 initial_incidence = Some(context.get_params().initial_incidence);
