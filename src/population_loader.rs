@@ -1,11 +1,11 @@
-use ixa::{csv, prelude::*};
+use ixa::{csv, prelude::*, HashMap};
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::{
     parameters::{ContextParametersExt, Params},
-    setting_loader::{GeographyProperties, Setting, SettingCategory, SettingId}, settings_entities::get_default_itinerary_ratio,
+    setting_loader::{CensusTract, CensusTractId, DefaultSettingCategory, GeographyProperties, Home, HomeId, School, SchoolId, Workplace, WorkplaceId},
 };
 
 use ixa::profiling::open_span;
@@ -30,19 +30,19 @@ pub struct Alive(pub bool);
 impl_property!(Alive, Person, default_const = Alive(true));
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct HomeId(pub SettingId);
-impl_property!(HomeId, Person);
+pub struct PersonHomeId(pub HomeId);
+impl_property!(PersonHomeId, Person);
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct SchoolId(pub Option<SettingId>);
-impl_property!(SchoolId, Person);
+pub struct PersonSchoolId(pub Option<SchoolId>);
+impl_property!(PersonSchoolId, Person);
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct WorkplaceId(pub Option<SettingId>);
-impl_property!(WorkplaceId, Person);
+pub struct PersonWorkplaceId(pub Option<WorkplaceId>);
+impl_property!(PersonWorkplaceId, Person);
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct CensusTractId(pub SettingId);
-impl_property!(CensusTractId, Person);
+pub struct PersonCensusTractId(pub CensusTractId);
+impl_property!(PersonCensusTractId, Person);
 
 #[derive(Debug, PartialEq, Clone, Copy, Serialize)]
 pub struct ItineraryEntry {
@@ -61,6 +61,7 @@ impl_property!(ItineraryEntry, Person, default_const = ItineraryEntry {
 fn create_person_from_record(
     context: &mut Context,
     person_record: &PeopleRecord,
+    itinerary_ratios: HashMap<DefaultSettingCategory, f64>,
 ) -> Result<(), IxaError> {
     // Create itinerary entries for all setting memberships in input file
     let tract: String = String::from_utf8(person_record.homeId[..11].to_owned())?;
@@ -68,73 +69,65 @@ fn create_person_from_record(
     let school_string: String = String::from_utf8(person_record.schoolId.to_owned())?;
     let workplace_string: String = String::from_utf8(person_record.workplaceId.to_owned())?;
 
-    let home_setting_id: SettingId =
-        get_setting_id_from_string(context, SettingCategory::Home, home_id.clone())?;
-    let tract_setting_id: SettingId =
-        get_setting_id_from_string(context, SettingCategory::CensusTract, tract.clone())?;
-    let school_setting_id: Option<SettingId> = if school_string.is_empty() {
+    let home_setting_id: HomeId = context.query_result_iterator::<Home,_>((
+        GeographyProperties {
+            fips_code: home_id.parse().map_err(|_| IxaError::IxaError(format!("Invalid FIPS code: {}", home_id)))?,
+        },
+    )).next().ok_or_else(|| IxaError::IxaError(format!("No setting found with string: {}", home_id)))?;
+
+    let tract_setting_id: CensusTractId = context.query_result_iterator::<CensusTract,_>((
+        GeographyProperties {
+            fips_code: tract.parse().map_err(|_| IxaError::IxaError(format!("Invalid FIPS code: {}", tract)))?,
+        },
+    )).next().ok_or_else(|| IxaError::IxaError(format!("No setting found with string: {}", tract)))?;
+
+    let school_setting_id: Option<SchoolId> = if school_string.is_empty() {
         None
     } else {
-        Some(get_setting_id_from_string(
-            context,
-            SettingCategory::School,
-            school_string.clone(),
-        )?)
-    };
-    let workplace_setting_id: Option<SettingId> = if workplace_string.is_empty() {
-        None
-    } else {
-        Some(get_setting_id_from_string(
-            context,
-            SettingCategory::Workplace,
-            workplace_string.clone(),
-        )?)
+        Some(context.query_result_iterator::<School,_>((
+            GeographyProperties {
+                fips_code: school_string.parse().map_err(|_| IxaError::IxaError(format!("Invalid FIPS code: {}", school_string)))?,
+            },
+        )).next().ok_or_else(|| IxaError::IxaError(format!("No setting found with string: {}", school_string)))?)
     };
 
+    let workplace_setting_id: Option<WorkplaceId> = if workplace_string.is_empty() {
+        None
+    } else {
+        Some(context.query_result_iterator::<Workplace,_>((
+            GeographyProperties {
+                fips_code: workplace_string.parse().map_err(|_| IxaError::IxaError(format!("Invalid FIPS code: {}", workplace_string)))?,
+            },
+        )).next().ok_or_else(|| IxaError::IxaError(format!("No setting found with string: {}", workplace_string)))?)
+    };
+    
     // Add person to context
     let person_id: PersonId = context
         .add_entity((
             Age(person_record.age),
-            HomeId(home_setting_id),
-            SchoolId(school_setting_id),
-            WorkplaceId(workplace_setting_id),
-            CensusTractId(tract_setting_id),
+            PersonHomeId(home_setting_id),
+            PersonSchoolId(school_setting_id),
+            PersonWorkplaceId(workplace_setting_id),
+            PersonCensusTractId(tract_setting_id),
         ))
         .unwrap();
     context.set_property(person_id, ItineraryEntry {
-        home_ratio: Some(get_default_itinerary_ratio(context, &home_setting_id)),
-        school_ratio: school_setting_id.map(|id| get_default_itinerary_ratio(context, &id)),
-        workplace_ratio: workplace_setting_id.map(|id| get_default_itinerary_ratio(context, &id)),
-        census_tract_ratio: Some(get_default_itinerary_ratio(context, &tract_setting_id)),
+        home_ratio: Some(*itinerary_ratios.get(&DefaultSettingCategory::Home).unwrap_or(&0.0)),
+        school_ratio: school_setting_id.map(|_| *itinerary_ratios.get(&DefaultSettingCategory::School).unwrap_or(&0.0)),
+        workplace_ratio: workplace_setting_id.map(|_| *itinerary_ratios.get(&DefaultSettingCategory::Workplace).unwrap_or(&0.0)),
+        census_tract_ratio: Some(*itinerary_ratios.get(&DefaultSettingCategory::CensusTract).unwrap_or(&0.0)),
     });
     Ok(())
 }
 
-fn get_setting_id_from_string(
-    context: &mut Context,
-    setting_category: SettingCategory,
-    setting_string: String,
-) -> Result<SettingId, IxaError> {
-    let fips_code: usize = setting_string
-        .parse()
-        .map_err(|_| IxaError::IxaError(format!("Invalid FIPS code: {}", setting_string)))?;
-    let setting_id: SettingId = context
-        .query_result_iterator::<Setting, _>((GeographyProperties { fips_code }, setting_category))
-        .next()
-        .ok_or_else(|| {
-            IxaError::IxaError(format!("No setting found with string: {}", setting_string))
-        })?;
-    Ok(setting_id)
-}
-
-fn load_synth_population(context: &mut Context, synth_input_file: PathBuf) -> Result<(), IxaError> {
+fn load_synth_population(context: &mut Context, synth_input_file: PathBuf, itinerary_ratios: HashMap<DefaultSettingCategory, f64>) -> Result<(), IxaError> {
     let mut reader = csv::Reader::from_path(synth_input_file)?;
     let mut raw_record = csv::ByteRecord::new();
     let headers = reader.byte_headers()?.clone();
 
     while reader.read_byte_record(&mut raw_record)? {
         let record: PeopleRecord = raw_record.deserialize(Some(&headers))?;
-        create_person_from_record(context, &record)?;
+        create_person_from_record(context, &record, itinerary_ratios.clone())?;
     }
     Ok(())
 }
@@ -143,13 +136,14 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
     let _span = open_span("load_synth_population");
     let Params {
         synth_population_file,
+        itinerary_ratios,
         ..
     } = context.get_params();
-    load_synth_population(context, synth_population_file.clone())?;
-    context.index_property::<Person, HomeId>();
-    context.index_property::<Person, SchoolId>();
-    context.index_property::<Person, WorkplaceId>();
-    context.index_property::<Person, CensusTractId>();
+    load_synth_population(context, synth_population_file.clone(), itinerary_ratios.clone())?;
+    context.index_property::<Person, PersonHomeId>();
+    context.index_property::<Person, PersonSchoolId>();
+    context.index_property::<Person, PersonWorkplaceId>();
+    context.index_property::<Person, PersonCensusTractId>();
     Ok(())
 }
 
@@ -157,7 +151,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 mod test {
     use super::*;
     use crate::parameters::GlobalParams;
-    use crate::setting_loader::{SettingEntityProperties, load_settings};
+    use crate::setting_loader::{DefaultSettingCategory, SettingCategory, SettingEntityProperties, load_settings};
     use crate::settings_entities::ContextSettingExt;
     use ixa::{ContextGlobalPropertiesExt, HashMap};
     use std::io::Write;
@@ -180,19 +174,19 @@ mod test {
             settings_properties: HashMap::from_iter(
                 [
                     (
-                        SettingCategory::Home,
+                        DefaultSettingCategory::Home,
                         SettingEntityProperties { alpha: 0.0 },
                     ),
                     (
-                        SettingCategory::School,
+                        DefaultSettingCategory::School,
                         SettingEntityProperties { alpha: 0.0 },
                     ),
                     (
-                        SettingCategory::Workplace,
+                        DefaultSettingCategory::Workplace,
                         SettingEntityProperties { alpha: 0.0 },
                     ),
                     (
-                        SettingCategory::CensusTract,
+                        DefaultSettingCategory::CensusTract,
                         SettingEntityProperties { alpha: 0.0 },
                     ),
                 ]
@@ -200,10 +194,10 @@ mod test {
                 .collect::<HashMap<_, _>>(),
             ),
             itinerary_ratios: HashMap::from_iter([
-                (SettingCategory::Home, 0.25),
-                (SettingCategory::School, 0.25),
-                (SettingCategory::Workplace, 0.25),
-                (SettingCategory::CensusTract, 0.25),
+                (DefaultSettingCategory::Home, 0.25),
+                (DefaultSettingCategory::School, 0.25),
+                (DefaultSettingCategory::Workplace, 0.25),
+                (DefaultSettingCategory::CensusTract, 0.25),
             ]),
             ..Default::default()
         };
@@ -235,7 +229,7 @@ mod test {
             &mut context,
             setting_file,
             settings_properties,
-            itinerary_ratios,
+            itinerary_ratios.clone(),
         )
         .unwrap();
 
@@ -243,43 +237,41 @@ mod test {
             "age,homeId,schoolId,workplaceId\n43,360930331020001,,\n42,360930331020002,,",
         );
         let synth_file = persist_tmp_csv(&input);
-        load_synth_population(&mut context, synth_file).unwrap();
+        load_synth_population(&mut context, synth_file, itinerary_ratios.clone()).unwrap();
 
         let age = [43, 42];
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
         let census_tract_id = 36_093_033_102;
 
         assert_eq!(context.get_entity_count::<Person>(), 2);
-        assert_eq!(context.get_entity_count::<Setting>(), 3);
+        assert_eq!(context.get_entity_count::<Home>(), 3);
+        assert_eq!(context.get_entity_count::<CensusTract>(), 1);
 
         for item in age.iter().take(1) {
             assert_eq!(1, context.query_entity_count::<Person, _>((Age(*item),)));
         }
 
         let home_setting_id_1 = context
-            .query_result_iterator::<Setting, _>((
+            .query_result_iterator::<Home, _>((
                 GeographyProperties {
                     fips_code: home_id[0],
                 },
-                SettingCategory::Home,
             ))
             .next()
             .unwrap();
         let home_setting_id_2 = context
-            .query_result_iterator::<Setting, _>((
+            .query_result_iterator::<Home, _>((
                 GeographyProperties {
                     fips_code: home_id[1],
                 },
-                SettingCategory::Home,
             ))
             .next()
             .unwrap();
         let census_tract_setting_id = context
-            .query_result_iterator::<Setting, _>((
+            .query_result_iterator::<CensusTract, _>((
                 GeographyProperties {
                     fips_code: census_tract_id,
                 },
-                SettingCategory::CensusTract,
             ))
             .next()
             .unwrap();
@@ -288,13 +280,13 @@ mod test {
         println!("home_setting_id_2: {:?}", home_setting_id_2);
         println!("census_tract_setting_id: {:?}", census_tract_setting_id);
 
-        assert_eq!(1, context.get_setting_members(home_setting_id_1).count());
+        assert_eq!(1, context.get_setting_members(SettingCategory::Home(home_setting_id_1)).count());
 
-        assert_eq!(1, context.get_setting_members(home_setting_id_2).count());
+        assert_eq!(1, context.get_setting_members(SettingCategory::Home(home_setting_id_2)).count());
 
         assert_eq!(
             2,
-            context.get_setting_members(census_tract_setting_id).count()
+            context.get_setting_members(SettingCategory::CensusTract(census_tract_setting_id)).count()
         );
     }
 
@@ -302,10 +294,17 @@ mod test {
     #[should_panic(expected = "range end index 11 out of range for slice of length 9")]
     fn check_invalid_census_tract() {
         let mut context = setup();
+        let itinerary_ratios= {
+            let Params {
+                itinerary_ratios,
+                ..
+            } = context.get_params();
+            itinerary_ratios.clone()
+        };
         let input =
             String::from("age,homeId,schoolId,workplaceId\n43,360930331,,\n42,360930331020002,,");
         let synth_file = persist_tmp_csv(&input);
-        load_synth_population(&mut context, synth_file).unwrap();
+        load_synth_population(&mut context, synth_file, itinerary_ratios.clone()).unwrap();
     }
 
     #[test]
@@ -329,7 +328,7 @@ mod test {
             &mut context,
             setting_file,
             settings_properties,
-            itinerary_ratios,
+            itinerary_ratios.clone(),
         )
         .unwrap();
 
@@ -337,57 +336,54 @@ mod test {
             "age,homeId,schoolId,workplaceId\n43,360930331020001,1,\n42,360930331020002,2,",
         );
         let synth_file = persist_tmp_csv(&input);
-        load_synth_population(&mut context, synth_file).unwrap();
+        load_synth_population(&mut context, synth_file, itinerary_ratios.clone()).unwrap();
         let age = [43, 42];
         let school_id = [1, 2];
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
         let census_tract_id = 36_093_033_102;
 
         assert_eq!(context.get_entity_count::<Person>(), 2);
-        assert_eq!(context.get_entity_count::<Setting>(), 5);
+        assert_eq!(context.get_entity_count::<Home>(), 2);
+        assert_eq!(context.get_entity_count::<CensusTract>(), 1);
+        assert_eq!(context.get_entity_count::<School>(), 2);
 
         let home_setting_id_1 = context
-            .query_result_iterator::<Setting, _>((
+            .query_result_iterator::<Home, _>((
                 GeographyProperties {
                     fips_code: home_id[0],
                 },
-                SettingCategory::Home,
             ))
             .next()
             .unwrap();
         let home_setting_id_2 = context
-            .query_result_iterator::<Setting, _>((
+            .query_result_iterator::<Home, _>((
                 GeographyProperties {
                     fips_code: home_id[1],
                 },
-                SettingCategory::Home,
             ))
             .next()
             .unwrap();
         let census_tract_setting_id = context
-            .query_result_iterator::<Setting, _>((
+            .query_result_iterator::<CensusTract, _>((
                 GeographyProperties {
                     fips_code: census_tract_id,
                 },
-                SettingCategory::CensusTract,
             ))
             .next()
             .unwrap();
         let school_setting_id_1 = context
-            .query_result_iterator::<Setting, _>((
+            .query_result_iterator::<School, _>((
                 GeographyProperties {
                     fips_code: school_id[0],
                 },
-                SettingCategory::School,
             ))
             .next()
             .unwrap();
         let school_setting_id_2 = context
-            .query_result_iterator::<Setting, _>((
+            .query_result_iterator::<School, _>((
                 GeographyProperties {
                     fips_code: school_id[1],
                 },
-                SettingCategory::School,
             ))
             .next()
             .unwrap();
@@ -395,13 +391,13 @@ mod test {
         for item in age.iter().take(1) {
             assert_eq!(1, context.query_entity_count::<Person, _>((Age(*item),)));
         }
-        assert_eq!(1, context.get_setting_members(school_setting_id_1).count());
-        assert_eq!(1, context.get_setting_members(home_setting_id_1).count());
-        assert_eq!(1, context.get_setting_members(school_setting_id_2).count());
-        assert_eq!(1, context.get_setting_members(home_setting_id_2).count());
+        assert_eq!(1, context.get_setting_members(SettingCategory::School(school_setting_id_1)).count());
+        assert_eq!(1, context.get_setting_members(SettingCategory::Home(home_setting_id_1)).count());
+        assert_eq!(1, context.get_setting_members(SettingCategory::School(school_setting_id_2)).count());
+        assert_eq!(1, context.get_setting_members(SettingCategory::Home(home_setting_id_2)).count());
         assert_eq!(
             2,
-            context.get_setting_members(census_tract_setting_id).count()
+            context.get_setting_members(SettingCategory::CensusTract(census_tract_setting_id)).count()
         );
     }
 
@@ -426,7 +422,7 @@ mod test {
             &mut context,
             setting_file,
             settings_properties,
-            itinerary_ratios,
+            itinerary_ratios.clone(),
         )
         .unwrap();
 
@@ -434,57 +430,54 @@ mod test {
             "age,homeId,schoolId,workplaceId\n43,360930331020001,,1\n42,360930331020002,,2",
         );
         let synth_file = persist_tmp_csv(&input);
-        load_synth_population(&mut context, synth_file).unwrap();
+        load_synth_population(&mut context, synth_file, itinerary_ratios.clone()).unwrap();
         let age = [43, 42];
         let workplace_id = [1, 2];
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
         let census_tract_id = 36_093_033_102;
 
         assert_eq!(context.get_entity_count::<Person>(), 2);
-        assert_eq!(context.get_entity_count::<Setting>(), 5);
+        assert_eq!(context.get_entity_count::<Home>(), 2);
+        assert_eq!(context.get_entity_count::<CensusTract>(), 1);
+        assert_eq!(context.get_entity_count::<Workplace>(), 2);
 
         let home_setting_id_1 = context
-            .query_result_iterator::<Setting, _>((
+            .query_result_iterator::<Home, _>((
                 GeographyProperties {
                     fips_code: home_id[0],
                 },
-                SettingCategory::Home,
             ))
             .next()
             .unwrap();
         let home_setting_id_2 = context
-            .query_result_iterator::<Setting, _>((
+            .query_result_iterator::<Home, _>((
                 GeographyProperties {
                     fips_code: home_id[1],
                 },
-                SettingCategory::Home,
             ))
             .next()
             .unwrap();
         let census_tract_setting_id = context
-            .query_result_iterator::<Setting, _>((
+            .query_result_iterator::<CensusTract, _>((
                 GeographyProperties {
                     fips_code: census_tract_id,
                 },
-                SettingCategory::CensusTract,
             ))
             .next()
             .unwrap();
         let workplace_setting_id_1 = context
-            .query_result_iterator::<Setting, _>((
+            .query_result_iterator::<Workplace, _>((
                 GeographyProperties {
                     fips_code: workplace_id[0],
                 },
-                SettingCategory::Workplace,
             ))
             .next()
             .unwrap();
         let workplace_setting_id_2 = context
-            .query_result_iterator::<Setting, _>((
+            .query_result_iterator::<Workplace, _>((
                 GeographyProperties {
                     fips_code: workplace_id[1],
                 },
-                SettingCategory::Workplace,
             ))
             .next()
             .unwrap();
@@ -494,21 +487,21 @@ mod test {
         }
         assert_eq!(
             1,
-            context.get_setting_members(workplace_setting_id_1).count()
+            context.get_setting_members(SettingCategory::Workplace(workplace_setting_id_1)).count()
         );
-        assert_eq!(1, context.get_setting_members(home_setting_id_1).count());
+        assert_eq!(1, context.get_setting_members(SettingCategory::Home(home_setting_id_1)).count());
         assert_eq!(
             1,
-            context.get_setting_members(workplace_setting_id_2).count()
+            context.get_setting_members(SettingCategory::Workplace(workplace_setting_id_2)).count()
         );
-        assert_eq!(1, context.get_setting_members(home_setting_id_2).count());
+        assert_eq!(1, context.get_setting_members(SettingCategory::Home(home_setting_id_2)).count());
         assert_eq!(
             1,
-            context.get_setting_members(workplace_setting_id_2).count()
+            context.get_setting_members(SettingCategory::Workplace(workplace_setting_id_2)).count()
         );
         assert_eq!(
             2,
-            context.get_setting_members(census_tract_setting_id).count()
+            context.get_setting_members(SettingCategory::CensusTract(census_tract_setting_id)).count()
         );
     }
 }

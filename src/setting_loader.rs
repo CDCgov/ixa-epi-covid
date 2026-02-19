@@ -7,7 +7,47 @@ use crate::parameters::{ContextParametersExt, Params};
 
 use ixa::profiling::open_span;
 
-define_entity!(Setting);
+define_entity!(Home);
+define_entity!(Workplace);
+define_entity!(School);
+define_entity!(CensusTract);
+
+// pub trait Setting: Entity {
+//     type Id;
+//     fn id(&self, context: &Context) -> Self::Id;
+// }
+
+// impl Setting for Home {
+//     type Id = HomeId;
+    
+//     fn id(&self) -> HomeId {
+        
+//     }
+// }
+
+// impl Setting for Workplace {
+//     type Id = WorkplaceId;
+    
+//     fn id(&self, context: &Context) -> WorkplaceId {
+//         context.get_entity_id(*self)
+//     }
+// }
+
+// impl Setting for School {
+//     type Id = SchoolId;
+    
+//     fn id(&self, context: &Context) -> SchoolId {
+//         context.get_entity_id(*self)
+//     }
+// }
+
+// impl Setting for CensusTract {
+//     type Id = CensusTractId;
+    
+//     fn id(&self, context: &Context) -> CensusTractId {
+//         context.get_entity_id(*self)
+//     }
+// }
 
 #[derive(Deserialize, Debug)]
 #[allow(non_snake_case)]
@@ -21,37 +61,52 @@ pub struct GeographyProperties {
     pub fips_code: usize,
 }
 
-impl_property!(GeographyProperties, Setting);
-
-#[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone, Copy)]
-pub enum SettingCategory {
-    Home,
-    Workplace,
-    School,
-    CensusTract,
-}
-
-impl_property!(SettingCategory, Setting);
+impl_property!(GeographyProperties, Home);
+impl_property!(GeographyProperties, Workplace);
+impl_property!(GeographyProperties, School);
+impl_property!(GeographyProperties, CensusTract);
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
 pub struct SettingEntityProperties {
     pub alpha: f64,
 }
 
-impl_property!(SettingEntityProperties, Setting);
+impl_property!(SettingEntityProperties, Home);
+impl_property!(SettingEntityProperties, Workplace);
+impl_property!(SettingEntityProperties, School);
+impl_property!(SettingEntityProperties, CensusTract);
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
 pub struct DefaultItineraryProperties {
     pub ratio: f64,
 }
 
-impl_property!(DefaultItineraryProperties, Setting);
+impl_property!(DefaultItineraryProperties, Home);
+impl_property!(DefaultItineraryProperties, Workplace);
+impl_property!(DefaultItineraryProperties, School);
+impl_property!(DefaultItineraryProperties, CensusTract);
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy, Eq, Hash)]
+pub enum SettingCategory {
+    Home(HomeId),
+    Workplace(WorkplaceId),
+    School(SchoolId),
+    CensusTract(CensusTractId),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy, Eq, Hash)]
+pub enum DefaultSettingCategory {
+    Home,
+    Workplace,
+    School,
+    CensusTract,
+}
 
 fn create_setting_from_record(
     context: &mut Context,
     setting_record: &SettingRecord,
-    setting_properties: HashMap<SettingCategory, SettingEntityProperties>,
-    itinerary_ratios: HashMap<SettingCategory, f64>,
+    setting_properties: HashMap<DefaultSettingCategory, SettingEntityProperties>,
+    itinerary_ratios: HashMap<DefaultSettingCategory, f64>,
 ) -> Result<(), IxaError> {
     // Create itinerary entries for all setting memberships in input file
     let setting_category: String = setting_record.setting_category.to_string();
@@ -60,79 +115,71 @@ fn create_setting_from_record(
     let fips_code: usize = setting_code.parse()?;
     let geography = GeographyProperties { fips_code };
 
-    let _setting_id = match setting_category.as_str() {
-        "homeId" => context.add_entity((
-            SettingCategory::Home,
+    if setting_category == "homeId" {
+        context.add_entity::<Home, _>((
             geography,
             setting_properties
-                .get(&SettingCategory::Home)
+                .get(&DefaultSettingCategory::Home)
                 .copied()
                 .unwrap_or(SettingEntityProperties { alpha: 0.0 }),
             DefaultItineraryProperties {
                 ratio: itinerary_ratios
-                    .get(&SettingCategory::Home)
+                    .get(&DefaultSettingCategory::Home)
                     .copied()
                     .unwrap_or(0.0),
             },
-        ))?,
-        "workplaceId" => context.add_entity((
-            SettingCategory::Workplace,
+        ))?;
+    } else if setting_category == "workplaceId" {
+        context.add_entity::<Workplace, _>((
             geography,
             setting_properties
-                .get(&SettingCategory::Workplace)
+                .get(&DefaultSettingCategory::Workplace)
                 .copied()
                 .unwrap_or(SettingEntityProperties { alpha: 0.0 }),
             DefaultItineraryProperties {
                 ratio: itinerary_ratios
-                    .get(&SettingCategory::Workplace)
+                    .get(&DefaultSettingCategory::Workplace)
                     .copied()
                     .unwrap_or(0.0),
             },
-        ))?,
-        "schoolId" => context.add_entity((
-            SettingCategory::School,
+        ))?;
+    } else if setting_category == "schoolId" {
+        context.add_entity::<School, _>((
             geography,
             setting_properties
-                .get(&SettingCategory::School)
+                .get(&DefaultSettingCategory::School)
                 .copied()
                 .unwrap_or(SettingEntityProperties { alpha: 0.0 }),
             DefaultItineraryProperties {
                 ratio: itinerary_ratios
-                    .get(&SettingCategory::School)
+                    .get(&DefaultSettingCategory::School)
                     .copied()
                     .unwrap_or(0.0),
             },
-        ))?,
-        "censustractId" => context.add_entity((
-            SettingCategory::CensusTract,
+        ))?;
+    } else if setting_category == "censustractId" {
+        context.add_entity::<CensusTract, _>((
             geography,
             setting_properties
-                .get(&SettingCategory::CensusTract)
+                .get(&DefaultSettingCategory::CensusTract)
                 .copied()
                 .unwrap_or(SettingEntityProperties { alpha: 0.0 }),
             DefaultItineraryProperties {
                 ratio: itinerary_ratios
-                    .get(&SettingCategory::CensusTract)
+                    .get(&DefaultSettingCategory::CensusTract)
                     .copied()
                     .unwrap_or(0.0),
             },
-        ))?,
-        _ => {
-            return Err(IxaError::IxaError(format!(
-                "Invalid setting category {} in settings file",
-                setting_category
-            )));
-        }
-    };
-
+        ))?;
+    }
     Ok(())
 }
 
 pub fn load_settings(
     context: &mut Context,
     setting_file: PathBuf,
-    setting_properties: HashMap<SettingCategory, SettingEntityProperties>,
-    itinerary_ratios: HashMap<SettingCategory, f64>,
+    setting_properties: HashMap<DefaultSettingCategory, SettingEntityProperties>,
+    itinerary_ratios: HashMap<DefaultSettingCategory, f64>,
 ) -> Result<(), IxaError> {
     let mut reader = csv::Reader::from_path(setting_file)?;
     let mut raw_record = csv::ByteRecord::new();

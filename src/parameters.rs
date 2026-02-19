@@ -5,7 +5,7 @@ use ixa::{
 use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, path::PathBuf};
 
-use crate::setting_loader::{SettingCategory, SettingEntityProperties};
+use crate::setting_loader::{DefaultSettingCategory, SettingEntityProperties};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RateFnType {
@@ -30,9 +30,9 @@ pub struct Params {
     /// A library of infection rates to assign to infected people.
     pub infectiousness_rate_fn: RateFnType,
     /// Setting properties by setting type
-    pub settings_properties: HashMap<SettingCategory, SettingEntityProperties>,
+    pub settings_properties: HashMap<DefaultSettingCategory, SettingEntityProperties>,
     /// ratios used to initialize indiviiduals itineraries by setting type.
-    pub itinerary_ratios: HashMap<SettingCategory, f64>,
+    pub itinerary_ratios: HashMap<DefaultSettingCategory, f64>,
     // /// Prevalence report with a period and name required
     // pub prevalence_report: ReportParams,
     // /// Incidence report with a period and name required
@@ -250,11 +250,11 @@ mod tests {
             settings_properties: HashMap::from_iter(
                 [
                     (
-                        SettingCategory::Home,
+                        DefaultSettingCategory::Home,
                         SettingEntityProperties { alpha: 0.5 },
                     ),
                     (
-                        SettingCategory::School,
+                        DefaultSettingCategory::School,
                         SettingEntityProperties { alpha: 0.5 },
                     ),
                 ]
@@ -262,7 +262,7 @@ mod tests {
                 .collect::<HashMap<_, _>>(),
             ),
             itinerary_ratios: HashMap::from_iter(
-                [(SettingCategory::Home, 0.0), (SettingCategory::School, 0.0)]
+                [(DefaultSettingCategory::Home, 0.0), (DefaultSettingCategory::School, 0.0)]
                     .into_iter()
                     .collect::<HashMap<_, _>>(),
             ),
@@ -290,11 +290,11 @@ mod tests {
             settings_properties: HashMap::from_iter(
                 [
                     (
-                        SettingCategory::Home,
+                        DefaultSettingCategory::Home,
                         SettingEntityProperties { alpha: 0.5 },
                     ),
                     (
-                        SettingCategory::School,
+                        DefaultSettingCategory::School,
                         SettingEntityProperties { alpha: 0.5 },
                     ),
                 ]
@@ -303,8 +303,8 @@ mod tests {
             ),
             itinerary_ratios: HashMap::from_iter(
                 [
-                    (SettingCategory::Home, -0.1),
-                    (SettingCategory::School, 0.0),
+                    (DefaultSettingCategory::Home, -0.1),
+                    (DefaultSettingCategory::School, 0.0),
                 ]
                 .into_iter()
                 .collect::<HashMap<_, _>>(),

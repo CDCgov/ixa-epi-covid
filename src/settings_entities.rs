@@ -1,9 +1,9 @@
 use crate::{
-    population_loader::{CensusTractId, HomeId, Person, PersonId, SchoolId, WorkplaceId, ItineraryEntry},
-    setting_loader::{DefaultItineraryProperties, SettingEntityProperties, Setting, SettingCategory, SettingId},
+    population_loader::{Person, PersonCensusTractId, PersonHomeId, PersonId, PersonSchoolId, PersonWorkplaceId},
+    setting_loader::{CensusTract, Home, School, SettingCategory, SettingEntityProperties, Workplace},
 };
 
-use ixa::{entity::EntitySetIterator, prelude::*};
+use ixa::{entity::{EntitySetIterator}, prelude::*};
 
 define_rng!(SettingsRng);
 // #[allow(dead_code)]
@@ -34,50 +34,53 @@ define_rng!(SettingsRng);
 //     Ok(())
 // }
 
-pub fn get_default_itinerary_ratio(context: &Context, setting: &SettingId) -> f64 {
-    context
-        .get_property::<Setting, DefaultItineraryProperties>(*setting)
-        .ratio
-}
+fn calculate(
+        property: SettingEntityProperties,
+        members_count: usize
+    ) -> f64 {
+        if members_count == 0 {
+            0.0
+        } else {
+            property.alpha * (members_count - 1) as f64
+        }
+    }
 
 pub trait ContextSettingExt: PluginContext + ContextRandomExt {
-    fn get_setting_members(&'_ self, setting: SettingId) -> EntitySetIterator<'_, Person> {
-        let setting_category = self.get_property::<Setting, SettingCategory>(setting);
-        match setting_category {
-            SettingCategory::Home => self.query_result_iterator::<Person, _>((HomeId(setting),)),
-            SettingCategory::Workplace => {
-                self.query_result_iterator::<Person, _>((WorkplaceId(Some(setting)),))
+    fn get_setting_members(&'_ self, setting: SettingCategory) -> EntitySetIterator<'_, Person> {
+        match setting {
+            SettingCategory::Home(home_id) => self.query_result_iterator::<Person, _>((PersonHomeId(home_id),)),
+            SettingCategory::Workplace(workplace_id) => {
+                self.query_result_iterator::<Person, _>((PersonWorkplaceId(Some(workplace_id)),))
             }
-            SettingCategory::School => {
-                self.query_result_iterator::<Person, _>((SchoolId(Some(setting)),))
+            SettingCategory::School(school_id) => {
+                self.query_result_iterator::<Person, _>((PersonSchoolId(Some(school_id)),))
             }
-            SettingCategory::CensusTract => {
-                self.query_result_iterator::<Person, _>((CensusTractId(setting),))
+            SettingCategory::CensusTract(census_tract_id) => {
+                self.query_result_iterator::<Person, _>((PersonCensusTractId(census_tract_id),))
             }
         }
     }
 
-    fn sample_setting_member(&mut self, setting: SettingId) -> Option<PersonId> {
-        let setting_category = self.get_property::<Setting, SettingCategory>(setting);
-        match setting_category {
-            SettingCategory::Home => {
-                self.sample_entity::<Person, _, _>(SettingsRng, (HomeId(setting),))
+    fn sample_setting_member(&mut self, setting: SettingCategory) -> Option<PersonId> {
+        match setting {
+            SettingCategory::Home(home_id) => {
+                self.sample_entity::<Person, _, _>(SettingsRng, (PersonHomeId(home_id),))
             }
-            SettingCategory::Workplace => {
-                self.sample_entity::<Person, _, _>(SettingsRng, (WorkplaceId(Some(setting)),))
+            SettingCategory::Workplace(workplace_id) => {
+                self.sample_entity::<Person, _, _>(SettingsRng, (PersonWorkplaceId(Some(workplace_id)),))
             }
-            SettingCategory::School => {
-                self.sample_entity::<Person, _, _>(SettingsRng, (SchoolId(Some(setting)),))
+            SettingCategory::School(school_id) => {
+                self.sample_entity::<Person, _, _>(SettingsRng, (PersonSchoolId(Some(school_id)),))
             }
-            SettingCategory::CensusTract => {
-                self.sample_entity::<Person, _, _>(SettingsRng, (CensusTractId(setting),))
+            SettingCategory::CensusTract(census_tract_id) => {
+                self.sample_entity::<Person, _, _>(SettingsRng, (PersonCensusTractId(census_tract_id),))
             }
         }
     }
 
     fn sample_setting_member_excluding(
         &mut self,
-        setting: SettingId,
+        setting: SettingCategory,
         exclude: &[PersonId],
     ) -> Option<PersonId> {
         if self.get_setting_members(setting).count() <= exclude.len() {
@@ -91,37 +94,51 @@ pub trait ContextSettingExt: PluginContext + ContextRandomExt {
         }
     }
 
-    fn get_settings(&self, person_id: PersonId) -> Vec<SettingId> {
-        let home_id = self.get_property::<Person, HomeId>(person_id).0;
-        let school_id = self.get_property::<Person, SchoolId>(person_id).0;
-        let workplace_id = self.get_property::<Person, WorkplaceId>(person_id).0;
-        let census_tract_id = self.get_property::<Person, CensusTractId>(person_id).0;
-        let mut setting_options = vec![home_id, census_tract_id];
+    fn get_settings(&self, person_id: PersonId) -> Vec<SettingCategory> {
+        let home_id = self.get_property::<Person, PersonHomeId>(person_id).0;
+        let school_id = self.get_property::<Person, PersonSchoolId>(person_id).0;
+        let workplace_id = self.get_property::<Person, PersonWorkplaceId>(person_id).0;
+        let census_tract_id = self.get_property::<Person, PersonCensusTractId>(person_id).0;
+        let mut setting_options = vec![SettingCategory::Home(home_id), SettingCategory::CensusTract(census_tract_id)];
         if let Some(school) = school_id {
-            setting_options.push(school);
+            setting_options.push(SettingCategory::School(school));
         }
         if let Some(workplace) = workplace_id {
-            setting_options.push(workplace);
+            setting_options.push(SettingCategory::Workplace(workplace));
         }
         setting_options
     }
 
     fn calculate_multiplier(
         &self, 
-        setting: SettingId
+        setting: SettingCategory
     ) -> f64 {
-        let setting_props = self.get_property::<Setting, SettingEntityProperties>(setting);
-        let members = self.get_setting_members(setting).collect::<Vec<_>>();
-        if members.is_empty() {
-            0.0
-        } else {
-            setting_props.alpha * (members.len() - 1) as f64
+        match setting {
+            SettingCategory::Home(setting_id) => {
+                let props = self.get_property::<Home, SettingEntityProperties>(setting_id);
+                let member_count = self.get_setting_members(setting).count();
+                calculate(props, member_count)
+            },
+            SettingCategory::Workplace(setting_id) => {
+                let props = self.get_property::<Workplace, SettingEntityProperties>(setting_id);
+                let member_count = self.get_setting_members(setting).count();
+                calculate(props, member_count)
+            },
+            SettingCategory::School(setting_id) => {
+                let props = self.get_property::<School, SettingEntityProperties>(setting_id);
+                let member_count = self.get_setting_members(setting).count();
+                calculate(props, member_count)
+            },
+            SettingCategory::CensusTract(setting_id) => {
+                let props = self.get_property::<CensusTract, SettingEntityProperties>(setting_id);
+                let member_count = self.get_setting_members(setting).count();
+                calculate(props, member_count)
+            },
         }
     }
 
-    fn sample_setting(&mut self, person_id: PersonId) -> SettingId {
-        let settings = self.get_settings(person_id);
-        let itinerary_entry: ItineraryEntry = self.get_property::<Person, ItineraryEntry>(person_id);
+    fn sample_setting(&mut self, person_id: PersonId) -> SettingCategory {
+        let settings = self.get_settings(person_id);        
         settings[self.sample_range(SettingsRng, 0..settings.len())]
     }
 
