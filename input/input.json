@@ -5,7 +5,7 @@
         "synth_population_file": "input/people_test.csv",
         "initial_incidence": 0.0,
         "import_cases_from_file": {
-            "on": true,
+            "include": true,
             "filename": "input/importation_test.csv"
         },
         "infectiousness_rate_fn": {"Constant": {

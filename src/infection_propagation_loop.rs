@@ -84,7 +84,7 @@ fn seed_initial_infections(context: &mut Context, initial_incidence: f64) {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ImportCasesFromFile {
-    pub on: bool,
+    pub include: bool,
     pub filename: Option<PathBuf>,
 }
 
@@ -122,7 +122,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
     if initial_incidence > 0.0 {
         seed_initial_infections(context, initial_incidence);
     }
-    if import_cases_from_file.on {
+    if import_cases_from_file.include {
         if let Some(filename) = import_cases_from_file.filename {
             load_imported_infection_plan(context, filename)?;
         } else {

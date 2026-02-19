@@ -154,7 +154,7 @@ impl Default for Params {
             synth_population_file: PathBuf::new(),
             initial_incidence: 0.0,
             import_cases_from_file: ImportCasesFromFile {
-                on: false,
+                include: false,
                 filename: None,
             },
             infectiousness_rate_fn: RateFnType::Constant {
