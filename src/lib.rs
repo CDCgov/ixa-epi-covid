@@ -6,8 +6,8 @@ pub mod parameters;
 pub mod population_loader;
 pub mod rate_fns;
 // pub mod reports;
-pub mod setting_loader;
 pub mod settings_entities;
+pub mod itinerary;
 
 pub use model::initialize_model;
 pub use parameters::ContextParametersExt;

@@ -1,8 +1,9 @@
 use crate::{
-    population_loader::{CensusTractId, HomeId, Person, PersonId, SchoolId, WorkplaceId},
+    population_loader::{PersonId},
+    itinerary::{ContextItineraryExt},
 };
 
-use ixa::{entity::EntitySetIterator, prelude::*};
+use ixa::{prelude::*};
 use serde::{Deserialize, Serialize};
 
 define_rng!(SettingsRng);
@@ -17,13 +18,14 @@ impl_property!(SettingCode, Setting);
 pub struct StateCode(pub usize);
 impl_property!(StateCode, Setting);
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
-pub struct CountyCode(pub usize);
-impl_property!(CountyCode, Setting);
+// #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
+// pub struct CountyCode(pub usize);
+// impl_property!(CountyCode, Setting);
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
-pub struct CensusTractCode(pub usize);
-impl_property!(CensusTractCode, Setting);
+// #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
+// pub struct CensusTractCode(pub usize);
+// impl_property!(CensusTractCode, Setting);
+
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub enum SettingCategory {
     Home,
@@ -38,53 +40,14 @@ define_property!(struct Alpha(pub f64), Setting);
 
 define_property!(struct DefaultItineraryRatio(pub f64), Setting);
 
-pub fn get_default_itinerary_ratio(context: &Context, setting: &SettingId) -> f64 {
-    context
-        .get_property::<Setting, DefaultItineraryRatio>(*setting)
-        .0
-}
 
-pub trait ContextSettingExt: PluginContext + ContextRandomExt {
-    fn get_setting_members(&'_ self, setting: SettingId) -> EntitySetIterator<'_, Person> {
-        let setting_category = self.get_property::<Setting, SettingCategory>(setting);
-        match setting_category {
-            SettingCategory::Home => self.query_result_iterator::<Person, _>((HomeId(setting),)),
-            SettingCategory::Workplace => {
-                self.query_result_iterator::<Person, _>((WorkplaceId(Some(setting)),))
-            }
-            SettingCategory::School => {
-                self.query_result_iterator::<Person, _>((SchoolId(Some(setting)),))
-            }
-            SettingCategory::CensusTract => {
-                self.query_result_iterator::<Person, _>((CensusTractId(setting),))
-            }
-        }
-    }
-
-    fn sample_setting_member(&mut self, setting: SettingId) -> Option<PersonId> {
-        let setting_category = self.get_property::<Setting, SettingCategory>(setting);
-        match setting_category {
-            SettingCategory::Home => {
-                self.sample_entity::<Person, _, _>(SettingsRng, (HomeId(setting),))
-            }
-            SettingCategory::Workplace => {
-                self.sample_entity::<Person, _, _>(SettingsRng, (WorkplaceId(Some(setting)),))
-            }
-            SettingCategory::School => {
-                self.sample_entity::<Person, _, _>(SettingsRng, (SchoolId(Some(setting)),))
-            }
-            SettingCategory::CensusTract => {
-                self.sample_entity::<Person, _, _>(SettingsRng, (CensusTractId(setting),))
-            }
-        }
-    }
-
+pub trait ContextSettingExt: PluginContext + ContextRandomExt + ContextItineraryExt {
     fn sample_setting_member_excluding(
         &mut self,
         setting: SettingId,
         exclude: &[PersonId],
     ) -> Option<PersonId> {
-        if self.get_setting_members(setting).count() <= exclude.len() {
+        if self.get_setting_members(setting).len() <= exclude.len() {
             return None;
         }
         loop {
@@ -95,27 +58,12 @@ pub trait ContextSettingExt: PluginContext + ContextRandomExt {
         }
     }
 
-    fn get_settings(&self, person_id: PersonId) -> Vec<SettingId> {
-        let home_id = self.get_property::<Person, HomeId>(person_id).0;
-        let school_id = self.get_property::<Person, SchoolId>(person_id).0;
-        let workplace_id = self.get_property::<Person, WorkplaceId>(person_id).0;
-        let census_tract_id = self.get_property::<Person, CensusTractId>(person_id).0;
-        let mut setting_options = vec![home_id, census_tract_id];
-        if let Some(school) = school_id {
-            setting_options.push(school);
-        }
-        if let Some(workplace) = workplace_id {
-            setting_options.push(workplace);
-        }
-        setting_options
-    }
-
     fn calculate_multiplier(
         &self, 
         setting: SettingId
     ) -> f64 {
         let alpha = self.get_property::<Setting, Alpha>(setting);
-        let members = self.get_setting_members(setting).collect::<Vec<_>>();
+        let members = self.get_setting_members(setting);
         if members.is_empty() {
             0.0
         } else {
@@ -123,9 +71,21 @@ pub trait ContextSettingExt: PluginContext + ContextRandomExt {
         }
     }
 
+    
     fn sample_setting(&mut self, person_id: PersonId) -> SettingId {
-        let settings = self.get_settings(person_id);
-        settings[self.sample_range(SettingsRng, 0..settings.len())]
+        let settings = self.get_active_settings_for_person(person_id);
+        let weights: Vec<f64> = settings.iter().map(|(_, w)| *w).collect();
+        let total: f64 = weights.iter().sum();
+        
+        if total == 0.0 {
+            return settings[self.sample_range(SettingsRng, 0..settings.len())].0;
+        }
+        
+        let mut val = self.sample_range(SettingsRng, 0.0..total);
+        weights.iter().enumerate()
+            .find(|(_, w)| { val -= *w; val <= 0.0 })
+            .map(|(i, _)| settings[i].0)
+            .unwrap_or_else(|| settings[settings.len() - 1].0)
     }
 
     /// Get the total current infectiousness multiplier for a person
@@ -134,10 +94,10 @@ pub trait ContextSettingExt: PluginContext + ContextRandomExt {
     /// These are generated without modification from the general formula of ratio * (N - 1) ^ alpha
     /// where N is the number of active members in the setting
     fn calculate_current_infectiousness_multiplier_for_person(&self, person_id: PersonId) -> f64 {
-        let settings = self.get_settings(person_id);
+        let settings = self.get_active_settings_for_person(person_id);
         let mut collector = 0.0;
         for setting in &settings{
-            collector += self.calculate_multiplier(*setting);
+            collector += setting.1 * self.calculate_multiplier(setting.0);
         }
         collector
     }
@@ -146,10 +106,10 @@ pub trait ContextSettingExt: PluginContext + ContextRandomExt {
     /// These are generated without modification from the general formula of ratio * (N - 1) ^ alpha
     /// where N is the number of all active and inactive members in the setting
     fn calculate_max_infectiousness_multiplier_for_person(&self, person_id: PersonId) -> f64 {
-        let settings  = self.get_settings(person_id);
+        let settings  = self.get_all_settings_for_person(person_id);
         let mut collector = 0.0;
         for setting in &settings {
-            let multiplier = self.calculate_multiplier(*setting);
+            let multiplier = self.calculate_multiplier(setting.0);
             collector = f64::max(collector, multiplier);
         };
         collector
