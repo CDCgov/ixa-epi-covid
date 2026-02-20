@@ -5,7 +5,7 @@ use ixa::{
 use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, path::PathBuf};
 
-use crate::setting_loader::{DefaultSettingCategory, SettingEntityProperties};
+use crate::settings_entities::{DefaultSettingCategory};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RateFnType {
@@ -30,7 +30,7 @@ pub struct Params {
     /// A library of infection rates to assign to infected people.
     pub infectiousness_rate_fn: RateFnType,
     /// Setting properties by setting type
-    pub settings_properties: HashMap<DefaultSettingCategory, SettingEntityProperties>,
+    pub settings_properties: HashMap<DefaultSettingCategory, f64>,
     /// ratios used to initialize indiviiduals itineraries by setting type.
     pub itinerary_ratios: HashMap<DefaultSettingCategory, f64>,
     // /// Prevalence report with a period and name required
@@ -96,7 +96,7 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
     let mut itinerary_ratio_sum = None;
 
     for setting in parameters.settings_properties.values() {
-        let alpha = setting.alpha;
+        let alpha = *setting;
         // Check alpha
         if !(0.0..=1.0).contains(&alpha) {
             return Err(IxaError::IxaError(
@@ -251,11 +251,11 @@ mod tests {
                 [
                     (
                         DefaultSettingCategory::Home,
-                        SettingEntityProperties { alpha: 0.5 },
+                        0.5,
                     ),
                     (
                         DefaultSettingCategory::School,
-                        SettingEntityProperties { alpha: 0.5 },
+                        0.5,
                     ),
                 ]
                 .into_iter()
@@ -291,11 +291,11 @@ mod tests {
                 [
                     (
                         DefaultSettingCategory::Home,
-                        SettingEntityProperties { alpha: 0.5 },
+                        0.5,
                     ),
                     (
                         DefaultSettingCategory::School,
-                        SettingEntityProperties { alpha: 0.5 },
+                        0.5,
                     ),
                 ]
                 .into_iter()
