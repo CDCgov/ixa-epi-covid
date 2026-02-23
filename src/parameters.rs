@@ -2,7 +2,7 @@ use ixa::{HashMap, HashMapExt, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, path::PathBuf};
 
-use crate::infection_propagation_loop::ImportCasesFromFile;
+use crate::infection_importation::ImportCasesFromFile;
 use crate::reports::ReportParams;
 use crate::settings::SettingProperties;
 
