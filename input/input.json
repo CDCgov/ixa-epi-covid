@@ -3,8 +3,8 @@
         "seed": 1234,
         "max_time": 100.0,
         "synth_population_file": "input/people_test.csv",
-        "initial_incidence": 0.0,
-        "import_cases_from_file": {
+        "initial_prevalence": 0.1,
+        "imported_cases_timeseries": {
             "include": true,
             "filename": "input/importation_test.csv"
         },

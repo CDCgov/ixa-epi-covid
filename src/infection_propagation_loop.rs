@@ -46,8 +46,16 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
             if event.current != InfectionStatus::Infectious {
                 return;
             }
-            schedule_next_forecasted_infection(context, event.entity_id);
+
             schedule_recovery(context, event.entity_id);
+
+            if context.get_current_time() > 0.0 {
+                schedule_next_forecasted_infection(context, event.entity_id);
+            } else {
+                context.add_plan(0.0, move |context| {
+                    schedule_next_forecasted_infection(context, event.entity_id);
+                });
+            }
         },
     );
 
@@ -494,12 +502,12 @@ mod test {
         let mut num_initial_infections = 0;
         let num_people = 1000;
         let num_sims = 10;
-        let mut initial_incidence = None;
+        let mut initial_prevalence = None;
         for seed in 0..num_sims {
             let mut context = setup_context(seed, 0.0, 0.0, 1.0);
-            if initial_incidence.is_none() {
+            if initial_prevalence.is_none() {
                 // If we don't have an initial incidence, get it
-                initial_incidence = Some(context.get_params().initial_incidence);
+                initial_prevalence = Some(context.get_params().initial_prevalence);
             }
             context.init_random(seed);
             // Add our people
@@ -517,7 +525,7 @@ mod test {
         // Check that the proportion of people is close to the expected proportion
         assert_almost_eq!(
             num_initial_infections as f64 / (num_people * num_sims) as f64,
-            initial_incidence.unwrap(),
+            initial_prevalence.unwrap(),
             0.01
         );
     }

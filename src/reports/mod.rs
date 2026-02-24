@@ -120,8 +120,8 @@ mod test {
                     "seed": 123,
                     "max_time": 200.0,
                     "synth_population_file": "input/people_test.csv",
-                    "initial_incidence": 0.01,
-                    "import_cases_from_file": {
+                    "initial_prevalence": 0.01,
+                    "imported_cases_timeseries": {
                         "include": false
                     },
                     "infectiousness_rate_fn": {"Constant": {"rate": 1.0, "duration": 5.0}},

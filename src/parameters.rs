@@ -31,9 +31,9 @@ pub struct Params {
     /// The path to the synthetic population file loaded in `population_loader`
     pub synth_population_file: PathBuf,
     /// The proportion of initial people who are infectious when we seed the population.
-    pub initial_incidence: f64,
+    pub initial_prevalence: f64,
     /// A flag to indicate whether to import cases from a file.
-    pub import_cases_from_file: ImportCasesFromFile,
+    pub imported_cases_timeseries: ImportCasesFromFile,
     /// A library of infection rates to assign to infected people.
     pub infectiousness_rate_fn: RateFnType,
     /// Setting properties by setting type
@@ -56,7 +56,7 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
         ));
     }
     // Initial conditions
-    if !(0.0..=1.0).contains(&parameters.initial_incidence) {
+    if !(0.0..=1.0).contains(&parameters.initial_prevalence) {
         return Err(IxaError::IxaError(
             "The initial incidence must be between 0 and 1, inclusive.".to_string(),
         ));
@@ -152,8 +152,8 @@ impl Default for Params {
             seed: 0,
             max_time: 0.0,
             synth_population_file: PathBuf::new(),
-            initial_incidence: 0.0,
-            import_cases_from_file: ImportCasesFromFile {
+            initial_prevalence: 0.0,
+            imported_cases_timeseries: ImportCasesFromFile {
                 include: false,
                 filename: None,
             },
@@ -219,7 +219,7 @@ mod tests {
     fn test_get_params() {
         let mut context = Context::new();
         let parameters = Params {
-            initial_incidence: 0.1,
+            initial_prevalence: 0.1,
             ..Default::default()
         };
         context
@@ -227,9 +227,9 @@ mod tests {
             .unwrap();
 
         let &Params {
-            initial_incidence, ..
+            initial_prevalence, ..
         } = context.get_params();
-        assert_almost_eq!(initial_incidence, 0.1, 0.0);
+        assert_almost_eq!(initial_prevalence, 0.1, 0.0);
     }
 
     #[test]
