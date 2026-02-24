@@ -25,8 +25,11 @@ pub struct ImportationRecord {
 }
 
 trait NovelInfectionContextExt: PluginContext + ContextEntitiesExt + InfectiousnessRateExt {
+    /// Seeds an infection for a given target person by sampling an infection time from a uniform distribution over the infectious period and then planning an infection for that person at the sampled time.
+    /// The method samples the infection time in this way to ensure that the full infectious period is not elapsed by time t=0.0
+    /// From the sample method reliance on `.get_person_rate_fn()`, the rate functions must already be loaded into the model when an infection is seeded.
     fn seed_infection(&mut self, target_id: PersonId) {
-        // Sample offset for the infectious period
+        // Sample offset for the infectious period.
         let uniform = Uniform::new(
             -self.get_person_rate_fn(target_id).infection_duration(),
             0.0,
@@ -118,6 +121,8 @@ fn load_importation_timeseries(context: &mut Context) -> Result<(), IxaError> {
     Ok(())
 }
 
+/// Initializes the infection importation module by loading the initial prevalence and importation timeseries according to the provided parameters.
+/// Infectiousness rate functions must be loaded in the model prior to initializng the initial prevalence because of dependency on infection duration
 pub fn init(context: &mut Context) -> Result<(), IxaError> {
     load_initial_prevalence(context);
     load_importation_timeseries(context)?;
