@@ -1,16 +1,13 @@
-use core::f64;
 use ixa::prelude::*;
-use rand_distr::Binomial;
 
 use crate::infectiousness_manager::{
     Forecast, InfectionContextExt, InfectionStatus, evaluate_forecast, get_forecast,
     infection_attempt,
 };
-use crate::parameters::{ContextParametersExt, Params};
 use crate::population_loader::{Person, PersonId};
 use crate::rate_fns::{InfectiousnessRateExt, load_rate_fns};
 use ixa::profiling::{increment_named_count, open_span};
-use ixa::{Context, ContextRandomExt, IxaError, define_rng, trace};
+use ixa::{Context, IxaError, define_rng, trace};
 
 define_rng!(InfectionRng);
 
@@ -41,53 +38,24 @@ fn schedule_recovery(context: &mut Context, person: PersonId) {
     });
 }
 
-/// Takes susceptible people from the population and seeds them as infected.
-/// The total number of people seeded is distributed binomially according to the initial incidence to seed.
-/// The initial incidence to seed is relative to the population size, not the current number of susceptibles.
-/// This may result in the entire susceptible population being seeded as infected
-#[allow(clippy::cast_possible_truncation)]
-fn seed_initial_infections(context: &mut Context, initial_incidence: f64) {
-    let binom = Binomial::new(
-        context.get_entity_count::<Person>() as u64,
-        initial_incidence,
-    )
-    .unwrap();
-    let k: u64 = context.sample_distr(InfectionRng, binom);
-    trace!(
-        "Altering {k} susceptibles with a seeding function using proportion {initial_incidence}."
-    );
-
-    if k > 0 {
-        let susceptibles = context.sample_entities::<Person, _, _>(
-            InfectionRng,
-            (InfectionStatus::Susceptible,),
-            k as usize,
-        );
-        for person in susceptibles {
-            trace!("Infecting person {person} as an initial infection.");
-            context.add_plan(0.0, move |context| {
-                context.infect_person(person, None, None, None);
-            });
-        }
-    }
-}
-
 pub fn init(context: &mut Context) -> Result<(), IxaError> {
-    let &Params {
-        initial_incidence, ..
-    } = context.get_params();
-
     load_rate_fns(context)?;
-    seed_initial_infections(context, initial_incidence);
-
     // Subscribe to the person becoming infectious to trigger the infection propagation loop
     context.subscribe_to_event(
         |context, event: PropertyChangeEvent<Person, InfectionStatus>| {
             if event.current != InfectionStatus::Infectious {
                 return;
             }
-            schedule_next_forecasted_infection(context, event.entity_id);
+
             schedule_recovery(context, event.entity_id);
+
+            if context.get_current_time() > 0.0 {
+                schedule_next_forecasted_infection(context, event.entity_id);
+            } else {
+                context.add_plan(0.0, move |context| {
+                    schedule_next_forecasted_infection(context, event.entity_id);
+                });
+            }
         },
     );
 
@@ -103,13 +71,13 @@ mod test {
     use ixa::{HashMap, assert_almost_eq};
 
     use crate::Age;
+    use crate::infection_propagation_loop::InfectionRng;
     use crate::infectiousness_manager::InfectionData;
     use crate::population_loader::PersonId;
     use crate::{
         define_setting_category,
         infection_propagation_loop::{
             InfectionStatus, init, schedule_next_forecasted_infection, schedule_recovery,
-            seed_initial_infections,
         },
         infectiousness_manager::{InfectionContextExt, max_total_infectiousness_multiplier},
         parameters::{ContextParametersExt, CoreSettingsTypes, GlobalParams, Params, RateFnType},
@@ -136,10 +104,10 @@ mod test {
 
     fn setup_context(seed: u64, rate: f64, alpha: f64, duration: f64) -> Context {
         let mut context = Context::new();
+
         let parameters = Params {
             seed,
             max_time: 100.0,
-            initial_incidence: 0.1, // 10% of the population
             infectiousness_rate_fn: RateFnType::Constant { rate, duration },
             settings_properties: HashMap::from_iter(
                 [
@@ -181,60 +149,6 @@ mod test {
     }
 
     #[test]
-    fn test_seed_initial_conditions() {
-        let mut context = setup_context(0, 1.0, 1.0, 5.0);
-        load_rate_fns(&mut context).unwrap();
-        let initial_infected: PersonId = context.add_entity((Age(30),)).unwrap();
-        seed_initial_infections(&mut context, 1.0);
-        // we check at time 0 to since individuals infections begin before time 0
-        context.add_plan(0.0, move |context| {
-            assert_eq!(
-                context.get_property::<Person, InfectionStatus>(initial_infected),
-                InfectionStatus::Infectious
-            );
-        });
-    }
-
-    #[test]
-    fn test_seed_initial_conditions_empty() {
-        let mut context = setup_context(0, 1.0, 1.0, 5.0);
-        load_rate_fns(&mut context).unwrap();
-        let person: PersonId = context.add_entity((Age(30),)).unwrap();
-        seed_initial_infections(&mut context, 0.0);
-        assert_eq!(
-            context.get_property::<Person, InfectionStatus>(person),
-            InfectionStatus::Susceptible
-        );
-    }
-
-    #[test]
-    fn test_binomial_incidence() {
-        let reps = 1000;
-        let incidence = 0.5;
-        let pop_size = 100;
-        let num_initial_infections = Rc::new(RefCell::new(0));
-        for rep in 0..reps {
-            let num_initial_infections_clone: Rc<RefCell<usize>> =
-                Rc::clone(&num_initial_infections);
-            let mut context = setup_context(rep, 1.0, 1.0, 5.0);
-            load_rate_fns(&mut context).unwrap();
-            for _ in 0..pop_size {
-                context.add_entity::<Person, _>((Age(30),)).unwrap();
-            }
-            seed_initial_infections(&mut context, incidence);
-            context.add_plan(0.0, move |context| {
-                *num_initial_infections_clone.borrow_mut() +=
-                    context.query_entity_count::<Person, _>((InfectionStatus::Infectious,));
-            });
-            context.execute();
-        }
-        #[allow(clippy::cast_precision_loss, clippy::cast_lossless)]
-        let observed_incidence =
-            *num_initial_infections.borrow() as f64 / (reps as f64 * pop_size as f64);
-        assert_almost_eq!(incidence, observed_incidence, 0.01);
-    }
-
-    #[test]
     fn test_init_loop() {
         let mut context = setup_context(42, 1.0, 1.0, 5.0);
         for _ in 0..10 {
@@ -270,10 +184,18 @@ mod test {
         init(&mut context).unwrap();
 
         // We're going to extract out the number of initial infections and recovered
-        let num_initial_infections = Rc::new(RefCell::new(0));
+        let num_initial_infections = Rc::new(RefCell::new(100));
         let num_initial_infections_clone = Rc::clone(&num_initial_infections);
 
         context.add_plan(0.0, move |context| {
+            let susceptibles = context.sample_entities::<Person, _, _>(
+                InfectionRng,
+                (InfectionStatus::Susceptible,),
+                *num_initial_infections_clone.borrow(),
+            );
+            for person in susceptibles {
+                context.infect_person(person, None, None, None);
+            }
             // Count the number of initial infections and recovered actually created from the binomial
             // sampling
             *num_initial_infections_clone.borrow_mut() =
@@ -301,6 +223,8 @@ mod test {
             *num_new_infections.borrow(),
             *num_initial_infections.borrow()
         );
+
+        assert!(*num_initial_infections.borrow() > 0);
 
         // And that recovereds is equal to the initial infectious (who have recovered) + recovered
         assert_eq!(
@@ -578,12 +502,12 @@ mod test {
         let mut num_initial_infections = 0;
         let num_people = 1000;
         let num_sims = 10;
-        let mut initial_incidence = None;
+        let mut initial_prevalence = None;
         for seed in 0..num_sims {
             let mut context = setup_context(seed, 0.0, 0.0, 1.0);
-            if initial_incidence.is_none() {
+            if initial_prevalence.is_none() {
                 // If we don't have an initial incidence, get it
-                initial_incidence = Some(context.get_params().initial_incidence);
+                initial_prevalence = Some(context.get_params().initial_prevalence);
             }
             context.init_random(seed);
             // Add our people
@@ -601,7 +525,7 @@ mod test {
         // Check that the proportion of people is close to the expected proportion
         assert_almost_eq!(
             num_initial_infections as f64 / (num_people * num_sims) as f64,
-            initial_incidence.unwrap(),
+            initial_prevalence.unwrap(),
             0.01
         );
     }
