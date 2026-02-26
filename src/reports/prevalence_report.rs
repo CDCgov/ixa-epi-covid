@@ -1,6 +1,6 @@
 use crate::{
-    infectiousness_manager::InfectionStatus,
     clinical_status::SymptomStatus,
+    infectiousness_manager::InfectionStatus,
     population_loader::{Age, Alive, Person},
 };
 use ixa::prelude::*;

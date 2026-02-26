@@ -43,7 +43,7 @@ pub struct Params {
     /// Symptom Duration
     pub symptom_duration: f64,
     /// Asymptomatic individuals are less infectious than symptomatic individuals
-    /// Setting properties by setting type    
+    /// Setting properties by setting type
     pub settings_properties: HashMap<CoreSettingsTypes, SettingProperties>,
     /// ratios used to initialize indiviiduals itineraries by setting type.
     pub itinerary_ratios: HashMap<CoreSettingsTypes, f64>,
