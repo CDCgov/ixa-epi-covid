@@ -1,0 +1,21 @@
+[project]
+name = "covid-model"
+version = "0.1.0"
+description = "Example ixa covid model"
+readme = "README.md"
+authors = [
+    { name = "Guido Espana", email = "ukd0@cdc.gov" },
+]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.3.4",
+    "cfa-mrp",
+    "polars>=1.38.1",
+]
+
+[project.scripts]
+covid_model = "covid_model.covid_model:main"
+
+[build-system]
+requires = ["uv_build>=0.9.21,<0.10.0"]
+build-backend = "uv_build"
