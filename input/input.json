@@ -12,11 +12,15 @@
                 "rate": 1.0,
                 "duration": 5.0
             }
-        },
-        "settings_properties": {"Home": {"alpha": 0.0},
-                            "Workplace": {"alpha": 0.0},
-                            "School": {"alpha": 0.0},
-                            "CensusTract": {"alpha": 0.0}},
+	},
+    "probability_symptoms": 0.6,
+    "incubation_period": 3.0,
+    "symptom_duration": 5.0,
+    "settings_properties": {
+	    "Home": {"alpha": 0.0},
+        "Workplace": {"alpha": 0.0},
+        "School": {"alpha": 0.0},
+        "CensusTract": {"alpha": 0.0}},
         "itinerary_ratios": {"Home": 0.25, "Workplace": 0.25, "School": 0.25, "CensusTract": 0.25},
         "prevalence_report": {
             "write": true,

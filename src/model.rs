@@ -1,7 +1,7 @@
 use ixa::{ExecutionPhase, prelude::*};
 
 use crate::{
-    infection_importation, infection_propagation_loop, population_loader, reports, settings,
+    clinical_status, infection_importation, infection_propagation_loop, population_loader, reports, settings
 };
 
 pub fn initialize_model(context: &mut Context, seed: u64, max_time: f64) -> Result<(), IxaError> {
@@ -21,6 +21,7 @@ pub fn initialize_model(context: &mut Context, seed: u64, max_time: f64) -> Resu
     population_loader::init(context)?;
     infection_propagation_loop::init(context)?;
     infection_importation::init(context)?;
+    clinical_status::init(context)?;
     reports::init(context)?;
 
     Ok(())

@@ -36,7 +36,14 @@ pub struct Params {
     pub imported_cases_timeseries: ImportCasesFromFile,
     /// A library of infection rates to assign to infected people.
     pub infectiousness_rate_fn: RateFnType,
-    /// Setting properties by setting type
+    /// Proportion of infected individuals who develop symptoms
+    pub probability_symptoms: f64,
+    /// Incubation period
+    pub incubation_period: f64,
+    /// Symptom Duration
+    pub symptom_duration: f64,
+    /// Asymptomatic individuals are less infectious than symptomatic individuals
+    /// Setting properties by setting type    
     pub settings_properties: HashMap<CoreSettingsTypes, SettingProperties>,
     /// ratios used to initialize indiviiduals itineraries by setting type.
     pub itinerary_ratios: HashMap<CoreSettingsTypes, f64>,
@@ -161,6 +168,9 @@ impl Default for Params {
                 rate: 1.0,
                 duration: 5.0,
             },
+            probability_symptoms: 0.0,
+            incubation_period: 1.0,
+            symptom_duration: 1.0,
             settings_properties: HashMap::new(),
             itinerary_ratios: HashMap::new(),
             prevalence_report: ReportParams {

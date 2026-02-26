@@ -1,5 +1,6 @@
 use crate::{
     infectiousness_manager::InfectionStatus,
+    clinical_status::SymptomStatus,
     population_loader::{Age, Alive, Person},
 };
 use ixa::prelude::*;
@@ -12,23 +13,16 @@ struct PersonPropertyReport {
     t: f64,
     age: u8,
     infection_status: InfectionStatus,
+    symptoms: SymptomStatus,
     count: usize,
 }
 
 define_report!(PersonPropertyReport);
 
-define_multi_property!((Age, InfectionStatus), Person);
-
-// #[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Copy, Clone, Debug)]
-// pub struct PersonReportProperties {
-//     age: u8,
-//     infection_status: InfectionStatus,
-// }
-
-// impl_derived_property!(PersonReportProperties, Person, ((Age, InfectionStatus)));
+define_multi_property!((Age, InfectionStatus, SymptomStatus), Person);
 
 struct PropertyReportDataContainer {
-    report_map_container: HashMap<(Age, InfectionStatus), usize>,
+    report_map_container: HashMap<(Age, InfectionStatus, SymptomStatus), usize>,
 }
 
 define_data_plugin!(
@@ -39,7 +33,7 @@ define_data_plugin!(
     }
 );
 
-type ReportEvent = PropertyChangeEvent<Person, (Age, InfectionStatus)>;
+type ReportEvent = PropertyChangeEvent<Person, (Age, InfectionStatus, SymptomStatus)>;
 
 fn update_property_change_counts(context: &mut Context, event: ReportEvent) {
     let report_container_mut = context.get_data_mut(PropertyReportDataPlugin);
@@ -65,6 +59,7 @@ fn send_property_counts(context: &mut Context) {
             t: context.get_current_time(),
             age: values.0.0,
             infection_status: values.1,
+            symptoms: values.2,
             count: *count_property,
         });
     }
@@ -85,7 +80,7 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), I
     context.with_query_results::<Person, _>((Alive(true),), &mut |current_people| {
         //current_people = results.to_owned_vec();
         for person in current_people {
-            let value: (Age, InfectionStatus) = context.get_property(*person);
+            let value: (Age, InfectionStatus, SymptomStatus) = context.get_property(*person);
             map_counts
                 .entry(value)
                 .and_modify(|count| *count += 1)
