@@ -165,7 +165,7 @@ css = [
 [[package]]
 name = "calibrationtools"
 version = "0.1.0"
-source = { git = "https://github.com/CDCgov/cfa-calibration-tools.git?branch=gce-abc-mrp-example#c25346f57684af58571dc2f2ce254ad952236085" }
+source = { git = "https://github.com/CDCgov/cfa-calibration-tools.git?branch=wtk-impl-abc-mvp#1f6f385679cd588d24fd1b81f519a828c655ad94" }
 dependencies = [
     { name = "cfa-mrp" },
     { name = "numpy" },
@@ -726,7 +726,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "calibrationtools", git = "https://github.com/CDCgov/cfa-calibration-tools.git?branch=gce-abc-mrp-example" },
+    { name = "calibrationtools", git = "https://github.com/CDCgov/cfa-calibration-tools.git?branch=wtk-impl-abc-mvp" },
     { name = "census", specifier = ">=0.8.25" },
     { name = "cfa-mrp" },
     { name = "covid-model", editable = "packages/covid_model" },

@@ -25,7 +25,7 @@ requires = ["uv-build>=0.8.13,<0.9.0"]
 build-backend = "uv-build"
 
 [tool.uv.sources]
-calibrationtools = { git = "https://github.com/CDCgov/cfa-calibration-tools.git", branch = "gce-abc-mrp-example" }
+calibrationtools = { git = "https://github.com/CDCgov/cfa-calibration-tools.git", branch = "wtk-impl-abc-mvp" }
 covid-model = { workspace = true }
 
 [tool.uv]
