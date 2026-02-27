@@ -37,9 +37,11 @@ config = {
     "target_csv": "./input/target_data_phase1.csv",
 }
 
-if os.path.exists(config["output_dir"]):
-    shutil.rmtree(str(config["output_dir"]))
+output_dir = Path(config["output_dir"])
+if os.path.exists(output_dir):
+    shutil.rmtree(str(output_dir))
 
+output_dir.mkdir(parents=True, exist_ok=True)    
 input_file_names = [
     config[x] for x in ["exe_file", "default_params_file", "target_csv"]
 ]
