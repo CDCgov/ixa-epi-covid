@@ -1,17 +1,17 @@
 use crate::infectiousness_manager::InfectionData;
 use crate::population_loader::{Person, PersonId};
+use crate::settings_entities::SettingCategory;
 use ixa::prelude::PropertyChangeEvent;
 use ixa::profiling::open_span;
 use ixa::{Context, IxaError, define_report, report::ContextReportExt};
 use serde::{Deserialize, Serialize};
-use std::string::ToString;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 struct TransmissionReport {
     time: f64,
     target_id: PersonId,
     infected_by: Option<PersonId>,
-    infection_setting_type: Option<String>,
+    infection_setting_type: Option<SettingCategory>,
     infection_setting_id: Option<usize>,
 }
 
@@ -21,7 +21,7 @@ fn record_transmission_event(
     context: &mut Context,
     target_id: PersonId,
     infected_by: Option<PersonId>,
-    infection_setting_type: Option<String>,
+    infection_setting_type: Option<SettingCategory>,
     infection_setting_id: Option<usize>,
 ) {
     if infected_by.is_some() {
@@ -53,7 +53,7 @@ pub fn init(context: &mut Context, file_name: &str) -> Result<(), IxaError> {
                 context,
                 event.entity_id,
                 infected_by,
-                infection_setting_type.map(ToString::to_string),
+                infection_setting_type,
                 infection_setting_id,
             );
         }
@@ -70,6 +70,7 @@ mod test {
         population_loader::PersonId,
         rate_fns::load_rate_fns,
         reports::ReportParams,
+        settings_entities::SettingCategory,
     };
     use ixa::{
         Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt, ContextReportExt,
@@ -110,7 +111,7 @@ mod test {
 
         let source: PersonId = context.add_entity((Age(30),)).unwrap();
         let target: PersonId = context.add_entity((Age(30),)).unwrap();
-        let setting_type = Some("test_setting");
+        let setting_type = Some(SettingCategory::Home);
         let setting_id: Option<usize> = Some(1);
         let infection_time = 1.0;
 
@@ -143,10 +144,7 @@ mod test {
             assert_almost_eq!(record.time, infection_time, 0.0);
             assert_eq!(record.target_id, target);
             assert_eq!(record.infected_by.unwrap(), source);
-            assert_eq!(
-                record.infection_setting_type,
-                Some("test_setting".to_string())
-            );
+            assert_eq!(record.infection_setting_type, Some(SettingCategory::Home));
             assert_eq!(record.infection_setting_id, setting_id);
             line_count += 1;
         }

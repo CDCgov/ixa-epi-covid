@@ -5,7 +5,7 @@ use ixa::{
 use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, path::PathBuf};
 
-use crate::settings_entities::{SettingCategory};
+use crate::{reports::ReportParams, settings_entities::SettingCategory};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RateFnType {
@@ -23,8 +23,6 @@ pub struct Params {
     pub max_time: f64,
     /// The path to the synthetic population file loaded in `population_loader`
     pub synth_population_file: PathBuf,
-    /// The path to the setting file loaded in `setting_loader`
-    pub setting_file: PathBuf,
     /// The proportion of initial people who are infectious when we seed the population.
     pub initial_incidence: f64,
     /// A library of infection rates to assign to infected people.
@@ -33,12 +31,12 @@ pub struct Params {
     pub settings_properties: HashMap<SettingCategory, f64>,
     /// ratios used to initialize indiviiduals itineraries by setting type.
     pub itinerary_ratios: HashMap<SettingCategory, f64>,
-    // /// Prevalence report with a period and name required
-    // pub prevalence_report: ReportParams,
-    // /// Incidence report with a period and name required
-    // pub incidence_report: ReportParams,
-    // /// Transmission report with a name required
-    // pub transmission_report: ReportParams,
+    /// Prevalence report with a period and name required
+    pub prevalence_report: ReportParams,
+    /// Incidence report with a period and name required
+    pub incidence_report: ReportParams,
+    /// Transmission report with a name required
+    pub transmission_report: ReportParams,
 }
 
 #[allow(clippy::too_many_lines)]
@@ -145,7 +143,6 @@ impl Default for Params {
             seed: 0,
             max_time: 0.0,
             synth_population_file: PathBuf::new(),
-            setting_file: PathBuf::new(),
             initial_incidence: 0.0,
             infectiousness_rate_fn: RateFnType::Constant {
                 rate: 1.0,
@@ -153,21 +150,21 @@ impl Default for Params {
             },
             settings_properties: HashMap::new(),
             itinerary_ratios: HashMap::new(),
-            // prevalence_report: ReportParams {
-            //     write: false,
-            //     filename: None,
-            //     period: None,
-            // },
-            // incidence_report: ReportParams {
-            //     write: false,
-            //     filename: None,
-            //     period: None,
-            // },
-            // transmission_report: ReportParams {
-            //     write: false,
-            //     filename: None,
-            //     period: None,
-            // },
+            prevalence_report: ReportParams {
+                write: false,
+                filename: None,
+                period: None,
+            },
+            incidence_report: ReportParams {
+                write: false,
+                filename: None,
+                period: None,
+            },
+            transmission_report: ReportParams {
+                write: false,
+                filename: None,
+                period: None,
+            },
         }
     }
 }
@@ -248,18 +245,9 @@ mod tests {
     fn test_validate_split_zeros() {
         let parameters = Params {
             settings_properties: HashMap::from_iter(
-                [
-                    (
-                        SettingCategory::Home,
-                        0.5,
-                    ),
-                    (
-                        SettingCategory::School,
-                        0.5,
-                    ),
-                ]
-                .into_iter()
-                .collect::<HashMap<_, _>>(),
+                [(SettingCategory::Home, 0.5), (SettingCategory::School, 0.5)]
+                    .into_iter()
+                    .collect::<HashMap<_, _>>(),
             ),
             itinerary_ratios: HashMap::from_iter(
                 [(SettingCategory::Home, 0.0), (SettingCategory::School, 0.0)]
@@ -288,18 +276,9 @@ mod tests {
     fn test_validate_split_negative() {
         let parameters = Params {
             settings_properties: HashMap::from_iter(
-                [
-                    (
-                        SettingCategory::Home,
-                        0.5,
-                    ),
-                    (
-                        SettingCategory::School,
-                        0.5,
-                    ),
-                ]
-                .into_iter()
-                .collect::<HashMap<_, _>>(),
+                [(SettingCategory::Home, 0.5), (SettingCategory::School, 0.5)]
+                    .into_iter()
+                    .collect::<HashMap<_, _>>(),
             ),
             itinerary_ratios: HashMap::from_iter(
                 [

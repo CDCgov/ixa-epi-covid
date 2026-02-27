@@ -104,10 +104,13 @@ mod test {
 
     use crate::Age;
     use crate::infectiousness_manager::InfectionData;
+    use crate::itinerary::{
+        BelongsTo, CensusTractItinerary, ContextItineraryExt, HomeItinerary, SchoolItinerary,
+        WorkplaceItinerary,
+    };
     use crate::population_loader::PersonId;
-    use crate::setting_loader::{SettingCategory, SettingEntityProperties};
+    use crate::settings_entities::{ContextSettingExt, Setting, SettingCategory};
     use crate::{
-        define_setting_category,
         infection_propagation_loop::{
             InfectionStatus, init, schedule_next_forecasted_infection, schedule_recovery,
             seed_initial_infections,
@@ -116,23 +119,111 @@ mod test {
         parameters::{ContextParametersExt, GlobalParams, Params, RateFnType},
         population_loader::Person,
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
-        settings::{
-            CensusTract, ContextSettingExt, Home, ItineraryEntry, SettingId, SettingProperties,
-            Workplace,
-        },
+        settings_entities::SettingId,
     };
 
-    define_setting_category!(HomogeneousMixing);
-
-    fn set_homogeneous_mixing_itinerary(
+    fn set_single_setting_itinerary(
         context: &mut Context,
         person_id: PersonId,
+        setting_id: Option<SettingId>,
     ) -> Result<(), IxaError> {
-        let itinerary = vec![ItineraryEntry::new(
-            SettingId::new(HomogeneousMixing, 0),
-            1.0,
-        )];
-        context.add_itinerary(person_id, itinerary)
+        let setting_category =
+            context.get_property::<Setting, SettingCategory>(setting_id.unwrap());
+        match setting_category {
+            SettingCategory::Home => {
+                let _itinerary_id = context
+                    .add_entity((
+                        BelongsTo(person_id),
+                        HomeItinerary {
+                            home_id: setting_id,
+                            ratio: Some(1.0),
+                        },
+                        SchoolItinerary {
+                            school_id: None,
+                            ratio: None,
+                        },
+                        WorkplaceItinerary {
+                            workplace_id: None,
+                            ratio: None,
+                        },
+                        CensusTractItinerary {
+                            census_tract_id: setting_id,
+                            ratio: None,
+                        },
+                    ))
+                    .unwrap();
+            }
+            SettingCategory::Workplace => {
+                let _itinerary_id = context
+                    .add_entity((
+                        BelongsTo(person_id),
+                        HomeItinerary {
+                            home_id: None,
+                            ratio: None,
+                        },
+                        SchoolItinerary {
+                            school_id: None,
+                            ratio: None,
+                        },
+                        WorkplaceItinerary {
+                            workplace_id: setting_id,
+                            ratio: Some(1.0),
+                        },
+                        CensusTractItinerary {
+                            census_tract_id: None,
+                            ratio: None,
+                        },
+                    ))
+                    .unwrap();
+            }
+            SettingCategory::CensusTract => {
+                let _itinerary_id = context
+                    .add_entity((
+                        BelongsTo(person_id),
+                        HomeItinerary {
+                            home_id: None,
+                            ratio: None,
+                        },
+                        SchoolItinerary {
+                            school_id: None,
+                            ratio: None,
+                        },
+                        WorkplaceItinerary {
+                            workplace_id: None,
+                            ratio: None,
+                        },
+                        CensusTractItinerary {
+                            census_tract_id: setting_id,
+                            ratio: Some(1.0),
+                        },
+                    ))
+                    .unwrap();
+            }
+            SettingCategory::School => {
+                let _itinerary_id = context
+                    .add_entity((
+                        BelongsTo(person_id),
+                        HomeItinerary {
+                            home_id: None,
+                            ratio: None,
+                        },
+                        SchoolItinerary {
+                            school_id: setting_id,
+                            ratio: Some(1.0),
+                        },
+                        WorkplaceItinerary {
+                            workplace_id: None,
+                            ratio: None,
+                        },
+                        CensusTractItinerary {
+                            census_tract_id: None,
+                            ratio: None,
+                        },
+                    ))
+                    .unwrap();
+            }
+        };
+        Ok(())
     }
 
     fn setup_context(seed: u64, rate: f64, alpha: f64, duration: f64) -> Context {
@@ -144,22 +235,9 @@ mod test {
             infectiousness_rate_fn: RateFnType::Constant { rate, duration },
             settings_properties: HashMap::from_iter(
                 [
-                    (
-                        SettingCategory::Home,
-                        SettingEntityProperties { alpha: 0.5 },
-                    ),
-                    (
-                        SettingCategory::Workplace,
-                        SettingEntityProperties { alpha: 0.5 },
-                    ),
-                    (
-                        SettingCategory::CensusTract,
-                        SettingEntityProperties {
-                            alpha: 0.5,
-                            // Itinerary is specified in the `set_homogeneous_mixing_itinerary` function
-                            // so we do not need to set it here.
-                        },
-                    ),
+                    (SettingCategory::Home, alpha),
+                    (SettingCategory::Workplace, alpha),
+                    (SettingCategory::CensusTract, alpha),
                 ]
                 .into_iter()
                 .collect::<HashMap<_, _>>(),
@@ -174,12 +252,6 @@ mod test {
         context.init_random(parameters.seed);
         context
             .set_global_property_value(GlobalParams, parameters)
-            .unwrap();
-
-        // We also set up a homogenous mixing itinerary so that when we don't call `settings::init`,
-        // we still have people in settings.
-        context
-            .register_setting_category(&HomogeneousMixing, SettingProperties { alpha }, 1.0)
             .unwrap();
         context
     }
@@ -343,19 +415,25 @@ mod test {
             let infection_times_clone = Rc::clone(&infection_times);
             let num_infected_clone = Rc::clone(&num_infected);
             let mut context = setup_context(seed, rate, alpha, duration);
+            let tract_setting_id: Option<SettingId> = Some(
+                context
+                    .add_setting(SettingCategory::CensusTract, "10000000000000".to_owned())
+                    .unwrap(),
+            );
 
             // We only run the simulation for 1.0 time units.
             context.add_plan_with_phase(1.0, ixa::Context::shutdown, ExecutionPhase::Last);
             // Add a a person who will get infected.
             let p1: PersonId = context.add_entity((Age(30),)).unwrap();
-            set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
+            set_single_setting_itinerary(&mut context, p1, tract_setting_id).unwrap();
             // We don't want infectious people beyond our index case to be able to transmit, so we
             // have to do setup on our own since just calling `init` will trigger a watcher for
             // people becoming infectious that lets them transmit.
             load_rate_fns(&mut context).unwrap();
             // Add our infectious fellow.
             let infectious_person: PersonId = context.add_entity((Age(30),)).unwrap();
-            set_homogeneous_mixing_itinerary(&mut context, infectious_person).unwrap();
+            set_single_setting_itinerary(&mut context, infectious_person, tract_setting_id)
+                .unwrap();
 
             context.infect_person(infectious_person, None, None, None);
             // Get the total infectiousness multiplier for comparison to total number of infections.
@@ -459,7 +537,7 @@ mod test {
         // first person is infected. The location of this infection is records. We compare the number of
         // infected people in each setting to the expected proportion defined by the ratios. We examine
         // seven scenarios of ratios for the infectious individual.
-        let num_sims: u64 = 1000;
+        let num_sims: u64 = 5000;
         let rate = 1.5;
         let alpha = 0.42;
 
@@ -491,34 +569,57 @@ mod test {
                 let num_infected_cenustract_clone = Rc::clone(&num_infected_censustract);
                 let num_infected_workplace_clone = Rc::clone(&num_infected_workplace);
                 let mut context = setup_context(seed, rate, alpha, 5.0);
-                crate::settings::init(&mut context);
+                let tract_setting_id: Option<SettingId> = Some(
+                    context
+                        .add_setting(SettingCategory::CensusTract, "10000000000001".to_owned())
+                        .unwrap(),
+                );
+                let home_setting_id: Option<SettingId> = Some(
+                    context
+                        .add_setting(SettingCategory::Home, "10000000000002".to_owned())
+                        .unwrap(),
+                );
+                let workplace_setting_id: Option<SettingId> = Some(
+                    context
+                        .add_setting(SettingCategory::Workplace, "10000000000003".to_owned())
+                        .unwrap(),
+                );
 
                 // Add a a person who will get infected.
                 let infectious_person: PersonId = context.add_entity((Age(30),)).unwrap();
                 let person_home: PersonId = context.add_entity((Age(30),)).unwrap();
                 let person_censustract: PersonId = context.add_entity((Age(30),)).unwrap();
                 let person_workplace: PersonId = context.add_entity((Age(30),)).unwrap();
-                let itinerary_all = vec![
-                    ItineraryEntry::new(SettingId::new(Home, 0), ratio[0]),
-                    ItineraryEntry::new(SettingId::new(CensusTract, 0), ratio[1]),
-                    ItineraryEntry::new(SettingId::new(Workplace, 0), ratio[2]),
-                ];
-                let itinerary_home = vec![ItineraryEntry::new(SettingId::new(Home, 0), 1.0)];
-                let itinerary_censustract =
-                    vec![ItineraryEntry::new(SettingId::new(CensusTract, 0), 1.0)];
-                let itinerary_workplace =
-                    vec![ItineraryEntry::new(SettingId::new(Workplace, 0), 1.0)];
-                context
-                    .add_itinerary(infectious_person, itinerary_all)
+
+                set_single_setting_itinerary(&mut context, person_home, home_setting_id).unwrap();
+                set_single_setting_itinerary(&mut context, person_censustract, tract_setting_id)
                     .unwrap();
-                context.add_itinerary(person_home, itinerary_home).unwrap();
-                context
-                    .add_itinerary(person_censustract, itinerary_censustract)
-                    .unwrap();
-                context
-                    .add_itinerary(person_workplace, itinerary_workplace)
+                set_single_setting_itinerary(&mut context, person_workplace, workplace_setting_id)
                     .unwrap();
 
+                let _itinerary_id = context
+                    .add_entity((
+                        BelongsTo(infectious_person),
+                        HomeItinerary {
+                            home_id: home_setting_id,
+                            ratio: Some(ratio[0]),
+                        },
+                        SchoolItinerary {
+                            school_id: None,
+                            ratio: None,
+                        },
+                        WorkplaceItinerary {
+                            workplace_id: workplace_setting_id,
+                            ratio: Some(ratio[2]),
+                        },
+                        CensusTractItinerary {
+                            census_tract_id: tract_setting_id,
+                            ratio: Some(ratio[1]),
+                        },
+                    ))
+                    .unwrap();
+
+                context.normalize_itinerary_ratios(infectious_person);
                 // We don't want infectious people beyond our index case to be able to transmit, so we
                 // have to do setup on our own since just calling `init` will trigger a watcher for
                 // people becoming infectious that lets them transmit.

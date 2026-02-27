@@ -1,6 +1,6 @@
 use ixa::{Context, ContextRandomExt, ExecutionPhase, IxaError};
 
-use crate::population_loader;
+use crate::{infection_propagation_loop, population_loader, reports};
 
 pub fn initialize_model(context: &mut Context, seed: u64, max_time: f64) -> Result<(), IxaError> {
     // Initialize the random number generator with the provided seed
@@ -15,8 +15,8 @@ pub fn initialize_model(context: &mut Context, seed: u64, max_time: f64) -> Resu
         ExecutionPhase::Last,
     );
     population_loader::init(context)?;
-    // infection_propagation_loop::init(context)?;
-    // reports::init(context)?;
+    infection_propagation_loop::init(context)?;
+    reports::init(context)?;
 
     Ok(())
 }
