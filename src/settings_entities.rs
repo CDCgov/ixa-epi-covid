@@ -37,8 +37,6 @@ impl_property!(SettingCategory, Setting);
 
 define_property!(struct Alpha(pub f64), Setting);
 
-define_property!(struct DefaultItineraryRatio(pub f64), Setting);
-
 pub trait ContextSettingExt:
     PluginContext + ContextRandomExt + ContextItineraryExt + ContextParametersExt
 {
@@ -51,7 +49,7 @@ pub trait ContextSettingExt:
             return None;
         }
         loop {
-            let sampled = self.sample_setting_member(setting)?;
+            let sampled = self.sample_setting_member(setting);
             if !exclude.contains(&sampled) {
                 return Some(sampled);
             }
@@ -69,12 +67,12 @@ pub trait ContextSettingExt:
     }
 
     fn sample_setting(&mut self, person_id: PersonId) -> SettingId {
-        let settings = self.get_active_settings_for_person(person_id);
-        let weights: Vec<f64> = settings.iter().map(|(_, w)| *w).collect();
+        let settings = self.get_all_itineraries(person_id);
+        let weights: Vec<f64> = settings.iter().map(|entry| entry.ratio).collect();
         let total: f64 = weights.iter().sum();
 
         if total == 0.0 {
-            return settings[self.sample_range(SettingsRng, 0..settings.len())].0;
+            return settings[self.sample_range(SettingsRng, 0..settings.len())].setting;
         }
 
         let mut val = self.sample_range(SettingsRng, 0.0..total);
@@ -85,8 +83,8 @@ pub trait ContextSettingExt:
                 val -= *w;
                 val <= 0.0
             })
-            .map(|(i, _)| settings[i].0)
-            .unwrap_or_else(|| settings[settings.len() - 1].0)
+            .map(|(i, _)| settings[i].setting)
+            .unwrap_or_else(|| settings[settings.len() - 1].setting)
     }
 
     /// Get the total current infectiousness multiplier for a person
@@ -95,10 +93,10 @@ pub trait ContextSettingExt:
     /// These are generated without modification from the general formula of ratio * (N - 1) ^ alpha
     /// where N is the number of active members in the setting
     fn calculate_current_infectiousness_multiplier_for_person(&self, person_id: PersonId) -> f64 {
-        let settings = self.get_active_settings_for_person(person_id);
+        let settings = self.get_itinerary(person_id);
         let mut collector = 0.0;
         for setting in &settings {
-            collector += setting.1 * self.calculate_multiplier(setting.0);
+            collector += setting.ratio * self.calculate_multiplier(setting.setting);
         }
         collector
     }
@@ -107,10 +105,10 @@ pub trait ContextSettingExt:
     /// These are generated without modification from the general formula of ratio * (N - 1) ^ alpha
     /// where N is the number of all active and inactive members in the setting
     fn calculate_max_infectiousness_multiplier_for_person(&self, person_id: PersonId) -> f64 {
-        let settings = self.get_all_settings_for_person(person_id);
+        let settings = self.get_all_itineraries(person_id);
         let mut collector = 0.0;
         for setting in &settings {
-            let multiplier = self.calculate_multiplier(setting.0);
+            let multiplier = self.calculate_multiplier(setting.setting);
             collector = f64::max(collector, multiplier);
         }
         collector
@@ -132,13 +130,11 @@ pub trait ContextSettingExt:
         }
         let fips = get_fips_from_string(setting_string.clone())?;
         let alpha = *self.get_default_setting_properties(setting_category)?;
-        let itinerary_ratio = self.get_default_itinerary_ratio(setting_category)?;
         let setting_id: SettingId = self.add_entity::<Setting, _>((
             SettingCode(setting_code),
             StateCode(fips.0),
             setting_category,
             Alpha(alpha),
-            DefaultItineraryRatio(itinerary_ratio),
         ))?;
         Ok(setting_id)
     }
@@ -157,24 +153,6 @@ pub trait ContextSettingExt:
                 setting_category
             ))
         })
-    }
-
-    fn get_default_itinerary_ratio(
-        &self,
-        setting_category: SettingCategory,
-    ) -> Result<f64, IxaError> {
-        let Params {
-            itinerary_ratios, ..
-        } = self.get_params();
-        itinerary_ratios
-            .get(&setting_category)
-            .cloned()
-            .ok_or_else(|| {
-                IxaError::IxaError(format!(
-                    "No itinerary ratio found for setting category: {:?}",
-                    setting_category
-                ))
-            })
     }
 }
 impl ContextSettingExt for Context {}

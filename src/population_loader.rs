@@ -4,10 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::{
-    itinerary::{
-        Activity, BelongsTo, CensusTractId, CensusTractItinerary, ContextItineraryExt, HomeId,
-        HomeItinerary, Itinerary, SchoolId, SchoolItinerary, WorkplaceId, WorkplaceItinerary,
-    },
+    itinerary::{ContextItineraryExt, append_itinerary_entry},
     parameters::{ContextParametersExt, Params},
     settings_entities::{ContextSettingExt, Setting, SettingCategory, SettingCode, SettingId},
 };
@@ -43,10 +40,9 @@ fn create_person_from_record(
     let school_string: String = String::from_utf8(person_record.schoolId.to_owned())?;
     let workplace_string: String = String::from_utf8(person_record.workplaceId.to_owned())?;
 
-    let home_setting_id: Option<SettingId> =
-        Some(context.add_setting(SettingCategory::Home, home_id.clone())?);
-    let tract_setting_id: Option<SettingId> =
-        Some(context.add_setting(SettingCategory::CensusTract, tract.clone())?);
+    let home_setting_id: SettingId = context.add_setting(SettingCategory::Home, home_id.clone())?;
+    let tract_setting_id: SettingId =
+        context.add_setting(SettingCategory::CensusTract, tract.clone())?;
     let school_setting_id: Option<SettingId> = if school_string.is_empty() {
         None
     } else {
@@ -61,28 +57,16 @@ fn create_person_from_record(
     // Add person to context
     let person_id: PersonId = context.add_entity((Age(person_record.age),)).unwrap();
 
-    let _itinerary_id = context
-        .add_entity((
-            BelongsTo(person_id),
-            HomeItinerary {
-                home_id: home_setting_id,
-                ratio: Some(context.get_default_itinerary_ratio(SettingCategory::Home)?),
-            },
-            SchoolItinerary {
-                school_id: school_setting_id,
-                ratio: Some(context.get_default_itinerary_ratio(SettingCategory::School)?),
-            },
-            WorkplaceItinerary {
-                workplace_id: workplace_setting_id,
-                ratio: Some(context.get_default_itinerary_ratio(SettingCategory::Workplace)?),
-            },
-            CensusTractItinerary {
-                census_tract_id: tract_setting_id,
-                ratio: Some(context.get_default_itinerary_ratio(SettingCategory::CensusTract)?),
-            },
-        ))
-        .unwrap();
-    context.normalize_itinerary_ratios(person_id);
+    let mut itinerary = Vec::new();
+    append_itinerary_entry(&mut itinerary, context, home_setting_id, None)?;
+    append_itinerary_entry(&mut itinerary, context, tract_setting_id, None)?;
+    if let Some(school_id) = school_setting_id {
+        append_itinerary_entry(&mut itinerary, context, school_id, None)?;
+    }
+    if let Some(workplace_id) = workplace_setting_id {
+        append_itinerary_entry(&mut itinerary, context, workplace_id, None)?;
+    }
+    context.add_itinerary(person_id, itinerary)?;
 
     Ok(())
 }
@@ -106,12 +90,6 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
         ..
     } = context.get_params();
     load_synth_population(context, synth_population_file.clone())?;
-    context.index_property::<Itinerary, HomeId>();
-    context.index_property::<Itinerary, SchoolId>();
-    context.index_property::<Itinerary, WorkplaceId>();
-    context.index_property::<Itinerary, CensusTractId>();
-    context.index_property::<Itinerary, (BelongsTo, Activity)>();
-    context.index_property::<Itinerary, BelongsTo>();
     context.index_property::<Setting, SettingCode>();
 
     Ok(())
@@ -181,7 +159,6 @@ mod test {
 
         assert_eq!(context.get_entity_count::<Person>(), 2);
         assert_eq!(context.get_entity_count::<Setting>(), 3);
-        assert_eq!(context.get_entity_count::<Itinerary>(), 2);
 
         for item in age.iter().take(1) {
             assert_eq!(1, context.query_entity_count::<Person, _>((Age(*item),)));
@@ -210,46 +187,6 @@ mod test {
         assert_eq!(
             2,
             context.get_setting_members(census_tract_setting_id).len()
-        );
-
-        let p1 = context
-            .query_result_iterator::<Person, _>((Age(43),))
-            .next()
-            .unwrap();
-        let itinerary_id_1 = context
-            .query_result_iterator::<Itinerary, _>((BelongsTo(p1),))
-            .next()
-            .unwrap();
-        assert_eq!(
-            context
-                .get_property::<Itinerary, HomeId>(itinerary_id_1)
-                .0
-                .unwrap(),
-            home_setting_id_1
-        );
-        assert_eq!(
-            context
-                .get_property::<Itinerary, CensusTractId>(itinerary_id_1)
-                .0
-                .unwrap(),
-            census_tract_setting_id
-        );
-        assert_eq!(
-            context
-                .get_property::<Itinerary, SchoolId>(itinerary_id_1)
-                .0,
-            None
-        );
-        assert_eq!(
-            context
-                .get_property::<Itinerary, WorkplaceId>(itinerary_id_1)
-                .0,
-            None
-        );
-        assert!(
-            context
-                .get_property::<Itinerary, Activity>(itinerary_id_1)
-                .0
         );
     }
 
@@ -321,47 +258,6 @@ mod test {
             2,
             context.get_setting_members(census_tract_setting_id).len()
         );
-
-        let p1 = context
-            .query_result_iterator::<Person, _>((Age(43),))
-            .next()
-            .unwrap();
-        let itinerary_id_1 = context
-            .query_result_iterator::<Itinerary, _>((BelongsTo(p1),))
-            .next()
-            .unwrap();
-        assert_eq!(
-            context
-                .get_property::<Itinerary, HomeId>(itinerary_id_1)
-                .0
-                .unwrap(),
-            home_setting_id_1
-        );
-        assert_eq!(
-            context
-                .get_property::<Itinerary, CensusTractId>(itinerary_id_1)
-                .0
-                .unwrap(),
-            census_tract_setting_id
-        );
-        assert_eq!(
-            context
-                .get_property::<Itinerary, SchoolId>(itinerary_id_1)
-                .0
-                .unwrap(),
-            school_setting_id_1
-        );
-        assert_eq!(
-            context
-                .get_property::<Itinerary, WorkplaceId>(itinerary_id_1)
-                .0,
-            None
-        );
-        assert!(
-            context
-                .get_property::<Itinerary, Activity>(itinerary_id_1)
-                .0
-        );
     }
 
     #[test]
@@ -422,46 +318,6 @@ mod test {
         assert_eq!(
             2,
             context.get_setting_members(census_tract_setting_id).len()
-        );
-        let p1 = context
-            .query_result_iterator::<Person, _>((Age(43),))
-            .next()
-            .unwrap();
-        let itinerary_id_1 = context
-            .query_result_iterator::<Itinerary, _>((BelongsTo(p1),))
-            .next()
-            .unwrap();
-        assert_eq!(
-            context
-                .get_property::<Itinerary, HomeId>(itinerary_id_1)
-                .0
-                .unwrap(),
-            home_setting_id_1
-        );
-        assert_eq!(
-            context
-                .get_property::<Itinerary, CensusTractId>(itinerary_id_1)
-                .0
-                .unwrap(),
-            census_tract_setting_id
-        );
-        assert_eq!(
-            context
-                .get_property::<Itinerary, SchoolId>(itinerary_id_1)
-                .0,
-            None
-        );
-        assert_eq!(
-            context
-                .get_property::<Itinerary, WorkplaceId>(itinerary_id_1)
-                .0
-                .unwrap(),
-            workplace_setting_id_1
-        );
-        assert!(
-            context
-                .get_property::<Itinerary, Activity>(itinerary_id_1)
-                .0
         );
     }
 }

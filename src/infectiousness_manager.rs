@@ -224,9 +224,7 @@ mod test {
     use crate::{
         Age,
         infectiousness_manager::{InfectionData, InfectionStatus},
-        itinerary::{
-            BelongsTo, CensusTractItinerary, HomeItinerary, SchoolItinerary, WorkplaceItinerary,
-        },
+        itinerary::{ContextItineraryExt, ItineraryEntry},
         parameters::{GlobalParams, Params},
         population_loader::{Person, PersonId},
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
@@ -235,32 +233,19 @@ mod test {
     use ixa::{Context, ContextGlobalPropertiesExt, ContextRandomExt, IxaError};
     use ixa::{ContextEntitiesExt, HashMap, assert_almost_eq};
 
-    fn set_homogeneous_mixing_itinerary(
+    fn set_itinerary(
         context: &mut Context,
         person_id: PersonId,
-        setting_id: Option<SettingId>,
+        setting_ids: Vec<SettingId>,
     ) -> Result<(), IxaError> {
-        let _itinerary_id = context
-            .add_entity((
-                BelongsTo(person_id),
-                HomeItinerary {
-                    home_id: None,
-                    ratio: None,
-                },
-                SchoolItinerary {
-                    school_id: None,
-                    ratio: None,
-                },
-                WorkplaceItinerary {
-                    workplace_id: None,
-                    ratio: None,
-                },
-                CensusTractItinerary {
-                    census_tract_id: setting_id,
-                    ratio: Some(1.0),
-                },
-            ))
-            .unwrap();
+        let entries: Vec<ItineraryEntry> = setting_ids
+            .into_iter()
+            .map(|setting| ItineraryEntry {
+                setting,
+                ratio: 1.0,
+            })
+            .collect();
+        context.add_itinerary(person_id, entries)?;
         Ok(())
     }
 
@@ -360,15 +345,13 @@ mod test {
     #[test]
     fn test_calc_total_infectiousness_multiplier_with_contact() {
         let mut context = setup_context();
-        let tract_setting_id: Option<SettingId> = Some(
-            context
-                .add_setting(SettingCategory::CensusTract, "10000000000000".to_owned())
-                .unwrap(),
-        );
+        let tract_setting_id: SettingId = context
+            .add_setting(SettingCategory::CensusTract, "10000000000000".to_owned())
+            .unwrap();
         let p1: PersonId = context.add_entity((Age(30),)).unwrap();
-        set_homogeneous_mixing_itinerary(&mut context, p1, tract_setting_id).unwrap();
+        set_itinerary(&mut context, p1, vec![tract_setting_id]).unwrap();
         let p2: PersonId = context.add_entity((Age(30),)).unwrap();
-        set_homogeneous_mixing_itinerary(&mut context, p2, tract_setting_id).unwrap();
+        set_itinerary(&mut context, p2, vec![tract_setting_id]).unwrap();
 
         assert_almost_eq!(max_total_infectiousness_multiplier(&context, p1), 1.0, 0.0);
         assert_almost_eq!(max_total_infectiousness_multiplier(&context, p2), 1.0, 0.0);
@@ -378,18 +361,17 @@ mod test {
     /// Test has potential to stochastically fail if exponential draw is longer than infectious duration
     fn test_forecast() {
         let mut context = setup_context();
-        let tract_setting_id: Option<SettingId> = Some(
-            context
-                .add_setting(SettingCategory::CensusTract, "10000000000000".to_owned())
-                .unwrap(),
-        );
+        let tract_setting_id: SettingId = context
+            .add_setting(SettingCategory::CensusTract, "10000000000000".to_owned())
+            .unwrap();
+
         let p1: PersonId = context.add_entity((Age(30),)).unwrap();
-        set_homogeneous_mixing_itinerary(&mut context, p1, tract_setting_id).unwrap();
+        set_itinerary(&mut context, p1, vec![tract_setting_id]).unwrap();
         // Add two additional contacts, which should make the factor 2
         let p2: PersonId = context.add_entity((Age(30),)).unwrap();
-        set_homogeneous_mixing_itinerary(&mut context, p2, tract_setting_id).unwrap();
+        set_itinerary(&mut context, p2, vec![tract_setting_id]).unwrap();
         let p3: PersonId = context.add_entity((Age(30),)).unwrap();
-        set_homogeneous_mixing_itinerary(&mut context, p3, tract_setting_id).unwrap();
+        set_itinerary(&mut context, p3, vec![tract_setting_id]).unwrap();
 
         context.infect_person(p1, None, None, None);
 
@@ -402,17 +384,16 @@ mod test {
     #[should_panic = "Person 0: Forecasted infectiousness must always be greater than or equal to current infectiousness. Current: 1, Forecasted: 0.9"]
     fn test_assert_evaluate_fails_when_forecast_smaller() {
         let mut context = setup_context();
-        let tract_setting_id: Option<SettingId> = Some(
-            context
-                .add_setting(SettingCategory::CensusTract, "10000000000000".to_owned())
-                .unwrap(),
-        );
+        let tract_setting_id: SettingId = context
+            .add_setting(SettingCategory::CensusTract, "10000000000000".to_owned())
+            .unwrap();
+
         let p1: PersonId = context.add_entity((Age(30),)).unwrap();
-        set_homogeneous_mixing_itinerary(&mut context, p1, tract_setting_id).unwrap();
+        set_itinerary(&mut context, p1, vec![tract_setting_id]).unwrap();
         context.infect_person(p1, None, None, None);
         // We need to add another person so that our total infectiousness is 1.
         let p2: PersonId = context.add_entity((Age(30),)).unwrap();
-        set_homogeneous_mixing_itinerary(&mut context, p2, tract_setting_id).unwrap();
+        set_itinerary(&mut context, p2, vec![tract_setting_id]).unwrap();
         let invalid_forecast = 1.0 - 0.1;
         evaluate_forecast(&mut context, p1, invalid_forecast);
     }
@@ -420,17 +401,15 @@ mod test {
     #[test]
     fn test_evaluate_still_succeeds_when_forecast_slightly_bigger() {
         let mut context = setup_context();
-        let tract_setting_id: Option<SettingId> = Some(
-            context
-                .add_setting(SettingCategory::CensusTract, "10000000000000".to_owned())
-                .unwrap(),
-        );
+        let tract_setting_id: SettingId = context
+            .add_setting(SettingCategory::CensusTract, "10000000000000".to_owned())
+            .unwrap();
+
         let p1: PersonId = context.add_entity((Age(30),)).unwrap();
-        set_homogeneous_mixing_itinerary(&mut context, p1, tract_setting_id).unwrap();
+        set_itinerary(&mut context, p1, vec![tract_setting_id]).unwrap();
         context.infect_person(p1, None, None, None);
         let p2: PersonId = context.add_entity((Age(30),)).unwrap();
-        set_homogeneous_mixing_itinerary(&mut context, p2, tract_setting_id).unwrap();
-
+        set_itinerary(&mut context, p2, vec![tract_setting_id]).unwrap();
         let still_valid_forecast = 1.0 - 9e-11;
         assert!(evaluate_forecast(&mut context, p1, still_valid_forecast));
     }
