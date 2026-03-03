@@ -1,7 +1,7 @@
 use crate::{
     infectiousness_manager::InfectionStatus,
-    symptom_status_manager::SymptomStatus,
     population_loader::{Age, Person},
+    symptom_status_manager::SymptomStatus,
 };
 use ixa::{ExecutionPhase, HashMap, prelude::*};
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ define_report!(PersonPropertyIncidenceReport);
 
 struct PropertyReportDataContainer {
     infection_status_change: HashMap<(u8, InfectionStatus), u32>,
-    symptom_status_change: HashMap<(u8, SymptomStatus), u32>
+    symptom_status_change: HashMap<(u8, SymptomStatus), u32>,
 }
 
 define_data_plugin!(
@@ -132,7 +132,13 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), I
                 .insert((age, inf_value), 0);
         }
 
-        let symp_vec = [SymptomStatus::Mild, SymptomStatus::Severe, SymptomStatus::Critical, SymptomStatus::Dead, SymptomStatus::Resolved];
+        let symp_vec = [
+            SymptomStatus::Mild,
+            SymptomStatus::Severe,
+            SymptomStatus::Critical,
+            SymptomStatus::Dead,
+            SymptomStatus::Resolved,
+        ];
 
         for symp_value in symp_vec {
             report_container

@@ -1,7 +1,7 @@
 use crate::{
     infectiousness_manager::InfectionStatus,
-    symptom_status_manager::SymptomStatus,
     population_loader::{Age, Alive, Person},
+    symptom_status_manager::SymptomStatus,
 };
 use ixa::prelude::*;
 use ixa::{ExecutionPhase, HashMap};
