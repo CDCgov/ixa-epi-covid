@@ -6,7 +6,7 @@ The transmission model controls person-to-person transmission between an infecti
 ## Infection Propagation Loop
 1. Watch for an agent becoming infectious (S --> I transition).
 2. Schedule an infection attempt accvording to the maximum possible rate determined by  the setting s that the individual occupies
-3. Draw a susceptible contact from the agent's contact group for the infection attempt. 
+3. Draw a susceptible contact from the agent's contact group for the infection attempt.
     1. First, a setting for the infection attempt is sampled sampled based on the weight of time spent and effective number of contacts.
     2. Second, a contact is sampled uniformly from the setting of the infection attempt
 

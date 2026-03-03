@@ -9,4 +9,3 @@ Itineraries are a vector of `ItineraryEntry` which store a setting an individual
 
 ### Relationship to transmission
 Setting properties also impact underlying infection attempt process. Each setting category has a density dependent transmission parameter $\alpha$. These $\alpha$ values are parameters used in the individual level infectiousness multipliers that take the form $(N-1)^\alpha$ where $N$ is the number of people in the setting and $\alpha \in [0,1]$. How these multipliers are used to implement rejection sampling is discussed further in the [transmission module documentation](transmission.md).
-
