@@ -10,7 +10,7 @@ The following parameters are necessary and sufficient for generating importation
 Generating importation data also depedns on user specification of importation model type at the national and state level.
 
 ## Transmission model parameters
-The following parameters specified in the input parameter dictionary are only those relevant to transmission model behavior. 
+The following parameters specified in the input parameter dictionary are only those relevant to transmission model behavior.
 Other parameters, such as report generation and maximum runtime do not affect model dynamics.
 - `initial_prevalence`: The porportion of the population that is actively infectious at time t=0.0 in the model
 - `imported_cases_timeseries`: File for importing infection attempts outside of local transmission and the initial prevalence.
