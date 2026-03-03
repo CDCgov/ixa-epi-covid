@@ -378,6 +378,51 @@ mod test {
     fn test_infection_to_mild_duration() {
         test_duration(SymptomStatus::NoSymptoms, SymptomStatus::Mild, 1.0, 0.1);
     }
+
+    #[test]
+    fn test_absorbing_states() {
+        // We want to check that infected individuals eventually end up in an absorbing state (No Syptoms, Resolved, or Dead).
+        let num_sims: u64 = 1000;
+        let mut count_no_symptoms: u64 = 0;
+        let mut count_resolved: u64 = 0;
+        let mut count_dead: u64 = 0;
+        for seed in 0..num_sims {
+            let mut context = Context::new();
+            let parameters = Params {
+                probability_mild_given_infect: 0.5,
+                probability_severe_given_mild: 0.5,
+                probability_critical_given_severe: 0.5,
+                probability_dead_given_critical: 0.5,
+                ..Default::default()
+            };
+            context.init_random(seed);
+            context
+                .set_global_property_value(GlobalParams, parameters)
+                .unwrap();
+
+            // Add our person
+            let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+            // Initialize event subscriptions and plans for symptom status manager
+            init(&mut context).unwrap();
+            // Infect the person to trigger the symptom status manager
+            context.infect_person(p1, None, None, None);
+            // Add a plan to shutdown after we see they progress to an absorbing state
+            context.add_plan(1000.0, ixa::Context::shutdown);
+
+            context.execute();
+            let final_status = context.get_property::<Person, SymptomStatus>(p1);
+            match final_status {
+                SymptomStatus::NoSymptoms => count_no_symptoms += 1,
+                SymptomStatus::Resolved => count_resolved += 1,
+                SymptomStatus::Dead => count_dead += 1,
+                _ => panic!("Person ended in non-absorbing state: {:?}", final_status),
+            }
+        }
+        println!("Count No Symptoms: {}", count_no_symptoms);
+        println!("Count Resolved: {}", count_resolved);
+        println!("Count Dead: {}", count_dead);
+        assert_eq!(count_no_symptoms + count_resolved + count_dead, num_sims);
+    }
 }
 
 // All persons should end up with a SymptomStatus of NoSymptoms, Dead, or Resolved.
