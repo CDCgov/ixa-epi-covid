@@ -24,6 +24,13 @@ repos:
     # Run the formatter
     - id: ruff-format
       args: ['--line-length', '79']
+
+# Lint for documentation in python scripts
+- repo: https://github.com/jsh9/pydoclint
+  rev: 0.8.3
+  hooks:
+    - id: pydoclint
+      args: ['--config', 'pyproject.toml']
 #####
 # UV
 - repo: local
