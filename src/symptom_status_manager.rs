@@ -168,45 +168,79 @@ mod test {
         assert_almost_eq!(ks_stat, 0.0, 0.01);
     }
 
-    #[test]
-    #[allow(clippy::cast_precision_loss)]
-    fn test_proportion_infected_mild() {
+    fn test_proportion(
+        current_status: SymptomStatus,
+        next_status: SymptomStatus,
+        expected_proportion: f64,
+    ) {
         // We start with 1 person and simulate infecting them 5000 times, we should see that the proportion of time
         // that they have mild symptoms is close to the expected probability of mild symptoms given infection.
         // We use a large number of simulations to ensure that we have enough mild cases to analyze, since the outcome is stochastic.
         let num_sims = 5000;
-        let probability_mild_given_infect = 0.5;
-
-        let num_people_mild = Rc::new(RefCell::new(0usize));
+        let count = Rc::new(RefCell::new(0usize));
         for seed in 0..num_sims {
-            let num_people_mild_clone = Rc::clone(&num_people_mild);
+            let count_clone = Rc::clone(&count);
             let mut context = Context::new();
 
-            let parameters = Params {
-                probability_mild_given_infect,
-                ..Default::default()
+            let parameters = match (current_status, next_status) {
+                (SymptomStatus::NoSymptoms, SymptomStatus::Mild) => Params {
+                    probability_mild_given_infect: expected_proportion,
+                    ..Default::default()
+                },
+                (SymptomStatus::Mild, SymptomStatus::Severe) => Params {
+                    probability_mild_given_infect: 1.0,
+                    probability_severe_given_mild: expected_proportion,
+                    ..Default::default()
+                },
+                (SymptomStatus::Mild, SymptomStatus::Resolved) => Params {
+                    probability_mild_given_infect: 1.0,
+                    probability_severe_given_mild: 1.0 - expected_proportion,
+                    ..Default::default()
+                },
+                (SymptomStatus::Severe, SymptomStatus::Critical) => Params {
+                    probability_critical_given_severe: expected_proportion,
+                    ..Default::default()
+                },
+                (SymptomStatus::Severe, SymptomStatus::Resolved) => Params {
+                    probability_critical_given_severe: 1.0 - expected_proportion,
+                    ..Default::default()
+                },
+                (SymptomStatus::Critical, SymptomStatus::Dead) => Params {
+                    probability_dead_given_critical: expected_proportion,
+                    ..Default::default()
+                },
+                (SymptomStatus::Critical, SymptomStatus::Resolved) => Params {
+                    probability_dead_given_critical: 1.0 - expected_proportion,
+                    ..Default::default()
+                },
+                _ => panic!(
+                    "Invalid status transition combination: {:?} -> {:?}",
+                    current_status, next_status
+                ),
             };
 
-            context.init_random(parameters.seed);
+            context.init_random(seed);
             context
                 .set_global_property_value(GlobalParams, parameters)
                 .unwrap();
-
-            context.init_random(seed);
 
             // Add our person
             let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
             // Initialize event subscriptions and plans for symptom status manager
             init(&mut context).unwrap();
             // Infect the person to trigger the symptom status manager
-            context.infect_person(p1, None, None, None);
+            match next_status {
+                SymptomStatus::NoSymptoms => (),
+                SymptomStatus::Mild => context.infect_person(p1, None, None, None),
+                _ => context.set_property::<Person, SymptomStatus>(p1, current_status),
+            }
             // Add a plan to shutdown
             context.add_plan(100.0, ixa::Context::shutdown);
 
             context.subscribe_to_event(
                 move |context, event: PropertyChangeEvent<Person, SymptomStatus>| {
-                    if event.current == SymptomStatus::Mild {
-                        *num_people_mild_clone.borrow_mut() += 1;
+                    if event.current == next_status {
+                        *count_clone.borrow_mut() += 1;
                         context.shutdown();
                     }
                 },
@@ -216,31 +250,75 @@ mod test {
         }
         // Check that the proportion of people is close to the expected proportion
         assert_almost_eq!(
-            *num_people_mild.borrow() as f64 / (num_sims) as f64,
-            probability_mild_given_infect,
+            *count.borrow() as f64 / (num_sims) as f64,
+            expected_proportion,
             0.01
         );
     }
 
-    #[test]
-    fn test_infection_to_mild_duration() {
-        // We start with 1 person and simulate infecting them 5000 times,
-        // we should see that the distribution of time until they have mild symptoms is close to the expected distribution.
+    fn test_duration(
+        current_status: SymptomStatus,
+        next_status: SymptomStatus,
+        expected_mu: f64,
+        expected_sigma: f64,
+    ) {
+        // We start with 1 person and simulate infecting them 5000 times, we should see that the distribution of time
+        // until they have mild symptoms is close to the expected distribution.
         let num_sims = 5000;
-        let probability_mild_given_infect = 1.0; // Set to 1 to ensure we have enough mild cases to analyze
-        let infect_to_mild_mu = 1.0;
-        let infect_to_mild_sigma = 0.1; // As sigma increases the more like the test will fail
-
         let durations = Rc::new(RefCell::new(Vec::new()));
         for seed in 0..num_sims {
             let durations_clone = Rc::clone(&durations);
             let mut context = Context::new();
 
-            let parameters = Params {
-                probability_mild_given_infect,
-                infect_to_mild_mu,
-                infect_to_mild_sigma,
-                ..Default::default()
+            let parameters = match (current_status, next_status) {
+                (SymptomStatus::NoSymptoms, SymptomStatus::Mild) => Params {
+                    probability_mild_given_infect: 1.0,
+                    infect_to_mild_mu: expected_mu,
+                    infect_to_mild_sigma: expected_sigma,
+                    ..Default::default()
+                },
+                (SymptomStatus::Mild, SymptomStatus::Severe) => Params {
+                    probability_mild_given_infect: 1.0,
+                    probability_severe_given_mild: 1.0,
+                    mild_to_severe_mu: expected_mu,
+                    mild_to_severe_sigma: expected_sigma,
+                    ..Default::default()
+                },
+                (SymptomStatus::Mild, SymptomStatus::Resolved) => Params {
+                    probability_mild_given_infect: 1.0,
+                    probability_severe_given_mild: 0.0,
+                    mild_to_resolved_mu: expected_mu,
+                    mild_to_resolved_sigma: expected_sigma,
+                    ..Default::default()
+                },
+                (SymptomStatus::Severe, SymptomStatus::Critical) => Params {
+                    probability_critical_given_severe: 1.0,
+                    severe_to_critical_mu: expected_mu,
+                    severe_to_critical_sigma: expected_sigma,
+                    ..Default::default()
+                },
+                (SymptomStatus::Severe, SymptomStatus::Resolved) => Params {
+                    probability_critical_given_severe: 0.0,
+                    severe_to_resolved_mu: expected_mu,
+                    severe_to_resolved_sigma: expected_sigma,
+                    ..Default::default()
+                },
+                (SymptomStatus::Critical, SymptomStatus::Dead) => Params {
+                    probability_dead_given_critical: 1.0,
+                    critical_to_dead_mu: expected_mu,
+                    critical_to_dead_sigma: expected_sigma,
+                    ..Default::default()
+                },
+                (SymptomStatus::Critical, SymptomStatus::Resolved) => Params {
+                    probability_dead_given_critical: 0.0,
+                    critical_to_resolved_mu: expected_mu,
+                    critical_to_resolved_sigma: expected_sigma,
+                    ..Default::default()
+                },
+                _ => panic!(
+                    "Invalid status transition combination: {:?} -> {:?}",
+                    current_status, next_status
+                ),
             };
 
             context.init_random(seed);
@@ -253,15 +331,17 @@ mod test {
             // Initialize event subscriptions and plans for symptom status manager
             init(&mut context).unwrap();
             // Infect the person to trigger the symptom status manager
-            context.infect_person(p1, None, None, None);
-            // Add a plan to shutdown after we see they progress to mild symptoms
+            match next_status {
+                SymptomStatus::NoSymptoms => (),
+                SymptomStatus::Mild => context.infect_person(p1, None, None, None),
+                _ => context.set_property::<Person, SymptomStatus>(p1, current_status),
+            }
+            // Add a plan to shutdown after we see they progress to the next status
             context.add_plan(100.0, ixa::Context::shutdown);
 
-            // Subscribe to symptom status changes to record the time until the person has mild symptoms
-            // Shutdown after we see they progress to mild symptoms
             context.subscribe_to_event(
                 move |context, event: PropertyChangeEvent<Person, SymptomStatus>| {
-                    if event.current == SymptomStatus::Mild {
+                    if event.current == next_status {
                         durations_clone
                             .borrow_mut()
                             .push(context.get_current_time());
@@ -283,9 +363,20 @@ mod test {
         );
         println!(
             "Expected duration from infection to mild symptoms: {}",
-            infect_to_mild_mu.exp()
+            expected_mu.exp()
         );
-        assert_almost_eq!(average_duration, infect_to_mild_mu.exp(), 0.1);
+        assert_almost_eq!(average_duration, expected_mu.exp(), 0.1);
+    }
+
+    #[test]
+    #[allow(clippy::cast_precision_loss)]
+    fn test_proportion_infected_mild() {
+        test_proportion(SymptomStatus::NoSymptoms, SymptomStatus::Mild, 0.3);
+    }
+
+    #[test]
+    fn test_infection_to_mild_duration() {
+        test_duration(SymptomStatus::NoSymptoms, SymptomStatus::Mild, 1.0, 0.1);
     }
 }
 
