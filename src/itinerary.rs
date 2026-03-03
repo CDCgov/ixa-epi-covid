@@ -45,7 +45,6 @@ pub fn append_itinerary_entry(
 
 #[derive(Default)]
 struct ItineraryDataContainer {
-    // For each setting type, have a map of each setting id and a list of members
     all_members: HashMap<SettingId, IndexSet<PersonId>>,
     active_itineraries: HashMap<PersonId, Vec<ItineraryEntry>>,
     inactive_itineraries: HashMap<PersonId, Vec<ItineraryEntry>>,
