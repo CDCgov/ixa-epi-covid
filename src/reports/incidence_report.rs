@@ -1,5 +1,6 @@
 use crate::{
     infectiousness_manager::InfectionStatus,
+    symptom_status_manager::SymptomStatus,
     population_loader::{Age, Person},
 };
 use ixa::{ExecutionPhase, HashMap, prelude::*};
@@ -17,6 +18,7 @@ define_report!(PersonPropertyIncidenceReport);
 
 struct PropertyReportDataContainer {
     infection_status_change: HashMap<(u8, InfectionStatus), u32>,
+    symptom_status_change: HashMap<(u8, SymptomStatus), u32>
 }
 
 define_data_plugin!(
@@ -24,6 +26,7 @@ define_data_plugin!(
     PropertyReportDataContainer,
     PropertyReportDataContainer {
         infection_status_change: HashMap::default(),
+        symptom_status_change: HashMap::default()
     }
 );
 
@@ -42,10 +45,29 @@ fn update_infection_incidence(
     }
 }
 
+fn update_symptom_incidence(
+    context: &mut Context,
+    event: PropertyChangeEvent<Person, SymptomStatus>,
+) {
+    if event.current != SymptomStatus::NoSymptoms {
+        let age: Age = context.get_property(event.entity_id);
+        let report_container_mut = context.get_data_mut(PropertyReportDataPlugin);
+        report_container_mut
+            .symptom_status_change
+            .entry((age.0, event.current))
+            .and_modify(|v| *v += 1)
+            .or_insert(1);
+    }
+}
+
 fn reset_incidence_map(context: &mut Context) {
     let report_container = context.get_data_mut(PropertyReportDataPlugin);
     report_container
         .infection_status_change
+        .values_mut()
+        .for_each(|v| *v = 0);
+    report_container
+        .symptom_status_change
         .values_mut()
         .for_each(|v| *v = 0);
 }
@@ -60,6 +82,15 @@ fn send_incidence_counts(context: &mut Context) {
             t_upper,
             age: *age,
             event: format!("{infection_status:?}"),
+            count: *count,
+        });
+    }
+    // Symptom status
+    for ((age, symptom_status), count) in &report_container.symptom_status_change {
+        context.send_report(PersonPropertyIncidenceReport {
+            t_upper,
+            age: *age,
+            event: format!("{symptom_status:?}"),
             count: *count,
         });
     }
@@ -100,10 +131,22 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), I
                 .infection_status_change
                 .insert((age, inf_value), 0);
         }
+
+        let symp_vec = [SymptomStatus::Mild, SymptomStatus::Severe, SymptomStatus::Critical, SymptomStatus::Dead, SymptomStatus::Resolved];
+
+        for symp_value in symp_vec {
+            report_container
+                .symptom_status_change
+                .insert((age, symp_value), 0);
+        }
     }
 
     context.subscribe_to_event::<PropertyChangeEvent<Person, InfectionStatus>>(|context, event| {
         update_infection_incidence(context, event);
+    });
+
+    context.subscribe_to_event::<PropertyChangeEvent<Person, SymptomStatus>>(|context, event| {
+        update_symptom_incidence(context, event);
     });
 
     context.add_periodic_plan_with_phase(

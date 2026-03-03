@@ -36,9 +36,45 @@ pub struct Params {
     pub imported_cases_timeseries: ImportCasesFromFile,
     /// A library of infection rates to assign to infected people.
     pub infectiousness_rate_fn: RateFnType,
+    /// Probability an infected person develops mild illness
+    pub probability_mild_given_infect: f64,
+    /// Mu parameter for log normal delay distribution from infection to mild illness
+    pub infect_to_mild_mu: f64,
+    /// Sigma parameter for log normal delay distribution from infection to mild illness
+    pub infect_to_mild_sigma: f64,
+    /// Probability a person with mild illness develops severe illness
+    pub probability_severe_given_mild: f64,
+    /// Mu parameter for log normal delay distribution from mild to severe illness
+    pub mild_to_severe_mu: f64,
+    /// Sigma parameter for log normal delay distribution from mild to severe illness
+    pub mild_to_severe_sigma: f64,
+    /// Mu parameter for log normal delay distribution from mild illness to resolution
+    pub mild_to_resolved_mu: f64,
+    /// Sigma parameter for log normal delay distribution from mild illness to resolution
+    pub mild_to_resolved_sigma: f64,
+    /// Probability a person with severe illness develops critical illness
+    pub probability_critical_given_severe: f64,
+    /// Mu parameter for log normal delay distribution from severe to critical illness
+    pub severe_to_critical_mu: f64,
+    /// Sigma parameter for log normal delay distribution from severe to critical illness
+    pub severe_to_critical_sigma: f64,
+    /// Mu parameter for log normal delay distribution from severe illness to resolution
+    pub severe_to_resolved_mu: f64,
+    /// Sigma parameter for log normal delay distribution from severe illness to resolution
+    pub severe_to_resolved_sigma: f64,
+    /// Probability a person with critical illness dies
+    pub probability_dead_given_critical: f64,
+    /// Mu parameter for log normal delay distribution from critical illness to death
+    pub critical_to_dead_mu: f64,
+    /// Sigma parameter for log normal delay distribution from critical illness to death
+    pub critical_to_dead_sigma: f64,
+    /// Mu parameter for log normal delay distribution from critical illness to resolution
+    pub critical_to_resolved_mu: f64,
+    /// Sigma parameter for log normal delay distribution from critical illness to resolution
+    pub critical_to_resolved_sigma: f64,
     /// Setting properties by setting type
     pub settings_properties: HashMap<CoreSettingsTypes, SettingProperties>,
-    /// ratios used to initialize indiviiduals itineraries by setting type.
+    /// ratios used to initialize individuals itineraries by setting type.
     pub itinerary_ratios: HashMap<CoreSettingsTypes, f64>,
     /// Prevalence report with a period and name required
     pub prevalence_report: ReportParams,
@@ -75,6 +111,31 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
                 ));
             }
         }
+    }
+
+    // Validate the symptom status parameters
+    if !(0.0..=1.0).contains(&parameters.probability_mild_given_infect) {
+        return Err(IxaError::IxaError(
+            "The probability of mild illness given infection must be between 0 and 1, inclusive.".to_string(),
+        ));
+    }
+
+    if !(0.0..=1.0).contains(&parameters.probability_severe_given_mild) {
+        return Err(IxaError::IxaError(
+            "The probability of severe illness given mild illness must be between 0 and 1, inclusive.".to_string(),
+        ));
+    }
+
+    if !(0.0..=1.0).contains(&parameters.probability_critical_given_severe) {
+        return Err(IxaError::IxaError(
+            "The probability of critical illness given severe illness must be between 0 and 1, inclusive.".to_string(),
+        ));
+    }
+
+    if !(0.0..=1.0).contains(&parameters.probability_dead_given_critical) {
+        return Err(IxaError::IxaError(
+            "The probability of dying given critical illness must be between 0 and 1, inclusive.".to_string(),
+        ));
     }
 
     // We only want to fail when all itinerary ratios are 0.
@@ -161,6 +222,24 @@ impl Default for Params {
                 rate: 1.0,
                 duration: 5.0,
             },
+            probability_mild_given_infect: 0.0,
+            infect_to_mild_mu: 0.0,
+            infect_to_mild_sigma: 0.0,
+            probability_severe_given_mild: 0.0,
+            mild_to_severe_mu: 0.0,
+            mild_to_severe_sigma: 0.0,
+            mild_to_resolved_mu: 0.0,
+            mild_to_resolved_sigma: 0.0,
+            probability_critical_given_severe: 0.0,
+            severe_to_critical_mu: 0.0,
+            severe_to_critical_sigma: 0.0,
+            severe_to_resolved_mu: 0.0,
+            severe_to_resolved_sigma: 0.0,
+            probability_dead_given_critical: 0.0,
+            critical_to_dead_mu: 0.0,
+            critical_to_dead_sigma: 0.0,
+            critical_to_resolved_mu: 0.0,
+            critical_to_resolved_sigma: 0.0,
             settings_properties: HashMap::new(),
             itinerary_ratios: HashMap::new(),
             prevalence_report: ReportParams {
