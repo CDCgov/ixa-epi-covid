@@ -227,7 +227,7 @@ impl Default for Params {
             probability_mild_given_infect: 0.0,
             infect_to_mild_mu: 0.0,
             infect_to_mild_sigma: 0.0,
-            probability_severe_given_mild: 0.0,
+            probability_severe_given_mild: 0.1,
             mild_to_severe_mu: 0.0,
             mild_to_severe_sigma: 0.0,
             mild_to_resolved_mu: 0.0,

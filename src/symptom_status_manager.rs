@@ -188,12 +188,10 @@ mod test {
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Severe) => Params {
-                    probability_mild_given_infect: 1.0,
                     probability_severe_given_mild: expected_proportion,
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Resolved) => Params {
-                    probability_mild_given_infect: 1.0,
                     probability_severe_given_mild: 1.0 - expected_proportion,
                     ..Default::default()
                 },
@@ -241,6 +239,8 @@ mod test {
                 move |context, event: PropertyChangeEvent<Person, SymptomStatus>| {
                     if event.current == next_status {
                         *count_clone.borrow_mut() += 1;
+                        context.shutdown();
+                    } else {
                         context.shutdown();
                     }
                 },
@@ -336,15 +336,14 @@ mod test {
                 SymptomStatus::Mild => context.infect_person(p1, None, None, None),
                 _ => context.set_property::<Person, SymptomStatus>(p1, current_status),
             }
-            // Add a plan to shutdown after we see they progress to the next status
-            context.add_plan(100.0, ixa::Context::shutdown);
-
             context.subscribe_to_event(
                 move |context, event: PropertyChangeEvent<Person, SymptomStatus>| {
                     if event.current == next_status {
                         durations_clone
                             .borrow_mut()
                             .push(context.get_current_time());
+                        context.shutdown();
+                    } else {
                         context.shutdown();
                     }
                 },
@@ -357,14 +356,6 @@ mod test {
         //so we will just check the average duration is close to the expected duration.
         let average_duration: f64 =
             durations.borrow().iter().sum::<f64>() / durations.borrow().len() as f64;
-        println!(
-            "Average duration from infection to mild symptoms: {}",
-            average_duration
-        );
-        println!(
-            "Expected duration from infection to mild symptoms: {}",
-            expected_mu.exp()
-        );
         assert_almost_eq!(average_duration, expected_mu.exp(), 0.1);
     }
 
@@ -375,8 +366,68 @@ mod test {
     }
 
     #[test]
+    fn test_proportion_mild_to_severe() {
+        test_proportion(SymptomStatus::Mild, SymptomStatus::Severe, 0.2);
+    }
+
+    #[test]
+    fn test_proportion_mild_to_resolved() {
+        test_proportion(SymptomStatus::Mild, SymptomStatus::Resolved, 0.8);
+    }
+
+    #[test]
+    fn test_proportion_severe_to_critical() {
+        test_proportion(SymptomStatus::Severe, SymptomStatus::Critical, 0.4);
+    }
+
+    #[test]
+    fn test_proportion_severe_to_resolved() {
+        test_proportion(SymptomStatus::Severe, SymptomStatus::Resolved, 0.5);
+    }
+
+    #[test]
+    fn test_proportion_critical_to_dead() {
+        test_proportion(SymptomStatus::Critical, SymptomStatus::Dead, 0.5);
+    }
+
+    #[test]
+    fn test_proportion_critical_to_resolved() {
+        test_proportion(SymptomStatus::Critical, SymptomStatus::Resolved, 0.5);
+    }
+
+    #[test]
     fn test_infection_to_mild_duration() {
         test_duration(SymptomStatus::NoSymptoms, SymptomStatus::Mild, 1.0, 0.1);
+    }
+
+    #[test]
+    fn test_mild_to_severe_duration() {
+        test_duration(SymptomStatus::Mild, SymptomStatus::Severe, 1.0, 0.1);
+    }
+
+    #[test]
+    fn test_mild_to_recovered_duration() {
+        test_duration(SymptomStatus::Mild, SymptomStatus::Resolved, 1.0, 0.1);
+    }
+
+    #[test]
+    fn test_severe_to_critical_duration() {
+        test_duration(SymptomStatus::Severe, SymptomStatus::Critical, 1.0, 0.1);
+    }
+
+    #[test]
+    fn test_severe_to_resolved_duration() {
+        test_duration(SymptomStatus::Severe, SymptomStatus::Resolved, 1.0, 0.1);
+    }
+
+    #[test]
+    fn test_critical_to_dead_duration() {
+        test_duration(SymptomStatus::Critical, SymptomStatus::Dead, 1.0, 0.1);
+    }
+
+    #[test]
+    fn test_critical_to_resolved_duration() {
+        test_duration(SymptomStatus::Critical, SymptomStatus::Resolved, 1.0, 0.1);
     }
 
     #[test]
@@ -418,9 +469,6 @@ mod test {
                 _ => panic!("Person ended in non-absorbing state: {:?}", final_status),
             }
         }
-        println!("Count No Symptoms: {}", count_no_symptoms);
-        println!("Count Resolved: {}", count_resolved);
-        println!("Count Dead: {}", count_dead);
         assert_eq!(count_no_symptoms + count_resolved + count_dead, num_sims);
     }
 }
