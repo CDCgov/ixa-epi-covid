@@ -6,8 +6,9 @@ use rand_distr::LogNormal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ContextParametersExt, Params, infectiousness_manager::InfectionStatus,
-    population_loader::Person,
+    ContextParametersExt, Params,
+    infectiousness_manager::InfectionStatus,
+    population_loader::{AgeGroup, Person},
 };
 
 define_rng!(SymptomsRng);
@@ -28,41 +29,40 @@ impl_property!(
     default_const = SymptomStatus::NoSymptoms
 );
 
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq)]
+pub struct SymptomStatusAgeGroup {
+    pub min: u8,
+    pub probability: f64,
+}
+
 pub fn init(context: &mut Context) -> Result<(), IxaError> {
-    let &Params {
-        probability_mild_given_infect,
-        infect_to_mild_mu,
-        infect_to_mild_sigma,
-        probability_severe_given_mild,
-        mild_to_severe_mu,
-        mild_to_severe_sigma,
-        mild_to_resolved_mu,
-        mild_to_resolved_sigma,
-        probability_critical_given_severe,
-        severe_to_critical_mu,
-        severe_to_critical_sigma,
-        severe_to_resolved_mu,
-        severe_to_resolved_sigma,
-        probability_dead_given_critical,
-        critical_to_dead_mu,
-        critical_to_dead_sigma,
-        critical_to_resolved_mu,
-        critical_to_resolved_sigma,
+    let Params {
+        infect_to_mild,
+        mild_to_severe,
+        mild_to_resolved,
+        severe_to_critical,
+        severe_to_resolved,
+        critical_to_dead,
+        critical_to_resolved,
         ..
-    } = context.get_params();
+    } = context.get_params().clone();
 
     context.subscribe_to_event(
         move |context, event: PropertyChangeEvent<Person, InfectionStatus>| {
-            if event.current == InfectionStatus::Infectious {
-                if context.sample_bool(SymptomsRng, probability_mild_given_infect) {
-                    let infect_to_mild =
-                        LogNormal::new(infect_to_mild_mu, infect_to_mild_sigma).unwrap();
-                    let mild_time = context.get_current_time()
-                        + context.sample_distr(SymptomsRng, infect_to_mild);
-                    context.add_plan(mild_time, move |context| {
-                        context.set_property(event.entity_id, SymptomStatus::Mild);
-                    });
-                }
+            let age_group = context.get_property::<Person, AgeGroup>(event.entity_id).0 as usize;
+            if event.current == InfectionStatus::Infectious
+                && context.sample_bool(
+                    SymptomsRng,
+                    infect_to_mild.age_groups[age_group].probability,
+                )
+            {
+                let infect_to_mild =
+                    LogNormal::new(infect_to_mild.mu, infect_to_mild.sigma).unwrap();
+                let mild_time =
+                    context.get_current_time() + context.sample_distr(SymptomsRng, infect_to_mild);
+                context.add_plan(mild_time, move |context| {
+                    context.set_property(event.entity_id, SymptomStatus::Mild);
+                });
             }
         },
     );
@@ -70,9 +70,18 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
     context.subscribe_to_event(
         move |context, event: PropertyChangeEvent<Person, SymptomStatus>| match event.current {
             SymptomStatus::Mild => {
-                if context.sample_bool(SymptomsRng, probability_severe_given_mild) {
+                let age_group =
+                    context.get_property::<Person, AgeGroup>(event.entity_id).0 as usize;
+                if context.sample_bool(
+                    SymptomsRng,
+                    mild_to_severe
+                        .age_groups
+                        .get(age_group)
+                        .unwrap()
+                        .probability,
+                ) {
                     let mild_to_severe =
-                        LogNormal::new(mild_to_severe_mu, mild_to_severe_sigma).unwrap();
+                        LogNormal::new(mild_to_severe.mu, mild_to_severe.sigma).unwrap();
                     let severe_time = context.get_current_time()
                         + context.sample_distr(SymptomsRng, mild_to_severe);
                     context.add_plan(severe_time, move |context| {
@@ -80,7 +89,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
                     });
                 } else {
                     let mild_to_resolved =
-                        LogNormal::new(mild_to_resolved_mu, mild_to_resolved_sigma).unwrap();
+                        LogNormal::new(mild_to_resolved.mu, mild_to_resolved.sigma).unwrap();
                     let resolved_time = context.get_current_time()
                         + context.sample_distr(SymptomsRng, mild_to_resolved);
                     context.add_plan(resolved_time, move |context| {
@@ -89,9 +98,18 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
                 }
             }
             SymptomStatus::Severe => {
-                if context.sample_bool(SymptomsRng, probability_critical_given_severe) {
+                let age_group =
+                    context.get_property::<Person, AgeGroup>(event.entity_id).0 as usize;
+                if context.sample_bool(
+                    SymptomsRng,
+                    severe_to_critical
+                        .age_groups
+                        .get(age_group)
+                        .unwrap()
+                        .probability,
+                ) {
                     let severe_to_critical =
-                        LogNormal::new(severe_to_critical_mu, severe_to_critical_sigma).unwrap();
+                        LogNormal::new(severe_to_critical.mu, severe_to_critical.sigma).unwrap();
                     let critical_time = context.get_current_time()
                         + context.sample_distr(SymptomsRng, severe_to_critical);
                     context.add_plan(critical_time, move |context| {
@@ -99,7 +117,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
                     });
                 } else {
                     let severe_to_resolved =
-                        LogNormal::new(severe_to_resolved_mu, severe_to_resolved_sigma).unwrap();
+                        LogNormal::new(severe_to_resolved.mu, severe_to_resolved.sigma).unwrap();
                     let resolved_time = context.get_current_time()
                         + context.sample_distr(SymptomsRng, severe_to_resolved);
                     context.add_plan(resolved_time, move |context| {
@@ -108,9 +126,18 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
                 }
             }
             SymptomStatus::Critical => {
-                if context.sample_bool(SymptomsRng, probability_dead_given_critical) {
+                let age_group =
+                    context.get_property::<Person, AgeGroup>(event.entity_id).0 as usize;
+                if context.sample_bool(
+                    SymptomsRng,
+                    critical_to_dead
+                        .age_groups
+                        .get(age_group)
+                        .unwrap()
+                        .probability,
+                ) {
                     let critical_to_dead =
-                        LogNormal::new(critical_to_dead_mu, critical_to_dead_sigma).unwrap();
+                        LogNormal::new(critical_to_dead.mu, critical_to_dead.sigma).unwrap();
                     let dead_time = context.get_current_time()
                         + context.sample_distr(SymptomsRng, critical_to_dead);
                     context.add_plan(dead_time, move |context| {
@@ -118,7 +145,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
                     });
                 } else {
                     let critical_to_resolved =
-                        LogNormal::new(critical_to_resolved_mu, critical_to_resolved_sigma)
+                        LogNormal::new(critical_to_resolved.mu, critical_to_resolved.sigma)
                             .unwrap();
                     let resolved_time = context.get_current_time()
                         + context.sample_distr(SymptomsRng, critical_to_resolved);
@@ -140,9 +167,13 @@ mod test {
 
     use super::init;
     use crate::infectiousness_manager::InfectionContextExt;
-    use crate::parameters::GlobalParams;
+    use crate::parameters::{
+        CriticalToDeadParameters, CriticalToResolvedParameters, GlobalParams,
+        InfectToMildParameters, MildToResolvedParameters, MildToSevereParameters,
+        SevereToCriticalParameters, SevereToResolvedParameters,
+    };
     use crate::population_loader::Person;
-    use crate::symptom_status_manager::SymptomStatus;
+    use crate::symptom_status_manager::{SymptomStatus, SymptomStatusAgeGroup};
     use crate::{Age, Params};
     use ixa::assert_almost_eq;
     use ixa::prelude::*;
@@ -184,33 +215,92 @@ mod test {
 
             let parameters = match (current_status, next_status) {
                 (SymptomStatus::NoSymptoms, SymptomStatus::Mild) => Params {
-                    probability_mild_given_infect: expected_proportion,
+                    infect_to_mild: InfectToMildParameters {
+                        mu: 0.1,
+                        sigma: 0.1,
+                        age_groups: vec![SymptomStatusAgeGroup {
+                            min: 0,
+                            probability: expected_proportion,
+                        }],
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Severe) => Params {
-                    probability_mild_given_infect: 1.0,
-                    probability_severe_given_mild: expected_proportion,
+                    mild_to_severe: MildToSevereParameters {
+                        mu: 0.1,
+                        sigma: 0.1,
+                        age_groups: vec![SymptomStatusAgeGroup {
+                            min: 0,
+                            probability: expected_proportion,
+                        }],
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Resolved) => Params {
-                    probability_mild_given_infect: 1.0,
-                    probability_severe_given_mild: 1.0 - expected_proportion,
+                    mild_to_severe: MildToSevereParameters {
+                        mu: 0.1,
+                        sigma: 0.1,
+                        age_groups: vec![SymptomStatusAgeGroup {
+                            min: 0,
+                            probability: expected_proportion,
+                        }],
+                    },
+                    mild_to_resolved: MildToResolvedParameters {
+                        mu: 0.1,
+                        sigma: 0.1,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Severe, SymptomStatus::Critical) => Params {
-                    probability_critical_given_severe: expected_proportion,
+                    severe_to_critical: SevereToCriticalParameters {
+                        mu: 0.1,
+                        sigma: 0.1,
+                        age_groups: vec![SymptomStatusAgeGroup {
+                            min: 0,
+                            probability: expected_proportion,
+                        }],
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Severe, SymptomStatus::Resolved) => Params {
-                    probability_critical_given_severe: 1.0 - expected_proportion,
+                    severe_to_critical: SevereToCriticalParameters {
+                        mu: 0.1,
+                        sigma: 0.1,
+                        age_groups: vec![SymptomStatusAgeGroup {
+                            min: 0,
+                            probability: expected_proportion,
+                        }],
+                    },
+                    severe_to_resolved: SevereToResolvedParameters {
+                        mu: 0.1,
+                        sigma: 0.1,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Critical, SymptomStatus::Dead) => Params {
-                    probability_dead_given_critical: expected_proportion,
+                    critical_to_dead: CriticalToDeadParameters {
+                        mu: 0.1,
+                        sigma: 0.1,
+                        age_groups: vec![SymptomStatusAgeGroup {
+                            min: 0,
+                            probability: expected_proportion,
+                        }],
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Critical, SymptomStatus::Resolved) => Params {
-                    probability_dead_given_critical: 1.0 - expected_proportion,
+                    critical_to_dead: CriticalToDeadParameters {
+                        mu: 0.1,
+                        sigma: 0.1,
+                        age_groups: vec![SymptomStatusAgeGroup {
+                            min: 0,
+                            probability: expected_proportion,
+                        }],
+                    },
+                    critical_to_resolved: CriticalToResolvedParameters {
+                        mu: 0.1,
+                        sigma: 0.1,
+                    },
                     ..Default::default()
                 },
                 _ => panic!(
@@ -238,11 +328,14 @@ mod test {
             context.add_plan(100.0, ixa::Context::shutdown);
 
             context.subscribe_to_event(
-                move |context, event: PropertyChangeEvent<Person, SymptomStatus>| {
-                    if event.current == next_status {
+                move |context, event: PropertyChangeEvent<Person, SymptomStatus>| match event
+                    .current
+                {
+                    SymptomStatus::Mild => {
                         *count_clone.borrow_mut() += 1;
                         context.shutdown();
                     }
+                    _ => context.shutdown(),
                 },
             );
             // Run the simulation
@@ -272,47 +365,92 @@ mod test {
 
             let parameters = match (current_status, next_status) {
                 (SymptomStatus::NoSymptoms, SymptomStatus::Mild) => Params {
-                    probability_mild_given_infect: 1.0,
-                    infect_to_mild_mu: expected_mu,
-                    infect_to_mild_sigma: expected_sigma,
+                    infect_to_mild: InfectToMildParameters {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                        age_groups: vec![SymptomStatusAgeGroup {
+                            min: 0,
+                            probability: 1.0,
+                        }],
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Severe) => Params {
-                    probability_mild_given_infect: 1.0,
-                    probability_severe_given_mild: 1.0,
-                    mild_to_severe_mu: expected_mu,
-                    mild_to_severe_sigma: expected_sigma,
+                    mild_to_severe: MildToSevereParameters {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                        age_groups: vec![SymptomStatusAgeGroup {
+                            min: 0,
+                            probability: 1.0,
+                        }],
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Resolved) => Params {
-                    probability_mild_given_infect: 1.0,
-                    probability_severe_given_mild: 0.0,
-                    mild_to_resolved_mu: expected_mu,
-                    mild_to_resolved_sigma: expected_sigma,
+                    mild_to_severe: MildToSevereParameters {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                        age_groups: vec![SymptomStatusAgeGroup {
+                            min: 0,
+                            probability: 0.0,
+                        }],
+                    },
+                    mild_to_resolved: MildToResolvedParameters {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Severe, SymptomStatus::Critical) => Params {
-                    probability_critical_given_severe: 1.0,
-                    severe_to_critical_mu: expected_mu,
-                    severe_to_critical_sigma: expected_sigma,
+                    severe_to_critical: SevereToCriticalParameters {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                        age_groups: vec![SymptomStatusAgeGroup {
+                            min: 0,
+                            probability: 1.0,
+                        }],
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Severe, SymptomStatus::Resolved) => Params {
-                    probability_critical_given_severe: 0.0,
-                    severe_to_resolved_mu: expected_mu,
-                    severe_to_resolved_sigma: expected_sigma,
+                    severe_to_critical: SevereToCriticalParameters {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                        age_groups: vec![SymptomStatusAgeGroup {
+                            min: 0,
+                            probability: 0.0,
+                        }],
+                    },
+                    severe_to_resolved: SevereToResolvedParameters {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Critical, SymptomStatus::Dead) => Params {
-                    probability_dead_given_critical: 1.0,
-                    critical_to_dead_mu: expected_mu,
-                    critical_to_dead_sigma: expected_sigma,
+                    critical_to_dead: CriticalToDeadParameters {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                        age_groups: vec![SymptomStatusAgeGroup {
+                            min: 0,
+                            probability: 1.0,
+                        }],
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Critical, SymptomStatus::Resolved) => Params {
-                    probability_dead_given_critical: 0.0,
-                    critical_to_resolved_mu: expected_mu,
-                    critical_to_resolved_sigma: expected_sigma,
+                    critical_to_dead: CriticalToDeadParameters {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                        age_groups: vec![SymptomStatusAgeGroup {
+                            min: 0,
+                            probability: 0.0,
+                        }],
+                    },
+                    critical_to_resolved: CriticalToResolvedParameters {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                    },
                     ..Default::default()
                 },
                 _ => panic!(
@@ -389,10 +527,50 @@ mod test {
         for seed in 0..num_sims {
             let mut context = Context::new();
             let parameters = Params {
-                probability_mild_given_infect: 0.5,
-                probability_severe_given_mild: 0.5,
-                probability_critical_given_severe: 0.5,
-                probability_dead_given_critical: 0.5,
+                infect_to_mild: InfectToMildParameters {
+                    mu: 0.1,
+                    sigma: 0.1,
+                    age_groups: vec![SymptomStatusAgeGroup {
+                        min: 0,
+                        probability: 0.5,
+                    }],
+                },
+                mild_to_severe: MildToSevereParameters {
+                    mu: 0.1,
+                    sigma: 0.1,
+                    age_groups: vec![SymptomStatusAgeGroup {
+                        min: 0,
+                        probability: 0.5,
+                    }],
+                },
+                mild_to_resolved: MildToResolvedParameters {
+                    mu: 0.1,
+                    sigma: 0.1,
+                },
+                severe_to_critical: SevereToCriticalParameters {
+                    mu: 0.1,
+                    sigma: 0.1,
+                    age_groups: vec![SymptomStatusAgeGroup {
+                        min: 0,
+                        probability: 0.5,
+                    }],
+                },
+                severe_to_resolved: SevereToResolvedParameters {
+                    mu: 0.1,
+                    sigma: 0.1,
+                },
+                critical_to_dead: CriticalToDeadParameters {
+                    mu: 0.1,
+                    sigma: 0.1,
+                    age_groups: vec![SymptomStatusAgeGroup {
+                        min: 0,
+                        probability: 0.5,
+                    }],
+                },
+                critical_to_resolved: CriticalToResolvedParameters {
+                    mu: 0.1,
+                    sigma: 0.1,
+                },
                 ..Default::default()
             };
             context.init_random(seed);

@@ -5,6 +5,7 @@ use std::{fmt::Debug, path::PathBuf};
 use crate::infection_importation::ImportCasesFromFile;
 use crate::reports::ReportParams;
 use crate::settings::SettingProperties;
+use crate::symptom_status_manager::SymptomStatusAgeGroup;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RateFnType {
@@ -19,6 +20,70 @@ pub enum CoreSettingsTypes {
     School,
     Workplace,
     CensusTract,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct InfectToMildParameters {
+    /// The mean of the delay distribution to mild illness.
+    pub mu: f64,
+    /// The standard deviation of the delay distribution to mild illness.
+    pub sigma: f64,
+    /// Age groups for mild illness probabilities.
+    pub age_groups: Vec<SymptomStatusAgeGroup>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MildToSevereParameters {
+    /// The mean of the delay distribution to severe illness.
+    pub mu: f64,
+    /// The standard deviation of the delay distribution to severe illness.
+    pub sigma: f64,
+    /// Age groups for severe illness probabilities.
+    pub age_groups: Vec<SymptomStatusAgeGroup>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MildToResolvedParameters {
+    /// The mean of the delay distribution to resolved illness.
+    pub mu: f64,
+    /// The standard deviation of the delay distribution to resolved illness.
+    pub sigma: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SevereToCriticalParameters {
+    /// The mean of the delay distribution to critical illness.
+    pub mu: f64,
+    /// The standard deviation of the delay distribution to critical illness.
+    pub sigma: f64,
+    /// Age groups for critical illness probabilities.
+    pub age_groups: Vec<SymptomStatusAgeGroup>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SevereToResolvedParameters {
+    /// The mean of the delay distribution to resolved illness.
+    pub mu: f64,
+    /// The standard deviation of the delay distribution to resolved illness.
+    pub sigma: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CriticalToDeadParameters {
+    /// The mean of the delay distribution to death.
+    pub mu: f64,
+    /// The standard deviation of the delay distribution to death.
+    pub sigma: f64,
+    /// Age groups for death probabilities.
+    pub age_groups: Vec<SymptomStatusAgeGroup>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CriticalToResolvedParameters {
+    /// The mean of the delay distribution to resolved illness.
+    pub mu: f64,
+    /// The standard deviation of the delay distribution to resolved illness.
+    pub sigma: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -36,42 +101,56 @@ pub struct Params {
     pub imported_cases_timeseries: ImportCasesFromFile,
     /// A library of infection rates to assign to infected people.
     pub infectiousness_rate_fn: RateFnType,
-    /// Probability an infected person develops mild illness
-    pub probability_mild_given_infect: f64,
-    /// Mu parameter for log normal delay distribution from infection to mild illness
-    pub infect_to_mild_mu: f64,
-    /// Sigma parameter for log normal delay distribution from infection to mild illness
-    pub infect_to_mild_sigma: f64,
-    /// Probability a person with mild illness develops severe illness
-    pub probability_severe_given_mild: f64,
-    /// Mu parameter for log normal delay distribution from mild to severe illness
-    pub mild_to_severe_mu: f64,
-    /// Sigma parameter for log normal delay distribution from mild to severe illness
-    pub mild_to_severe_sigma: f64,
-    /// Mu parameter for log normal delay distribution from mild illness to resolution
-    pub mild_to_resolved_mu: f64,
-    /// Sigma parameter for log normal delay distribution from mild illness to resolution
-    pub mild_to_resolved_sigma: f64,
-    /// Probability a person with severe illness develops critical illness
-    pub probability_critical_given_severe: f64,
-    /// Mu parameter for log normal delay distribution from severe to critical illness
-    pub severe_to_critical_mu: f64,
-    /// Sigma parameter for log normal delay distribution from severe to critical illness
-    pub severe_to_critical_sigma: f64,
-    /// Mu parameter for log normal delay distribution from severe illness to resolution
-    pub severe_to_resolved_mu: f64,
-    /// Sigma parameter for log normal delay distribution from severe illness to resolution
-    pub severe_to_resolved_sigma: f64,
-    /// Probability a person with critical illness dies
-    pub probability_dead_given_critical: f64,
-    /// Mu parameter for log normal delay distribution from critical illness to death
-    pub critical_to_dead_mu: f64,
-    /// Sigma parameter for log normal delay distribution from critical illness to death
-    pub critical_to_dead_sigma: f64,
-    /// Mu parameter for log normal delay distribution from critical illness to resolution
-    pub critical_to_resolved_mu: f64,
-    /// Sigma parameter for log normal delay distribution from critical illness to resolution
-    pub critical_to_resolved_sigma: f64,
+    /// Parameters for the transition from infection to mild illness.
+    pub infect_to_mild: InfectToMildParameters,
+    /// Parameters for the transition from mild to severe illness.
+    pub mild_to_severe: MildToSevereParameters,
+    /// Parameters for the transition from mild illness to resolved illness.
+    pub mild_to_resolved: MildToResolvedParameters,
+    /// Parameters for the transition from severe to critical illness.
+    pub severe_to_critical: SevereToCriticalParameters,
+    /// Parameters for the transition from severe illness to resolved illness.
+    pub severe_to_resolved: SevereToResolvedParameters,
+    /// Parameters for the transition from critical illness to death.
+    pub critical_to_dead: CriticalToDeadParameters,
+    /// Parameters for the transition from critical illness to resolved illness.
+    pub critical_to_resolved: CriticalToResolvedParameters,
+    // /// Probability an infected person develops mild illness
+    // pub probability_mild_given_infect: f64,
+    // /// Mu parameter for log normal delay distribution from infection to mild illness
+    // pub infect_to_mild_mu: f64,
+    // /// Sigma parameter for log normal delay distribution from infection to mild illness
+    // pub infect_to_mild_sigma: f64,
+    // /// Probability a person with mild illness develops severe illness
+    // pub probability_severe_given_mild: f64,
+    // /// Mu parameter for log normal delay distribution from mild to severe illness
+    // pub mild_to_severe_mu: f64,
+    // /// Sigma parameter for log normal delay distribution from mild to severe illness
+    // pub mild_to_severe_sigma: f64,
+    // /// Mu parameter for log normal delay distribution from mild illness to resolution
+    // pub mild_to_resolved_mu: f64,
+    // /// Sigma parameter for log normal delay distribution from mild illness to resolution
+    // pub mild_to_resolved_sigma: f64,
+    // /// Probability a person with severe illness develops critical illness
+    // pub probability_critical_given_severe: f64,
+    // /// Mu parameter for log normal delay distribution from severe to critical illness
+    // pub severe_to_critical_mu: f64,
+    // /// Sigma parameter for log normal delay distribution from severe to critical illness
+    // pub severe_to_critical_sigma: f64,
+    // /// Mu parameter for log normal delay distribution from severe illness to resolution
+    // pub severe_to_resolved_mu: f64,
+    // /// Sigma parameter for log normal delay distribution from severe illness to resolution
+    // pub severe_to_resolved_sigma: f64,
+    // /// Probability a person with critical illness dies
+    // pub probability_dead_given_critical: f64,
+    // /// Mu parameter for log normal delay distribution from critical illness to death
+    // pub critical_to_dead_mu: f64,
+    // /// Sigma parameter for log normal delay distribution from critical illness to death
+    // pub critical_to_dead_sigma: f64,
+    // /// Mu parameter for log normal delay distribution from critical illness to resolution
+    // pub critical_to_resolved_mu: f64,
+    // /// Sigma parameter for log normal delay distribution from critical illness to resolution
+    // pub critical_to_resolved_sigma: f64,
     /// Setting properties by setting type
     pub settings_properties: HashMap<CoreSettingsTypes, SettingProperties>,
     /// ratios used to initialize individuals itineraries by setting type.
@@ -113,32 +192,32 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
         }
     }
 
-    // Validate the symptom status parameters
-    if !(0.0..=1.0).contains(&parameters.probability_mild_given_infect) {
-        return Err(IxaError::IxaError(
-            "The probability of mild illness given infection must be between 0 and 1, inclusive."
-                .to_string(),
-        ));
-    }
+    // // Validate the symptom status parameters
+    // if !(0.0..=1.0).contains(&parameters.probability_mild_given_infect) {
+    //     return Err(IxaError::IxaError(
+    //         "The probability of mild illness given infection must be between 0 and 1, inclusive."
+    //             .to_string(),
+    //     ));
+    // }
 
-    if !(0.0..=1.0).contains(&parameters.probability_severe_given_mild) {
-        return Err(IxaError::IxaError(
-            "The probability of severe illness given mild illness must be between 0 and 1, inclusive.".to_string(),
-        ));
-    }
+    // if !(0.0..=1.0).contains(&parameters.probability_severe_given_mild) {
+    //     return Err(IxaError::IxaError(
+    //         "The probability of severe illness given mild illness must be between 0 and 1, inclusive.".to_string(),
+    //     ));
+    // }
 
-    if !(0.0..=1.0).contains(&parameters.probability_critical_given_severe) {
-        return Err(IxaError::IxaError(
-            "The probability of critical illness given severe illness must be between 0 and 1, inclusive.".to_string(),
-        ));
-    }
+    // if !(0.0..=1.0).contains(&parameters.probability_critical_given_severe) {
+    //     return Err(IxaError::IxaError(
+    //         "The probability of critical illness given severe illness must be between 0 and 1, inclusive.".to_string(),
+    //     ));
+    // }
 
-    if !(0.0..=1.0).contains(&parameters.probability_dead_given_critical) {
-        return Err(IxaError::IxaError(
-            "The probability of dying given critical illness must be between 0 and 1, inclusive."
-                .to_string(),
-        ));
-    }
+    // if !(0.0..=1.0).contains(&parameters.probability_dead_given_critical) {
+    //     return Err(IxaError::IxaError(
+    //         "The probability of dying given critical illness must be between 0 and 1, inclusive."
+    //             .to_string(),
+    //     ));
+    // }
 
     // We only want to fail when all itinerary ratios are 0.
     // Instead of holding the itinerary ratios in a vector, we sum them because we error if they
@@ -224,24 +303,68 @@ impl Default for Params {
                 rate: 1.0,
                 duration: 5.0,
             },
-            probability_mild_given_infect: 0.0,
-            infect_to_mild_mu: 0.0,
-            infect_to_mild_sigma: 0.0,
-            probability_severe_given_mild: 0.0,
-            mild_to_severe_mu: 0.0,
-            mild_to_severe_sigma: 0.0,
-            mild_to_resolved_mu: 0.0,
-            mild_to_resolved_sigma: 0.0,
-            probability_critical_given_severe: 0.0,
-            severe_to_critical_mu: 0.0,
-            severe_to_critical_sigma: 0.0,
-            severe_to_resolved_mu: 0.0,
-            severe_to_resolved_sigma: 0.0,
-            probability_dead_given_critical: 0.0,
-            critical_to_dead_mu: 0.0,
-            critical_to_dead_sigma: 0.0,
-            critical_to_resolved_mu: 0.0,
-            critical_to_resolved_sigma: 0.0,
+            infect_to_mild: InfectToMildParameters {
+                mu: 0.0,
+                sigma: 0.0,
+                age_groups: vec![SymptomStatusAgeGroup {
+                    min: 0,
+                    probability: 0.0,
+                }],
+            },
+            mild_to_severe: MildToSevereParameters {
+                mu: 0.0,
+                sigma: 0.0,
+                age_groups: vec![SymptomStatusAgeGroup {
+                    min: 0,
+                    probability: 0.0,
+                }],
+            },
+            mild_to_resolved: MildToResolvedParameters {
+                mu: 0.0,
+                sigma: 0.0,
+            },
+            severe_to_critical: SevereToCriticalParameters {
+                mu: 0.0,
+                sigma: 0.0,
+                age_groups: vec![SymptomStatusAgeGroup {
+                    min: 0,
+                    probability: 0.0,
+                }],
+            },
+            severe_to_resolved: SevereToResolvedParameters {
+                mu: 0.0,
+                sigma: 0.0,
+            },
+            critical_to_dead: CriticalToDeadParameters {
+                mu: 0.0,
+                sigma: 0.0,
+                age_groups: vec![SymptomStatusAgeGroup {
+                    min: 0,
+                    probability: 0.0,
+                }],
+            },
+            critical_to_resolved: CriticalToResolvedParameters {
+                mu: 0.0,
+                sigma: 0.0,
+            },
+            // probability_mild_given_infect: 0.0,
+            // infect_to_mild_mu: 0.0,
+            // infect_to_mild_sigma: 0.0,
+            // probability_severe_given_mild: 0.0,
+            // mild_to_severe_mu: 0.0,
+            // mild_to_severe_sigma: 0.0,
+            // mild_to_resolved_mu: 0.0,
+            // mild_to_resolved_sigma: 0.0,
+            // probability_critical_given_severe: 0.0,
+            // severe_to_critical_mu: 0.0,
+            // severe_to_critical_sigma: 0.0,
+            // severe_to_resolved_mu: 0.0,
+            // severe_to_resolved_sigma: 0.0,
+            // probability_dead_given_critical: 0.0,
+            // critical_to_dead_mu: 0.0,
+            // critical_to_dead_sigma: 0.0,
+            // critical_to_resolved_mu: 0.0,
+            // critical_to_resolved_sigma: 0.0,
             settings_properties: HashMap::new(),
             itinerary_ratios: HashMap::new(),
             prevalence_report: ReportParams {

@@ -1,9 +1,9 @@
-use ixa::{csv, prelude::*};
+use ixa::{csv, impl_derived_property, prelude::*};
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::parameters::{ContextParametersExt, Params};
+use crate::parameters::{ContextParametersExt, GlobalParams, Params};
 use crate::settings::{
     CensusTract, ContextSettingExt, Home, School, SettingId, Workplace, append_itinerary_entry,
 };
@@ -27,6 +27,25 @@ impl_property!(Age, Person);
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
 pub struct Alive(pub bool);
 impl_property!(Alive, Person, default_const = Alive(true));
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+pub struct AgeGroup(pub u8);
+impl_derived_property!(AgeGroup, Person, [Age], [GlobalParams], |age, params| {
+    let p: &Params = params;
+    for (i, group) in p
+        .infect_to_mild
+        .age_groups
+        .iter()
+        .enumerate()
+        .take(p.infect_to_mild.age_groups.len() - 1)
+    {
+        let next_group = p.infect_to_mild.age_groups.get(i + 1).unwrap();
+        if (group.min..next_group.min).contains(&age.0) {
+            return AgeGroup(group.min);
+        }
+    }
+    AgeGroup(p.infect_to_mild.age_groups.last().unwrap().min)
+});
 
 fn create_person_from_record(
     context: &mut Context,
