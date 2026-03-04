@@ -22,7 +22,7 @@ define_report!(PersonPropertyReport);
 define_multi_property!((Age, InfectionStatus, SymptomStatus), Person);
 
 struct PropertyReportDataContainer {
-    report_map_container: HashMap<(Age, InfectionStatus, SymptomStatus), usize>
+    report_map_container: HashMap<(Age, InfectionStatus, SymptomStatus), usize>,
 }
 
 define_data_plugin!(
@@ -78,7 +78,6 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), I
 
     let mut map_counts = HashMap::default();
 
-
     context.with_query_results::<Person, _>((Alive(true),), &mut |current_people| {
         //current_people = results.to_owned_vec();
         for person in current_people {
@@ -87,8 +86,8 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), I
                 .entry(value)
                 .and_modify(|count| *count += 1)
                 .or_insert(1);
-            }
-        });
+        }
+    });
 
     let report_container = context.get_data_mut(PropertyReportDataPlugin);
     report_container.report_map_container = map_counts;
