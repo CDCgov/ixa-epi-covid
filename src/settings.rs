@@ -208,6 +208,12 @@ impl SettingDataContainer {
             .or_default()
             .insert(person_id);
     }
+
+    fn remove_member(&mut self, person_id: PersonId, setting_identifier: (TypeId, usize)) {
+        if let Some(members) = self.all_members.get_mut(&setting_identifier) {
+            members.swap_remove(&person_id);
+        }
+    }
 }
 
 #[macro_export]
@@ -260,6 +266,24 @@ trait ContextSettingInternalExt: PluginContext + ContextRandomExt {
 
     fn get_itinerary_internal(&self, person_id: PersonId) -> Option<&Vec<ItineraryEntry>> {
         self.get_data(SettingDataPlugin).get_itinerary(person_id)
+    }
+
+    fn remove_person_from_settings_internal(&mut self, person_id: PersonId) {
+        let container = self.get_data_mut(SettingDataPlugin);
+        let setting_identifiers: Vec<_> = container
+            .get_itinerary(person_id)
+            .map(|itinerary| {
+                itinerary
+                    .iter()
+                    .map(|entry| entry.setting.get_tuple_id())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        for setting_identifier in setting_identifiers {
+            container.remove_member(person_id, setting_identifier);
+        }
+        container.itineraries.remove(&person_id);
     }
 }
 impl ContextSettingInternalExt for Context {}
@@ -471,6 +495,10 @@ pub trait ContextSettingExt:
 
     fn sample_setting_members(&self, setting: &dyn AnySettingId) -> Option<PersonId> {
         self.sample_setting_members_internal(setting)
+    }
+
+    fn remove_person_from_settings(&mut self, person_id: PersonId) {
+        self.remove_person_from_settings_internal(person_id);
     }
 }
 impl ContextSettingExt for Context {}
