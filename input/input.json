@@ -31,7 +31,6 @@
         "critical_to_dead_sigma": 0.1,
         "critical_to_resolved_mu": 0.1,
         "critical_to_resolved_sigma": 0.1,
-
         "settings_properties": {"Home": {"alpha": 0.0},
                             "Workplace": {"alpha": 0.0},
                             "School": {"alpha": 0.0},
