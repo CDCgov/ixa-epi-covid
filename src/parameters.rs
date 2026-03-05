@@ -116,7 +116,8 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
     // Validate the symptom status parameters
     if !(0.0..=1.0).contains(&parameters.probability_mild_given_infect) {
         return Err(IxaError::IxaError(
-            "The probability of mild illness given infection must be between 0 and 1, inclusive.".to_string(),
+            "The probability of mild illness given infection must be between 0 and 1, inclusive."
+                .to_string(),
         ));
     }
 
@@ -134,7 +135,8 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
 
     if !(0.0..=1.0).contains(&parameters.probability_dead_given_critical) {
         return Err(IxaError::IxaError(
-            "The probability of dying given critical illness must be between 0 and 1, inclusive.".to_string(),
+            "The probability of dying given critical illness must be between 0 and 1, inclusive."
+                .to_string(),
         ));
     }
 
