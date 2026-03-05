@@ -111,7 +111,7 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), I
 mod test {
     use crate::{
         Age,
-        infectiousness_manager::InfectionContextExt,
+        infectiousness_manager::{InfectionContextExt, InfectionStatus},
         parameters::{ContextParametersExt, GlobalParams, Params},
         population_loader::PersonId,
         rate_fns::load_rate_fns,
@@ -179,24 +179,33 @@ mod test {
 
         assert!(file_path.exists());
         let mut reader = csv::Reader::from_path(file_path).unwrap();
+        let mut line_count = 0;
+        for result in reader.deserialize() {
+            let record:crate::reports::prevalence_report::PersonPropertyReport = result.unwrap();
+            line_count += 1;
+            if record.t == 0.0 {
+                if record.age == 42 {
+                    assert_eq!(record.infection_status, InfectionStatus::Infectious);
+                    assert_eq!(record.count, 1);
+                } else if record.age == 43 {
+                    assert_eq!(record.infection_status, InfectionStatus::Susceptible);
+                    assert_eq!(record.count, 1);
+                } else { panic!("invalid age at t == 0.0") }
+            }
+            else if record.t == 2.0 {
+                if record.age == 42 {
+                    assert_eq!(record.infection_status, InfectionStatus::Infectious);
+                    assert_eq!(record.count, 1);
+                } else if record.age == 43 {
+                    match record.infection_status {
+                        InfectionStatus::Susceptible => assert_eq!(record.count, 0),
+                        InfectionStatus::Infectious => assert_eq!(record.count, 1),
+                        _ => panic!("All InfectionStatus should be susceptible or infectious")
+                    }
+                } else { panic!("invalid age at t == 2.0") }
+            } else { panic!("record times other than 0.0 and 2.0 are invalid")}
+        }
 
-        let mut actual: Vec<Vec<String>> = reader
-            .records()
-            .map(|result| result.unwrap().iter().map(String::from).collect())
-            .collect();
-        let mut expected = vec![
-            //   t    | age | inf status | count
-            vec!["0.0", "42", "Infectious", "1"],
-            vec!["0.0", "43", "Susceptible", "1"],
-            vec!["2.0", "42", "Infectious", "1"],
-            vec!["2.0", "43", "Infectious", "1"],
-            // Only an initialized combination can have a zero count
-            vec!["2.0", "43", "Susceptible", "0"],
-        ];
-
-        actual.sort();
-        expected.sort();
-
-        assert_eq!(actual, expected, "CSV file should contain the correct data");
+        assert_eq!(line_count, 5);
     }
 }

@@ -44,7 +44,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
         critical_to_dead_sigma,
         critical_to_resolved_mu,
         critical_to_resolved_sigma,
-        .. 
+        ..
         } = context.get_params();
 
     context.subscribe_to_event(
