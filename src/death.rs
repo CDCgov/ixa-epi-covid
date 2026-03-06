@@ -1,4 +1,4 @@
-use ixa::{Context, IxaError, prelude::*};
+use ixa::{Context, HashMap, IxaError, plan::PlanId, prelude::*};
 
 use crate::{
     population_loader::{Alive, Person, PersonId},
@@ -6,9 +6,48 @@ use crate::{
     symptom_status_manager::SymptomStatus,
 };
 
+#[derive(Default)]
+struct DeathDataContainer {
+    plans: HashMap<PersonId, Vec<PlanId>>,
+}
+
+impl DeathDataContainer {
+    fn record_plan(&mut self, person: PersonId, plan: PlanId) {
+        self.plans.entry(person).or_default().push(plan);
+    }
+
+    fn get_plans(&mut self, person: PersonId) -> Vec<PlanId> {
+        self.plans.get(&person).cloned().unwrap_or_default()
+    }
+
+    fn remove_plan_records(&mut self, person: PersonId) {
+        self.plans.remove(&person);
+    }
+}
+
+define_data_plugin!(
+    DeathDataPlugin,
+    DeathDataContainer,
+    DeathDataContainer::default()
+);
+
 pub trait ContextDeathExt: PluginContext + ContextEntitiesExt {
     fn is_alive(&self, person_id: PersonId) -> bool {
         self.get_property::<Person, Alive>(person_id).0
+    }
+
+    fn record_plan(&mut self, person_id: PersonId, plan_id: PlanId) {
+        self.get_data_mut(DeathDataPlugin)
+            .record_plan(person_id, plan_id);
+    }
+
+    fn cancel_plans(&mut self, person_id: PersonId) {
+        let plan_ids = self.get_data_mut(DeathDataPlugin).get_plans(person_id);
+        for plan_id in plan_ids {
+            self.cancel_plan(&plan_id);
+        }
+        self.get_data_mut(DeathDataPlugin)
+            .remove_plan_records(person_id);
     }
 }
 impl ContextDeathExt for Context {}

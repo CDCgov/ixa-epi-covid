@@ -1,5 +1,6 @@
 use ixa::prelude::*;
 
+use crate::death::ContextDeathExt;
 use crate::infectiousness_manager::{
     Forecast, InfectionContextExt, InfectionStatus, evaluate_forecast, get_forecast,
     infection_attempt,
@@ -32,6 +33,9 @@ fn schedule_recovery(context: &mut Context, person: PersonId) {
     let infection_duration = context.get_person_rate_fn(person).infection_duration();
     let recovery_time = context.get_current_time() + infection_duration;
     context.add_plan(recovery_time, move |context| {
+        if !context.is_alive(person) {
+            return;
+        }
         increment_named_count("recovery");
         trace!("Person {person} has recovered at {recovery_time}");
         context.recover_person(person);
