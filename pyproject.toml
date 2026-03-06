@@ -1,5 +1,5 @@
 [project]
-name = "ixa-epi-covid"
+name = "ixa_epi_covid"
 version = "0.1.0"
 description = "Epidemiological models for COVID-19 developed in ixa"
 readme = "README.md"
@@ -15,14 +15,19 @@ dependencies = [
     "scipy>=1.16.3",
     "seaborn>=0.13.2",
     "us>=3.2.0",
+    "cfa-mrp",
+    "calibrationtools"
 ]
 
 [build-system]
-requires = ["uv-build>=0.8.13,<0.9.0"]
-build-backend = "uv-build"
+requires = ["uv_build>=0.8.13,<0.9.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+calibrationtools = { git = "https://github.com/CDCgov/cfa-calibration-tools.git", branch = "wtk-dev" }
 
 [tool.uv]
-package = false
+package = true
 
 [tool.uv.workspace]
 members = [

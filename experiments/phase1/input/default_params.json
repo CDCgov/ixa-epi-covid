@@ -1,0 +1,55 @@
+{
+    "epimodel.GlobalParams": {
+        "seed": 1234,
+        "max_time": 100.0,
+        "synth_population_file": "input/people_test.csv",
+        "symptomatic_reporting_prob": 0.5,
+        "initial_prevalence": 0.0,
+        "imported_cases_timeseries": {
+            "include": true,
+            "filename": "./experiments/phase1/calibration/output/importation_timeseries.csv"
+        },
+        "infectiousness_rate_fn": {"Constant": {
+                "rate": 1.0,
+                "duration": 5.0
+            }
+        },
+        "probability_mild_given_infect": 0.7,
+        "infect_to_mild_mu": 0.1,
+        "infect_to_mild_sigma": 0.0,
+        "probability_severe_given_mild": 0.2,
+        "mild_to_severe_mu": 0.1,
+        "mild_to_severe_sigma": 0.1,
+        "mild_to_resolved_mu": 0.1,
+        "mild_to_resolved_sigma": 0.1,
+        "probability_critical_given_severe": 0.2,
+        "severe_to_critical_mu": 0.1,
+        "severe_to_critical_sigma": 0.1,
+        "severe_to_resolved_mu": 0.1,
+        "severe_to_resolved_sigma": 0.1,
+        "probability_dead_given_critical": 0.2,
+        "critical_to_dead_mu": 0.1,
+        "critical_to_dead_sigma": 0.1,
+        "critical_to_resolved_mu": 0.1,
+        "critical_to_resolved_sigma": 0.1,
+        "settings_properties": {"Home": {"alpha": 0.0},
+                            "Workplace": {"alpha": 0.0},
+                            "School": {"alpha": 0.0},
+                            "CensusTract": {"alpha": 0.0}},
+        "itinerary_ratios": {"Home": 0.25, "Workplace": 0.25, "School": 0.25, "CensusTract": 0.25},
+        "prevalence_report": {
+            "write": true,
+            "filename": "person_property_count.csv",
+            "period": 1.0
+        },
+        "incidence_report": {
+            "write": true,
+            "filename": "incidence_report.csv",
+            "period": 1.0
+        },
+        "transmission_report": {
+            "write": false,
+            "filename": "transmission_report.csv"
+        }
+    }
+}
