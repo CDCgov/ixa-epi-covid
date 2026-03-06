@@ -35,7 +35,6 @@ pub trait ContextDeathExt: PluginContext + ContextEntitiesExt {
     fn is_alive(&self, person_id: PersonId) -> bool {
         self.get_property::<Person, Alive>(person_id).0
     }
-
     fn record_plan(&mut self, person_id: PersonId, plan_id: PlanId) {
         self.get_data_mut(DeathDataPlugin)
             .record_plan(person_id, plan_id);
@@ -57,6 +56,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
             if event.current == SymptomStatus::Dead {
                 context.set_property::<Person, Alive>(event.entity_id, Alive(false));
                 context.remove_person_from_settings(event.entity_id);
+                context.cancel_plans(event.entity_id);
             }
         },
     );

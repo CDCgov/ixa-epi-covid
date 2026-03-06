@@ -112,10 +112,6 @@ pub struct Forecast {
 /// Forecast of the next expected infection time, and the expected rate of
 /// infection at that time.
 pub fn get_forecast(context: &Context, person_id: PersonId) -> Option<Forecast> {
-    if !context.is_alive(person_id) {
-        trace!("Person {person_id} is dead. No forecast will be generated.");
-        return None;
-    }
     // Get the person's individual infectiousness
     let rate_fn = context.get_person_rate_fn(person_id);
     // This scales infectiousness by the maximum possible infectiousness across all settings
@@ -145,10 +141,6 @@ pub fn evaluate_forecast(
     person_id: PersonId,
     forecasted_total_infectiousness: f64,
 ) -> bool {
-    if !context.is_alive(person_id) {
-        trace!("Person {person_id} is dead. Forecast will be automatically rejected.");
-        return false;
-    }
     let rate_fn = context.get_person_rate_fn(person_id);
 
     let total_multiplier = calc_total_infectiousness_multiplier(context, person_id);

@@ -18,7 +18,7 @@ fn schedule_next_forecasted_infection(context: &mut Context, person: PersonId) {
         forecasted_total_infectiousness,
     }) = get_forecast(context, person)
     {
-        context.add_plan(next_time, move |context| {
+        let plan = context.add_plan(next_time, move |context| {
             let _span = open_span("evaluate and schedule next forecast");
             if evaluate_forecast(context, person, forecasted_total_infectiousness) {
                 let _ = infection_attempt(context, person);
@@ -26,20 +26,19 @@ fn schedule_next_forecasted_infection(context: &mut Context, person: PersonId) {
             // Continue scheduling forecasts until the person recovers.
             schedule_next_forecasted_infection(context, person);
         });
+        context.record_plan(person, plan);
     }
 }
 
 fn schedule_recovery(context: &mut Context, person: PersonId) {
     let infection_duration = context.get_person_rate_fn(person).infection_duration();
     let recovery_time = context.get_current_time() + infection_duration;
-    context.add_plan(recovery_time, move |context| {
-        if !context.is_alive(person) {
-            return;
-        }
+    let plan = context.add_plan(recovery_time, move |context| {
         increment_named_count("recovery");
         trace!("Person {person} has recovered at {recovery_time}");
         context.recover_person(person);
     });
+    context.record_plan(person, plan);
 }
 
 pub fn init(context: &mut Context) -> Result<(), IxaError> {
