@@ -33,14 +33,18 @@ def get_importation_parameter_dict():
     return parameter_dict
 
 
-def validate_data(df: pl.DataFrame):
+def validate_data(df: pl.DataFrame) -> bool:
     """
     Validate that the input DataFrame contains the required columns for importation parameter calculations.
 
     Args:
         df (pl.DataFrame): The DataFrame to validate.
+    Returns:
+        bool: True if the DataFrame is valid, otherwise raises a ValueError with an appropriate error message.
     Raises:
-        AssertionError: If any of the required columns are missing from the DataFrame, or if extra columns are present.
+        ValueError:
+            If any of the required columns are missing from the DataFrame, or if extra columns are present.
+            If the DataFrame is empty.
     """
 
     required_columns = [
@@ -62,7 +66,7 @@ def validate_data(df: pl.DataFrame):
     return True
 
 
-def get_prop_ascf(importation_parameters: dict | pl.DataFrame):
+def get_prop_ascf(importation_parameters: dict | pl.DataFrame) -> pl.DataFrame:
     """
     Generate a table of proportions for asymptomatic, symptomatic, and case fatality counts
     over time based on provided importation parameters.
@@ -72,9 +76,11 @@ def get_prop_ascf(importation_parameters: dict | pl.DataFrame):
     This approach assumes that all deaths are detected and that no asymptomatic infections are
     detected or lead to death.
     Args:
-        replicates (int): The number of replicates to generate.
-        seed (int, optional): A seed for the random number generator to ensure reproducibility.
-                              Defaults to None.
+        importation_parameters (dict | pl.DataFrame):
+            A dictionary or Polars DataFrame containing the parameters
+            "proportion_asymptomatic", "case_fatality_ratio", and "symptomatic_reporting_prob".
+            If a DataFrame is provided, it must contain these columns and may include a "replicate"
+            column if multiple rows are present.
     Returns:
         pl.DataFrame: A DataFrame containing the following columns:
             - proportion_asymptomatic: Proportion of infections that are asymptomatic.
@@ -84,7 +90,7 @@ def get_prop_ascf(importation_parameters: dict | pl.DataFrame):
             - prop_detected_symptomatic: Proportion of all infections that are symptomatic and are successfully detected.
             - prop_deaths: Proportion of all infections that lead to death.
     Raises:
-        AssertionError: If the calculated proportions do not sum to approximately 1.0.
+        NotImplementedError: If multiple replicates are provided in the input DataFrame.
     """
 
     # Calculate proportions from sampled parameters for each replicate
@@ -150,7 +156,7 @@ def prob_undetected_infections(
     known_cases: int,
     known_deaths: int,
     prop_ascf: pl.DataFrame,
-):
+) -> pl.DataFrame:
     """
     Calculate the probability of observing known cases and deaths given the number of undetected infections.
 
@@ -214,7 +220,7 @@ def sample_undetected_infections(
     prop_ascf: pl.DataFrame,
     max_infections: int = 20000,
     seed: int = None,
-):
+) -> pl.DataFrame:
     """
     Sample undetected infections from a probability distribution based on known cases, known deaths,
     and a given proportion of ascertainment.
@@ -228,7 +234,6 @@ def sample_undetected_infections(
         known_deaths (int): The number of known deaths.
         prop_ascf (pl.DataFrame): A Polars DataFrame containing the proportion of ascertainment
             for each replicate. It must include a column named "replicate".
-        n_samples (int, optional): The number of samples to draw for each replicate. Defaults to 1.
         max_infections (int, optional): The maximum number of infections to consider in the
             probability distribution. Defaults to 20000.
         seed (int, optional): A random seed for reproducibility. Defaults to None.
@@ -236,12 +241,6 @@ def sample_undetected_infections(
     Returns:
         pl.DataFrame: A Polars DataFrame containing the sampled number of undetected infections
         for each replicate, along with the corresponding replicate information from `prop_ascf`.
-
-    Raises:
-        ValueError: If the input data or parameters are invalid.
-
-    Notes:
-        - The probabilities are normalized for each replicate before sampling.
     """
 
     if seed is not None:

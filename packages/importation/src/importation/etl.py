@@ -16,6 +16,11 @@ REPO_DATA_URL = "https://raw.githubusercontent.com/TALexPerkins/sarscov2_unobser
 def read_bytes(data_url: str, file_path: str) -> pl.DataFrame:
     """
     Read CSV data from a GitHub URL into a Polars DataFrame.
+    Args:
+        data_url (str): The base URL of the GitHub repository where the data is stored.
+        file_path (str): The path to the specific CSV file within the repository.
+    Returns:
+        pl.DataFrame: A Polars DataFrame containing the data from the specified CSV file.
     """
     if data_url.endswith("/"):
         url = data_url[:-1]
@@ -35,9 +40,16 @@ def get_perkins_et_al_posteriors(
     input_dir: str | Path = "./.cache",
     cache: bool = True,
     scenario: str = "Default",
-):
+) -> pl.DataFrame:
     """
     Fetch COVID-19 parameter estimates from GitHub repository. Perkins et al. 2020 PNAS
+    Args:
+        base_filename (str): The base filename for the parameter estimates CSV file. Defaults to "perkins_et_al_importation_parameters.csv".
+        input_dir (str | Path): The directory where cached files are stored. Defaults to "./.cache".
+        cache (bool): Whether to cache the retrieved data locally. Defaults to True.
+        scenario (str): The scenario name for which to retrieve parameter estimates. This string must be available within the column for "scenario" in the dataset. Defaults to "Default".
+    Returns:
+        pl.DataFrame: A Polars DataFrame containing the parameter estimates for the specified scenario, with columns corresponding to the parameters and their values.
     """
     filename = f"{scenario.lower()}_{base_filename}"
     # Create cache directory if it doesn't exist
@@ -70,9 +82,20 @@ def get_linelist_data(
     cache: bool = True,
     url: str = REPO_DATA_URL,
     linelist_file: str = "2020_03_12_1800EST_linelist_NIHFogarty.csv",
-):
+) -> pl.DataFrame:
     """
     Fetch COVID-19 linelist data for analysis from Perkins et al. 2020 PNAS.
+    Args:
+        filename (str): The filename for the linelist data CSV file. Defaults to "raw_perkins_et_al_importation_data.csv".
+        input_dir (str | Path): The directory where cached files are stored. Defaults to "./.cache".
+        cache (bool): Whether to cache the retrieved data locally. Defaults to True.
+        url (str): The base URL of the GitHub repository where the data is stored. Defaults to REPO_DATA_URL.
+        linelist_file (str): The specific filename of the linelist data within the repository. Defaults to "2020_03_12_1800EST_linelist_NIHFogarty.csv".
+    Returns:
+        pl.DataFrame: A Polars DataFrame containing the linelist data, with columns corresponding to the relevant fields such as "report_day", "onset_day", "exposure_day".
+    Notes:
+        - The function checks for a cached version of the linelist data in the specified input directory
+        - The data is filtered following the methods in Perkins et al. 2020 PNAS to include only US importations that are not associated with the Diamond Princess cruise ship and are marked as international travelers.
     """
 
     # Create cache directory if it doesn't exist

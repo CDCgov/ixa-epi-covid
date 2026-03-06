@@ -35,10 +35,6 @@ def get_total_state_population_data(
             - "state" (int): The state FIPS code.
             - "population" (int): The population of the state.
 
-    Raises:
-        FileNotFoundError: If the cache file does not exist and the API key is not available.
-        ValueError: If there is an issue with the data retrieved from the API.
-
     Notes:
         - The function uses the Census API and requires a valid API key.
         - Cached files are stored in the ".cache" directory with filenames in the format

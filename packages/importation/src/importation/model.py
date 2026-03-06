@@ -16,6 +16,10 @@ def summarize_linelist_importation_data(
     day. The resulting DataFrame contains two columns: `time`, and `imported_infections`.
     Args:
         data (pl.DataFrame): A Polars DataFrame containing linelist importation data
+        report_day_bounds (tuple[int, int]): A tuple specifying the lower and upper bounds of report days to include in the summary.
+        expand (bool, optional): Whether to expand the summary to include all report days within the specified bounds, filling missing days with zero infections. Defaults to True.
+    Returns:
+        pl.DataFrame: A Polars DataFrame containing the summarized importation incidence data, with columns `time` (report day) and `imported_infections` (number of infections reported on that day).
     """
 
     reporting_incidence = data.group_by("report_day").agg(
@@ -51,18 +55,40 @@ def summarize_linelist_importation_data(
 
 
 class RegionalModel:
+    """
+    Class for sampling importation data at the regional level (e.g., national or state level)
+    Args:
+        model_type (Literal["multinomial", "proportional"]): The type of regional model to use.
+        parameters (dict | pl.DataFrame): A single set of parameters to be used for the model specification.
+    Methods:
+        sample_importation_data(reporting_data, seed=None, **kwargs) -> pl.DataFrame:
+            Sample importation data based on the specified model type and parameters.
+    """
+
     def __init__(
         self,
-        model_type: Literal["multinomial"],
+        model_type: Literal["multinomial", "proportional"],
         parameters: dict | pl.DataFrame,
     ):
-        """Class for sampling importation data at the regional level (e.g., national or state level)"""
         self.model_type = model_type
         self.parameters = parameters
 
     def sample_importation_data(
-        self, reporting_data, seed: int = None, **kwargs
+        self, reporting_data: pl.DataFrame, seed: int | None = None, **kwargs
     ) -> pl.DataFrame:
+        """
+        Sample importation data based on the specified model type and parameters.
+        Args:
+            reporting_data (pl.DataFrame): A Polars DataFrame containing the reporting data to sample from.
+            seed (int | None): A random seed for reproducibility. Defaults to None.
+            **kwargs: Additional keyword arguments that may be required for specific model types.
+        Returns:
+            pl.DataFrame: A Polars DataFrame containing the sampled importation data.
+        Raises:
+            ValueError: If an unknown model type is specified or if required parameters are missing for the proportional model.
+        Notes:
+            - For the "multinomial" model type, the sampling is performed using the `sample_us_importation_incidence_data` function from the `perkins_et_al_methods` module, which requires specific parameters to be provided in `self.parameters`.
+        """
         match self.model_type:
             case "multinomial":
                 from .perkins_et_al_methods import (
@@ -113,31 +139,26 @@ class ImportationModel:
     """
     A model for simulating and processing synthetic importation data at both national and state levels.
 
-    Attributes:
-        parameters (dict | pl.DataFrame): The parameters for the model, which can be provided as a dictionary or a DataFrame.
-        national_model_type (Literal["multinomial"]): The type of the national model. Defaults to None.
-        national_model (RegionalModel | None): The national-level model instance, if specified.
-        state_model_type (Literal["multinomial", "proportional"]): The type of the state model.
-        state_model (RegionalModel): The state-level model instance.
-        seed (int | None): The random seed for reproducibility.
+    Args:
         data (pl.DataFrame): The input data for the model.
+        parameters (dict | pl.DataFrame): A single set of parameters to be used for the model specification.
+        state_model (Literal["multinomial", "proportional"]): The type of the state model.
+        national_model (Literal["multinomial"] | None): The type of the national model, if specified.
+        seed (int | None): The random seed for reproducibility.
 
     Methods:
-        __init__(data, parameters, state_model, national_model=None, seed=None):
-            Initializes the ImportationModel with the given data, parameters, and model types.
-
+        _validate_model_inputs() -> None:
+            Validates the model inputs to ensure that the specified national and state models are compatible and that the input data is suitable for the multinomial model if either model is specified as multinomial.
         sample_state_importation_incidence(fill_null=True, seed=None, **kwargs) -> pl.DataFrame:
             Samples state-level importation incidence data. If a national model is specified,
             it first generates importation data at the national level and then samples state-level
             data from it. Otherwise, it directly samples state-level data from the input data.
-
         summarize_linelist_importation_data(linelist_data, expand=True) -> pl.DataFrame:
             Summarizes the linelist importation data over a specified range of report days in self.data.
             Optionally expands the data to fill missing day values with zero.
-
-    Raises:
-        ValueError: If an unknown national model type is specified.
-        AssertionError: If the state model is not "multinomial" and no national model is specified.
+    Notes:
+    - The model supports only one type of national model (multinomial) and requires that if a national model is specified, the state model cannot be multinomial. If no national model is specified, the state model must be multinomial.
+    - The input data must be validated for compatibility with the multinomial model if either the national or state model is specified as multinomial.
     """
 
     def __init__(
@@ -145,8 +166,8 @@ class ImportationModel:
         data: pl.DataFrame,
         parameters: dict | pl.DataFrame,
         state_model: Literal["multinomial", "proportional"],
-        national_model: Literal["multinomial"] = None,
-        seed: int = None,
+        national_model: Literal["multinomial"] | None = None,
+        seed: int | None = None,
     ):
         self.parameters = parameters
         self.national_model_type = national_model
@@ -164,6 +185,9 @@ class ImportationModel:
         self.state_model = RegionalModel(self.state_model_type, parameters)
 
     def _validate_model_inputs(self):
+        """
+        Validates the model inputs to ensure that the specified national and state models are compatible and that the input data is suitable for the multinomial model if either model is specified as multinomial.
+        """
         if self.national_model_type:
             assert self.national_model_type == "multinomial", (
                 "Unknown national model type specified"
@@ -187,8 +211,17 @@ class ImportationModel:
             validate_multinomial_data(self.data)
 
     def sample_state_importation_incidence(
-        self, fill_null: bool = True, seed: int = None, **kwargs
+        self, fill_null: bool = True, seed: int | None = None, **kwargs
     ) -> pl.DataFrame:
+        """
+        Samples state-level importation incidence data. If a national model is specified, it first generates importation data at the national level and then samples state-level data from it.
+        Args:
+            fill_null (bool, optional): Whether to fill null values with zero incidence for unreported days in the final summarized data. Defaults to True.
+            seed (int | None): A random seed for reproducibility. If not provided, the seed specified during model initialization will be used. Defaults to None.
+            **kwargs: Additional keyword arguments that may be required for specific model types when sampling importation data.
+        Returns:
+            pl.DataFrame: A Polars DataFrame containing the summarized state-level importation incidence data, with columns `time` (report day) and `imported_infections` (number of infections imported on that day).
+        """
         if not seed:
             seed = self.seed
             # If a national model is specified, generate importation data at the national level first, then sample state-level importation data from the national-level data.
@@ -210,6 +243,14 @@ class ImportationModel:
     def summarize_linelist_importation_data(
         self, linelist_data: pl.DataFrame, expand: bool = True
     ) -> pl.DataFrame:
+        """
+        Summarizes the linelist importation data over a specified range of report days in self.data. Optionally expands the data to fill missing day values with zero.
+        Args:
+            linelist_data (pl.DataFrame): A Polars DataFrame containing the linelist importation data to be summarized. It must include a column named "report_day" that indicates the day of reporting for each detected infection.
+            expand (bool, optional): Whether to expand the summarized data to include all report days within the range of report days in self.data, filling missing days with zero infections. Defaults to True.
+        Returns:
+            pl.DataFrame: A Polars DataFrame containing the summarized importation incidence data, with columns `time` (report day) and `imported_infections` (number of infections imported).
+        """
         low = min(self.data.select(pl.col("report_day").min()).item(), 0)
         high = self.data.select(pl.col("report_day").max()).item() + 1
         return summarize_linelist_importation_data(

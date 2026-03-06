@@ -28,3 +28,7 @@ package = false
 members = [
     "packages/*",
 ]
+
+[tool.pydoclint]
+style = 'google'
+exclude = '\.git|tests|scripts'
