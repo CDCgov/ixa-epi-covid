@@ -1,5 +1,3 @@
 from .covid_model import CovidModel
 
-__all__ = [
-    "CovidModel"
-]
+__all__ = ["CovidModel"]

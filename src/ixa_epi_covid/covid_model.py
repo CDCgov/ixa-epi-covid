@@ -1,11 +1,12 @@
+import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
-import subprocess
 import polars as pl
-import json
-from mrp import MRPModel
 from importation import ImportationModel, get_linelist_data
+from mrp import MRPModel
+
 
 class CovidModel(MRPModel):
     def run(self):
@@ -18,13 +19,23 @@ class CovidModel(MRPModel):
         ## Generate the importation time series from relevant ixa parameters --------------
         # Calculate the probability that an inidivdual will die given that they are symptomatic
         case_fatality_ratio = (
-            ixa_inputs["epimodel.GlobalParams"]["probability_severe_given_mild"] *
-            ixa_inputs["epimodel.GlobalParams"]["probability_critical_given_severe"] *
-            ixa_inputs["epimodel.GlobalParams"]["probability_dead_given_critical"]
+            ixa_inputs["epimodel.GlobalParams"][
+                "probability_severe_given_mild"
+            ]
+            * ixa_inputs["epimodel.GlobalParams"][
+                "probability_critical_given_severe"
+            ]
+            * ixa_inputs["epimodel.GlobalParams"][
+                "probability_dead_given_critical"
+            ]
         )
 
-        proportion_asymptomatic = ixa_inputs["epimodel.GlobalParams"]["probability_mild_given_infect"]
-        symptomatic_reporting_prob = ixa_inputs["epimodel.GlobalParams"]["symptomatic_reporting_prob"]
+        proportion_asymptomatic = ixa_inputs["epimodel.GlobalParams"][
+            "probability_mild_given_infect"
+        ]
+        symptomatic_reporting_prob = ixa_inputs["epimodel.GlobalParams"][
+            "symptomatic_reporting_prob"
+        ]
 
         importation_params = {
             "symptomatic_reporting_prob": symptomatic_reporting_prob,
@@ -32,7 +43,9 @@ class CovidModel(MRPModel):
             "proportion_asymptomatic": proportion_asymptomatic,
         }
 
-        importation_filename = ixa_inputs["epimodel.GlobalParams"]["imported_cases_timeseries"]["filename"]
+        importation_filename = ixa_inputs["epimodel.GlobalParams"][
+            "imported_cases_timeseries"
+        ]["filename"]
 
         # Create the model object
         importation_model = ImportationModel(
@@ -40,13 +53,14 @@ class CovidModel(MRPModel):
             parameters=importation_params,
             national_model="multinomial",
             state_model="proportional",
-            seed=ixa_inputs["epimodel.GlobalParams"]["seed"], # Optional argument to set the model seed
+            seed=ixa_inputs["epimodel.GlobalParams"][
+                "seed"
+            ],  # Optional argument to set the model seed
         )
 
         # Generate timeseries data from the model object for Indiana in 2020
         timeseries_data = importation_model.sample_state_importation_incidence(
-            state="Indiana",
-            year=2020
+            state="Indiana", year=2020
         )
 
         # Store timeseries at appropriate location accessible to ixa
@@ -56,8 +70,10 @@ class CovidModel(MRPModel):
         # Write the ixa inputs to the specified file location
         config_inputs = model_inputs["config_inputs"]
         input_file_path = Path(config_inputs["output_dir"], "input.json")
-        ixa_inputs["epimodel.GlobalParams"]["seed"] = int(ixa_inputs["epimodel.GlobalParams"]["seed"])
-        with open (input_file_path, "w") as f:
+        ixa_inputs["epimodel.GlobalParams"]["seed"] = int(
+            ixa_inputs["epimodel.GlobalParams"]["seed"]
+        )
+        with open(input_file_path, "w") as f:
             json.dump(ixa_inputs, f, indent=4)
 
         # Write command to call the ixa model binaries
@@ -81,8 +97,11 @@ class CovidModel(MRPModel):
             raise e
 
         # Read the model incidence report from the specified location and return as a DataFrame
-        incidence_report_filename = ixa_inputs["epimodel.GlobalParams"]["incidence_report"]["filename"]
-        incidence_report_path = Path(config_inputs["output_dir"], incidence_report_filename)
+        incidence_report_filename = ixa_inputs["epimodel.GlobalParams"][
+            "incidence_report"
+        ]["filename"]
+        incidence_report_path = Path(
+            config_inputs["output_dir"], incidence_report_filename
+        )
 
         return pl.read_csv(incidence_report_path)
-    
