@@ -15,6 +15,16 @@ class CovidModel(MRPModel):
     @staticmethod
     def simulate(model_inputs: dict[str, Any]) -> pl.DataFrame:
         ixa_inputs = model_inputs["ixa_inputs"]
+        config_inputs = model_inputs["config_inputs"]
+        importation_inputs = model_inputs["importation_inputs"]
+
+        # Write the ixa inputs to the specified file location so that downstream errors can be re-tried
+        input_file_path = Path(config_inputs["output_dir"], "input.json")
+        ixa_inputs["epimodel.GlobalParams"]["seed"] = int(
+            ixa_inputs["epimodel.GlobalParams"]["seed"]
+        )
+        with open(input_file_path, "w") as f:
+            json.dump(ixa_inputs, f, indent=4)
 
         ## Generate the importation time series from relevant ixa parameters --------------
         # Calculate the probability that an inidivdual will die given that they are symptomatic
@@ -58,24 +68,16 @@ class CovidModel(MRPModel):
             ],  # Optional argument to set the model seed
         )
 
-        # Generate timeseries data from the model object for Indiana in 2020
+        # Generate timeseries data from the model object for state and optional year
         timeseries_data = importation_model.sample_state_importation_incidence(
-            state="Indiana", year=2020
+            state=importation_inputs["state"],
+            year=importation_inputs.get("year"),
         )
 
         # Store timeseries at appropriate location accessible to ixa
         timeseries_data.write_csv(importation_filename)
 
         ## Run the ixa transmission model ------------------------
-        # Write the ixa inputs to the specified file location
-        config_inputs = model_inputs["config_inputs"]
-        input_file_path = Path(config_inputs["output_dir"], "input.json")
-        ixa_inputs["epimodel.GlobalParams"]["seed"] = int(
-            ixa_inputs["epimodel.GlobalParams"]["seed"]
-        )
-        with open(input_file_path, "w") as f:
-            json.dump(ixa_inputs, f, indent=4)
-
         # Write command to call the ixa model binaries
         cmd = [
             config_inputs["exe_file"],

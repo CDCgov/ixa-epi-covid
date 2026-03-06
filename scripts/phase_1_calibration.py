@@ -30,6 +30,7 @@ mrp_defaults = {
         "output_dir": "./experiments/phase1/calibration/output",
         "force_overwrite": True,
     },
+    "importation_inputs": {"state": "Indiana", "year": 2020},
 }
 
 output_dir = Path(mrp_defaults["config_inputs"]["output_dir"])
@@ -65,7 +66,7 @@ def outputs_to_distance(model_output: pl.DataFrame, target_data: int):
 
 
 sampler = ABCSampler(
-    generation_particle_count=500,
+    generation_particle_count=1000,
     tolerance_values=[30.0, 20.0, 10.0, 5.0, 2.0, 0.0],
     priors=P,
     perturbation_kernel=K,
@@ -85,17 +86,22 @@ print(results)
 
 diagnostics = results.get_diagnostics()
 
-print("\nAvailable diagnostics metrics:")
-print(diagnostics.keys())
-
 print("\nQuantiles for each parameter:")
-print(diagnostics["quantiles"])
+print(
+    json.dumps(
+        {
+            k1: {k2: float(v2) for k2, v2 in v1.items()}
+            for k1, v1 in diagnostics["quantiles"].items()
+        },
+        indent=4,
+    )
+)
 
 print("\nCorrelation matrix:")
 print(diagnostics["correlation_matrix"])
 
-with (
+with open(
     Path("experiments", "phase1", "calibration", "output", "results.pkl"),
-    "w",
+    "wb",
 ) as fp:
     pickle.dump(results, fp)
