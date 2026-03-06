@@ -58,7 +58,7 @@ class CovidModel(MRPModel):
         input_file_path = Path(config_inputs["output_dir"], "input.json")
         ixa_inputs["epimodel.GlobalParams"]["seed"] = int(ixa_inputs["epimodel.GlobalParams"]["seed"])
         with open (input_file_path, "w") as f:
-            json.dump(ixa_inputs, f)
+            json.dump(ixa_inputs, f, indent=4)
 
         # Write command to call the ixa model binaries
         cmd = [

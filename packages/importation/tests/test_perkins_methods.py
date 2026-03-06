@@ -159,12 +159,47 @@ def test_prob_undetected_infections_list(dummy_values):
         for col in ["n_undetected_infections", "probability"]
     )
 
+def test_prob_undetected_infections_zero_probability_value(dummy_values):
+    prop_ascf = get_prop_ascf(importation_parameters=dummy_values)
+    known_cases = 500
+    known_deaths = 2
+    n_undetected = 1
+    max_infections = 502
+    seed = 42
+
+    prob_data = prob_undetected_infections(
+        n_undetected, known_cases, known_deaths, prop_ascf
+    )
+
+    assert prob_data.shape[0] == 1
+    assert all(
+        col in prob_data.columns
+        for col in ["n_undetected_infections", "probability"]
+    )
+    assert prob_data.item(0, "probability") == 1.0
+    assert prob_data.item(0, "weight") == 0.0
 
 def test_sample_undetected_infections(dummy_values):
     prop_ascf = get_prop_ascf(importation_parameters=dummy_values)
     known_cases = 5
     known_deaths = 2
     max_infections = 100
+    seed = 42
+
+    sampled_data = sample_undetected_infections(
+        known_cases, known_deaths, prop_ascf, max_infections, seed
+    )
+
+    assert sampled_data.shape[0] == 1
+    assert all(
+        col in sampled_data.columns for col in ["n_undetected_infections"]
+    )
+
+def test_sample_undetected_infections_zero_handling(dummy_values):
+    prop_ascf = get_prop_ascf(importation_parameters=dummy_values)
+    known_cases = 500
+    known_deaths = 2
+    max_infections = 502
     seed = 42
 
     sampled_data = sample_undetected_infections(

@@ -197,16 +197,19 @@ def prob_undetected_infections(
                 "n_undetected_infections": n_undetected,
                 "weight": pmf_prob,
             }
-        ).with_columns(
-            (pl.col("weight") / pl.col("weight").sum()).alias("probability")
         )
+        if prob_data.select(pl.sum('weight').eq(0)).item():
+            return prob_data.with_columns(
+                pl.lit(1.0 / prob_data.height).alias("probability")
+                )
+        else:
+            return  prob_data.with_columns(
+                (pl.col("weight") / pl.col("weight").sum()).alias("probability")
+            )
     else:
         raise ValueError(
             "Calculating the probability of observing n undetected infections given known cases and deaths requires one parameter set in prop_ascf."
         )
-
-    return prob_data
-
 
 def sample_undetected_infections(
     known_cases: int,
