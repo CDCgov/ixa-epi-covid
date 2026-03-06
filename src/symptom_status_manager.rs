@@ -147,35 +147,14 @@ mod test {
     use ixa::assert_almost_eq;
     use ixa::prelude::*;
 
-    #[allow(dead_code)]
-    fn check_ks_stat(times: &mut [f64], distribution: impl Fn(f64) -> f64) {
-        // Sort the empirical times to make an empirical CDF.
-        times.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-        // KS stat is the maximum observed CDF deviation.
-        let ks_stat = times
-            .iter()
-            .enumerate()
-            .map(|(i, time)| {
-                #[allow(clippy::cast_precision_loss)]
-                let empirical_cdf_value = (i as f64) / (times.len() as f64);
-                let theoretical_cdf_value = distribution(*time);
-                (empirical_cdf_value - theoretical_cdf_value).abs()
-            })
-            .reduce(f64::max)
-            .unwrap();
-
-        assert_almost_eq!(ks_stat, 0.0, 0.01);
-    }
-
     fn test_proportion(
         current_status: SymptomStatus,
         next_status: SymptomStatus,
         expected_proportion: f64,
     ) {
         // We start with 1 person and simulate infecting them 5000 times, we should see that the proportion of time
-        // that they have mild symptoms is close to the expected probability of mild symptoms given infection.
-        // We use a large number of simulations to ensure that we have enough mild cases to analyze, since the outcome is stochastic.
+        // that they have transition from their current symptom status to their next symtpom status is close to the expected probability provided.
+        // We use a large number of simulations since the outcome is stochastic.
         let num_sims = 5000;
         let count = Rc::new(RefCell::new(0usize));
         for seed in 0..num_sims {
@@ -226,7 +205,10 @@ mod test {
             let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
             // Initialize event subscriptions and plans for symptom status manager
             init(&mut context).unwrap();
-            // Infect the person to trigger the symptom status manager
+
+            // If the next status is NoSymptoms we don't do anything because that transition is not valid
+            // If the next status is Mild we must infect the person to trigger the symptom status manager
+            // Otherwise we set the person's symptom status to the current status to trigger the symptom status manager
             match next_status {
                 SymptomStatus::NoSymptoms => (),
                 SymptomStatus::Mild => context.infect_person(p1, None, None, None),
@@ -237,7 +219,7 @@ mod test {
 
             context.subscribe_to_event(
                 move |context, event: PropertyChangeEvent<Person, SymptomStatus>| {
-                    if event.current == next_status {
+                    if event.current == next_status && event.previous == current_status {
                         *count_clone.borrow_mut() += 1;
                         context.shutdown();
                     } else {
@@ -262,8 +244,9 @@ mod test {
         expected_mu: f64,
         expected_sigma: f64,
     ) {
-        // We start with 1 person and simulate infecting them 5000 times, we should see that the distribution of time
-        // until they have mild symptoms is close to the expected distribution.
+        // We start with 1 person and simulate infecting them 5000 times, we should see that the distribution of duration is equivalent
+        // to the expected distribution provided. We use a large number of simulations since the outcome is stochastic and we want to
+        // get a good estimate of the distribution.
         let num_sims = 5000;
         let durations = Rc::new(RefCell::new(Vec::new()));
         for seed in 0..num_sims {
@@ -278,14 +261,12 @@ mod test {
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Severe) => Params {
-                    probability_mild_given_infect: 1.0,
                     probability_severe_given_mild: 1.0,
                     mild_to_severe_mu: expected_mu,
                     mild_to_severe_sigma: expected_sigma,
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Resolved) => Params {
-                    probability_mild_given_infect: 1.0,
                     probability_severe_given_mild: 0.0,
                     mild_to_resolved_mu: expected_mu,
                     mild_to_resolved_sigma: expected_sigma,
@@ -330,7 +311,10 @@ mod test {
             let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
             // Initialize event subscriptions and plans for symptom status manager
             init(&mut context).unwrap();
-            // Infect the person to trigger the symptom status manager
+
+            // If the next status is NoSymptoms we don't do anything because that transition is not valid
+            // If the next status is Mild we must infect the person to trigger the symptom status manager
+            // Otherwise we set the person's symptom status to the current status to trigger the symptom status manager
             match next_status {
                 SymptomStatus::NoSymptoms => (),
                 SymptomStatus::Mild => context.infect_person(p1, None, None, None),
@@ -338,7 +322,7 @@ mod test {
             }
             context.subscribe_to_event(
                 move |context, event: PropertyChangeEvent<Person, SymptomStatus>| {
-                    if event.current == next_status {
+                    if event.current == next_status && event.previous == current_status {
                         durations_clone
                             .borrow_mut()
                             .push(context.get_current_time());
@@ -433,17 +417,21 @@ mod test {
     #[test]
     fn test_absorbing_states() {
         // We want to check that infected individuals eventually end up in an absorbing state (No Syptoms, Resolved, or Dead).
-        let num_sims: u64 = 1000;
+        let num_sims: u64 = 5000;
         let mut count_no_symptoms: u64 = 0;
         let mut count_resolved: u64 = 0;
         let mut count_dead: u64 = 0;
+        let probability_mild_given_infect = 0.5;
+        let probability_severe_given_mild = 0.5;
+        let probability_critical_given_severe = 0.5;
+        let probability_dead_given_critical = 0.5;
         for seed in 0..num_sims {
             let mut context = Context::new();
             let parameters = Params {
-                probability_mild_given_infect: 0.5,
-                probability_severe_given_mild: 0.5,
-                probability_critical_given_severe: 0.5,
-                probability_dead_given_critical: 0.5,
+                probability_mild_given_infect,
+                probability_severe_given_mild,
+                probability_critical_given_severe,
+                probability_dead_given_critical,
                 ..Default::default()
             };
             context.init_random(seed);
@@ -470,6 +458,32 @@ mod test {
             }
         }
         assert_eq!(count_no_symptoms + count_resolved + count_dead, num_sims);
+
+        assert_almost_eq!(
+            count_no_symptoms as f64 / num_sims as f64,
+            1.0 - probability_mild_given_infect,
+            0.05
+        );
+        assert_almost_eq!(
+            count_resolved as f64 / num_sims as f64,
+            probability_mild_given_infect * (1.0 - probability_severe_given_mild)
+                + probability_mild_given_infect
+                    * probability_severe_given_mild
+                    * (1.0 - probability_critical_given_severe)
+                + probability_mild_given_infect
+                    * probability_severe_given_mild
+                    * probability_critical_given_severe
+                    * (1.0 - probability_dead_given_critical),
+            0.05
+        );
+        assert_almost_eq!(
+            count_dead as f64 / num_sims as f64,
+            probability_mild_given_infect
+                * probability_severe_given_mild
+                * probability_critical_given_severe
+                * probability_dead_given_critical,
+            0.05
+        );
     }
 }
 
