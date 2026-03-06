@@ -152,8 +152,8 @@ mod test {
         next_status: SymptomStatus,
         expected_proportion: f64,
     ) {
-        // We start with 1 person and simulate infecting them 5000 times, we should see that the proportion of time
-        // that they have transition from their current symptom status to their next symtpom status is close to the expected probability provided.
+        // We perform 5000 simulations with 1 person per simulation to check that the proportion of persons
+        // who transition from their current symptom status to their next symptom status is close to the expected probability.
         // We use a large number of simulations since the outcome is stochastic.
         let num_sims = 5000;
         let count = Rc::new(RefCell::new(0usize));
@@ -244,9 +244,9 @@ mod test {
         expected_mu: f64,
         expected_sigma: f64,
     ) {
-        // We start with 1 person and simulate infecting them 5000 times, we should see that the distribution of duration is equivalent
-        // to the expected distribution provided. We use a large number of simulations since the outcome is stochastic and we want to
-        // get a good estimate of the distribution.
+        // We run 5000 simulations with 1 person per simulation and get the duration of the delay between the specified symptom statuses.
+        // We calculate across simulations the mean of these delays and compare to the mean of the expected distribution.
+        // We need to run many simulations to get a precise estimate of the mean.
         let num_sims = 5000;
         let durations = Rc::new(RefCell::new(Vec::new()));
         for seed in 0..num_sims {
@@ -345,7 +345,7 @@ mod test {
 
     #[test]
     #[allow(clippy::cast_precision_loss)]
-    fn test_proportion_infected_mild() {
+    fn test_proportion_infected_to_mild() {
         test_proportion(SymptomStatus::NoSymptoms, SymptomStatus::Mild, 0.3);
     }
 
@@ -366,17 +366,17 @@ mod test {
 
     #[test]
     fn test_proportion_severe_to_resolved() {
-        test_proportion(SymptomStatus::Severe, SymptomStatus::Resolved, 0.5);
+        test_proportion(SymptomStatus::Severe, SymptomStatus::Resolved, 0.3);
     }
 
     #[test]
     fn test_proportion_critical_to_dead() {
-        test_proportion(SymptomStatus::Critical, SymptomStatus::Dead, 0.5);
+        test_proportion(SymptomStatus::Critical, SymptomStatus::Dead, 0.3);
     }
 
     #[test]
     fn test_proportion_critical_to_resolved() {
-        test_proportion(SymptomStatus::Critical, SymptomStatus::Resolved, 0.5);
+        test_proportion(SymptomStatus::Critical, SymptomStatus::Resolved, 0.3);
     }
 
     #[test]
