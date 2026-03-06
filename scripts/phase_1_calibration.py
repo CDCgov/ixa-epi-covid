@@ -1,5 +1,6 @@
 import json
 import os
+import pickle
 import shutil
 from pathlib import Path
 
@@ -79,4 +80,22 @@ results = sampler.run(
     default_params=mrp_defaults,
     parameter_headers=["ixa_inputs", "epimodel.GlobalParams"],
 )
+
 print(results)
+
+diagnostics = results.get_diagnostics()
+
+print("\nAvailable diagnostics metrics:")
+print(diagnostics.keys())
+
+print("\nQuantiles for each parameter:")
+print(diagnostics["quantiles"])
+
+print("\nCorrelation matrix:")
+print(diagnostics["correlation_matrix"])
+
+with (
+    Path("experiments", "phase1", "calibration", "output", "results.pkl"),
+    "w",
+) as fp:
+    pickle.dump(results, fp)
