@@ -114,30 +114,61 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
     }
 
     // Validate the symptom status parameters
-    if !(0.0..=1.0).contains(&parameters.probability_mild_given_infect) {
-        return Err(IxaError::IxaError(
-            "The probability of mild illness given infection must be between 0 and 1, inclusive."
-                .to_string(),
-        ));
+
+    let probability_params = [
+        (
+            "probability_mild_given_infect",
+            &parameters.probability_mild_given_infect,
+        ),
+        (
+            "probability_severe_given_mild",
+            &parameters.probability_severe_given_mild,
+        ),
+        (
+            "probability_critical_given_severe",
+            &parameters.probability_critical_given_severe,
+        ),
+        (
+            "probability_dead_given_critical",
+            &parameters.probability_dead_given_critical,
+        ),
+    ];
+
+    for (param_name, param_value) in probability_params {
+        if !(0.0..=1.0).contains(param_value) {
+            return Err(IxaError::IxaError(format!(
+                "{} = {} is not a valid transition probability; probabilities must be between 0 and 1, inclusive.",
+                param_name, param_value
+            )));
+        }
     }
 
-    if !(0.0..=1.0).contains(&parameters.probability_severe_given_mild) {
-        return Err(IxaError::IxaError(
-            "The probability of severe illness given mild illness must be between 0 and 1, inclusive.".to_string(),
-        ));
-    }
+    let sigma_params = [
+        ("infect_to_mild_sigma", &parameters.infect_to_mild_sigma),
+        ("mild_to_severe_sigma", &parameters.mild_to_severe_sigma),
+        ("mild_to_resolved_sigma", &parameters.mild_to_resolved_sigma),
+        (
+            "severe_to_critical_sigma",
+            &parameters.severe_to_critical_sigma,
+        ),
+        (
+            "severe_to_resolved_sigma",
+            &parameters.severe_to_resolved_sigma,
+        ),
+        ("critical_to_dead_sigma", &parameters.critical_to_dead_sigma),
+        (
+            "critical_to_resolved_sigma",
+            &parameters.critical_to_resolved_sigma,
+        ),
+    ];
 
-    if !(0.0..=1.0).contains(&parameters.probability_critical_given_severe) {
-        return Err(IxaError::IxaError(
-            "The probability of critical illness given severe illness must be between 0 and 1, inclusive.".to_string(),
-        ));
-    }
-
-    if !(0.0..=1.0).contains(&parameters.probability_dead_given_critical) {
-        return Err(IxaError::IxaError(
-            "The probability of dying given critical illness must be between 0 and 1, inclusive."
-                .to_string(),
-        ));
+    for (param_name, param_value) in sigma_params {
+        if param_value < &0.0 {
+            return Err(IxaError::IxaError(format!(
+                "{} = {} is not a valid value for sigma; log normal distribution sigmas must be non-negative.",
+                param_name, param_value
+            )));
+        }
     }
 
     // We only want to fail when all itinerary ratios are 0.
