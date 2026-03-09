@@ -179,6 +179,51 @@ def test_prob_undetected_infections_zero_probability_value(dummy_values):
     assert prob_data.item(0, "weight") == 0.0
 
 
+def test_prob_undetected_infections_rounding_zero_probability_list(
+    dummy_values,
+):
+    # Expect a large number of undetected, such that a low number of undetected is prob 0 but a slightly higher number of undetected p > 0 and p << 1e-6
+    prop_ascf = get_prop_ascf(
+        importation_parameters={
+            "symptomatic_reporting_prob": 0.002,
+            "case_fatality_ratio": 0.002,
+            "proportion_asymptomatic": 0.99,
+        }
+    )
+    known_cases = 100
+    known_deaths = 2
+    n_undetected = list(range(20_000))
+
+    prob_data = prob_undetected_infections(
+        n_undetected, known_cases, known_deaths, prop_ascf
+    )
+
+    print(prob_data)
+
+    assert prob_data.shape[0] == 20_000
+    assert all(
+        col in prob_data.columns
+        for col in ["n_undetected_infections", "probability"]
+    )
+
+    zero_undetected_infections_info = prob_data.filter(
+        pl.col("n_undetected_infections") == 0
+    )
+    max_undetected_infections_info = prob_data.filter(
+        pl.col("n_undetected_infections") == pl.max("n_undetected_infections")
+    )
+
+    assert zero_undetected_infections_info.select("probability").item() == 0.0
+    assert max_undetected_infections_info.select("probability").item() > 0.0
+
+    assert zero_undetected_infections_info.select("weight").item() == 0.0
+    assert max_undetected_infections_info.select("weight").item() > 0.0
+    assert max_undetected_infections_info.select("weight").item() < 1e-12
+
+    assert prob_data.select(pl.sum("weight")).item() < 1e-12
+    assert prob_data.select(pl.sum("probability")).item() == pytest.approx(1.0)
+
+
 def test_sample_undetected_infections(dummy_values):
     prop_ascf = get_prop_ascf(importation_parameters=dummy_values)
     known_cases = 5
