@@ -1,0 +1,22 @@
+---
+title: "Phase I calibration"
+date: "2026-03-09"
+format: pdf
+---
+
+# Overview
+In this phase, we aim to calibrate the model to the timing of the first reported death due to COVID-19 in the state of Indiana. The first reported death in Indiana occurred on March 16th, 2020, 11 days after the first confirmed case.
+
+# Results
+
+```{python}
+#| echo: false
+import pickle
+from calibrationtools.calibration_results import CalibrationResults
+from pathlib import Path
+
+with open(Path("..","calibration","output","results.pkl"), "rb") as fp:
+    results: CalibrationResults = pickle.load(fp)
+
+print(results)
+```

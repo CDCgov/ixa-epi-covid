@@ -66,13 +66,13 @@ def outputs_to_distance(model_output: pl.DataFrame, target_data: int):
 
 
 sampler = ABCSampler(
-    generation_particle_count=1000,
-    tolerance_values=[30.0, 20.0, 10.0, 5.0, 2.0, 0.0],
+    generation_particle_count=500,
+    tolerance_values=[30.0, 20.0, 10.0],
     priors=P,
     perturbation_kernel=K,
     variance_adapter=AdaptMultivariateNormalVariance(),
     outputs_to_distance=outputs_to_distance,
-    target_data=65,
+    target_data=75,
     model_runner=model,
     seed=123,
 )

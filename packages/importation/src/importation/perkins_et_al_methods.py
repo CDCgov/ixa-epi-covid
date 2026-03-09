@@ -198,13 +198,14 @@ def prob_undetected_infections(
                 "weight": pmf_prob,
             }
         )
+        print(prob_data.select(pl.sum('weight')))
         if prob_data.select(pl.sum("weight").eq(0)).item():
             return prob_data.with_columns(
                 pl.lit(1.0 / prob_data.height).alias("probability")
             )
         else:
             return prob_data.with_columns(
-                (pl.col("weight") / pl.col("weight").sum()).alias(
+                ((pl.col("weight").log() - pl.sum("weight").log()).exp()).alias(
                     "probability"
                 )
             )
@@ -262,7 +263,7 @@ def sample_undetected_infections(
         prop_ascf=prop_ascf,
     )
 
-    prob_data = prob_data
+    print(prob_data)
     sampled_undetected = np.random.choice(
         prob_data["n_undetected_infections"].to_list(),
         size=1,
