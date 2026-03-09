@@ -19,6 +19,27 @@ Other parameters, such as report generation and maximum runtime do not affect mo
 - `settings_properties.Any.alpha`: The density-dependence scaling factor of the total infection attempt rate for a particular setting. See [transmission](transmission.md) for more details.
 - `itinerary_ratios`: The default proportion of time individuals will spend in a specific setting category.
 
+## Symptom status parameters
+The following input parameters characterize the progression of illness in infected individuals. The parameters specify the probability of progressing to a particular state (mild, severe, critical, and dead) and specify the delay distributions (assumed to be log normally distributed) for each progression.
+- `probability_mild_given_infect`: Probability an infected person develops mild illness
+- `infect_to_mild_mu`: Mu parameter for log normal delay distribution from infection to mild illness
+- `infect_to_mild_sigma`: Sigma parameter for log normal delay distribution from infection to mild illness
+- `probability_severe_given_mild`: Probability a person with mild illness develops severe illness
+- `mild_to_severe_mu`: Mu parameter for log normal delay distribution from mild to severe illness
+- `mild_to_severe_sigma`: Sigma parameter for log normal delay distribution from mild to severe illness
+- `mild_to_resolved_mu`: Mu parameter for log normal delay distribution from mild illness to resolution
+- `mild_to_resolved_sigma`: Sigma parameter for log normal delay distribution from mild illness to resolution
+- `probability_critical_given_severe`: Probability a person with severe illness develops critical illness
+- `severe_to_critical_mu`: Mu parameter for log normal delay distribution from severe to critical illness
+- `severe_to_critical_sigma`: Sigma parameter for log normal delay distribution from severe to critical illness
+- `severe_to_resolved_mu`: Mu parameter for log normal delay distribution from severe illness to resolution
+- `severe_to_resolved_sigma`: Sigma parameter for log normal delay distribution from severe illness to resolution
+- `probability_dead_given_critical`: Probability a person with critical illness dies
+- `critical_to_dead_mu`: Mu parameter for log normal delay distribution from critical illness to death
+- `critical_to_dead_sigma`: Sigma parameter for log normal delay distribution from critical illness to death
+- `critical_to_resolved_mu`: Mu parameter for log normal delay distribution from critical illness to resolution
+- `critical_to_resolved_sigma`: Sigma parameter for log normal delay distribution from critical illness to resolution
+
 ## Model execution parameters
 The following parameters specified in the input parameter dictionary are relevant to model output and execution, but do not affect dynamics. All report variables can be turned off using `"write": false` in the input file.
 
