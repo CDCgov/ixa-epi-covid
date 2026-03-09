@@ -23,13 +23,27 @@ person_property_report = pl.read_csv(
 ## ===============================#
 
 # Infectious curves
-df_plot = person_property_report.group_by(["t", "infection_status"]).agg(
+inf_plot = person_property_report.group_by(["t", "infection_status"]).agg(
     pl.col("count").sum()
 )
 
 plt.figure(figsize=(10, 6))
 sns.lineplot(
-    data=df_plot.to_pandas(), x="t", y="count", hue="infection_status"
+    data=inf_plot.to_pandas(), x="t", y="count", hue="infection_status"
+)
+plt.xlabel("Day")
+plt.ylabel("Number of people")
+plt.tight_layout()
+plt.show()
+
+# Symptom status curves
+symp_plot = person_property_report.group_by(["t", "symptom_status"]).agg(
+    pl.col("count").sum()
+)
+
+plt.figure(figsize=(10, 6))
+sns.lineplot(
+    data=symp_plot.to_pandas(), x="t", y="count", hue="symptom_status"
 )
 plt.xlabel("Day")
 plt.ylabel("Number of people")

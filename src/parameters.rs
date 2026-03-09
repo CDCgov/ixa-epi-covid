@@ -114,42 +114,6 @@ pub struct Params {
     pub critical_to_dead: CriticalToDeadParameters,
     /// Parameters governing transition from critical illness to resolved illness.
     pub critical_to_resolved: CriticalToResolvedParameters,
-    // /// Probability an infected person develops mild illness
-    // pub probability_mild_given_infect: f64,
-    // /// Mu parameter for log normal delay distribution from infection to mild illness
-    // pub infect_to_mild_mu: f64,
-    // /// Sigma parameter for log normal delay distribution from infection to mild illness
-    // pub infect_to_mild_sigma: f64,
-    // /// Probability a person with mild illness develops severe illness
-    // pub probability_severe_given_mild: f64,
-    // /// Mu parameter for log normal delay distribution from mild to severe illness
-    // pub mild_to_severe_mu: f64,
-    // /// Sigma parameter for log normal delay distribution from mild to severe illness
-    // pub mild_to_severe_sigma: f64,
-    // /// Mu parameter for log normal delay distribution from mild illness to resolution
-    // pub mild_to_resolved_mu: f64,
-    // /// Sigma parameter for log normal delay distribution from mild illness to resolution
-    // pub mild_to_resolved_sigma: f64,
-    // /// Probability a person with severe illness develops critical illness
-    // pub probability_critical_given_severe: f64,
-    // /// Mu parameter for log normal delay distribution from severe to critical illness
-    // pub severe_to_critical_mu: f64,
-    // /// Sigma parameter for log normal delay distribution from severe to critical illness
-    // pub severe_to_critical_sigma: f64,
-    // /// Mu parameter for log normal delay distribution from severe illness to resolution
-    // pub severe_to_resolved_mu: f64,
-    // /// Sigma parameter for log normal delay distribution from severe illness to resolution
-    // pub severe_to_resolved_sigma: f64,
-    // /// Probability a person with critical illness dies
-    // pub probability_dead_given_critical: f64,
-    // /// Mu parameter for log normal delay distribution from critical illness to death
-    // pub critical_to_dead_mu: f64,
-    // /// Sigma parameter for log normal delay distribution from critical illness to death
-    // pub critical_to_dead_sigma: f64,
-    // /// Mu parameter for log normal delay distribution from critical illness to resolution
-    // pub critical_to_resolved_mu: f64,
-    // /// Sigma parameter for log normal delay distribution from critical illness to resolution
-    // pub critical_to_resolved_sigma: f64,
     /// Setting properties by setting type
     pub settings_properties: HashMap<CoreSettingsTypes, SettingProperties>,
     /// ratios used to initialize individuals itineraries by setting type.
@@ -191,29 +155,26 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
         }
     }
 
-    // Validate the symptom status parameters
-
-    let probability_params = [
+    // Validate symptom status parameters
+    for (param_name, param_value) in [
         (
-            "probability_mild_given_infect",
-            &parameters.probability_mild_given_infect,
+            "infected_to_mild_probability",
+            parameters.infected_to_mild.probability,
         ),
         (
-            "probability_severe_given_mild",
-            &parameters.probability_severe_given_mild,
+            "mild_to_severe_probability",
+            parameters.mild_to_severe.probability,
         ),
         (
-            "probability_critical_given_severe",
-            &parameters.probability_critical_given_severe,
+            "severe_to_critical_probability",
+            parameters.severe_to_critical.probability,
         ),
         (
-            "probability_dead_given_critical",
-            &parameters.probability_dead_given_critical,
+            "critical_to_dead_probability",
+            parameters.critical_to_dead.probability,
         ),
-    ];
-
-    for (param_name, param_value) in probability_params {
-        if !(0.0..=1.0).contains(param_value) {
+    ] {
+        if !(0.0..=1.0).contains(&param_value) {
             return Err(IxaError::IxaError(format!(
                 "{} = {} is not a valid transition probability; probabilities must be between 0 and 1, inclusive.",
                 param_name, param_value
@@ -221,29 +182,21 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
         }
     }
 
-    let sigma_params = [
-        ("infect_to_mild_sigma", &parameters.infect_to_mild_sigma),
-        ("mild_to_severe_sigma", &parameters.mild_to_severe_sigma),
-        ("mild_to_resolved_sigma", &parameters.mild_to_resolved_sigma),
+    for (param_name, param_value) in [
+        ("infected_to_mild", parameters.infected_to_mild.sigma),
+        ("mild_to_severe", parameters.mild_to_severe.sigma),
+        ("mild_to_resolved", parameters.mild_to_resolved.sigma),
+        ("severe_to_critical", parameters.severe_to_critical.sigma),
+        ("severe_to_resolved", parameters.severe_to_resolved.sigma),
+        ("critical_to_dead", parameters.critical_to_dead.sigma),
         (
-            "severe_to_critical_sigma",
-            &parameters.severe_to_critical_sigma,
+            "critical_to_resolved",
+            parameters.critical_to_resolved.sigma,
         ),
-        (
-            "severe_to_resolved_sigma",
-            &parameters.severe_to_resolved_sigma,
-        ),
-        ("critical_to_dead_sigma", &parameters.critical_to_dead_sigma),
-        (
-            "critical_to_resolved_sigma",
-            &parameters.critical_to_resolved_sigma,
-        ),
-    ];
-
-    for (param_name, param_value) in sigma_params {
-        if param_value < &0.0 {
+    ] {
+        if param_value < 0.0 {
             return Err(IxaError::IxaError(format!(
-                "{} = {} is not a valid value for sigma; log normal distribution sigmas must be non-negative.",
+                "{} = {} is not a valid sigma; log normal distribution sigmas must be non-negative.",
                 param_name, param_value
             )));
         }
