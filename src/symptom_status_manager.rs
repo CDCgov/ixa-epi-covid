@@ -6,8 +6,9 @@ use rand_distr::LogNormal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ContextParametersExt, Params, infectiousness_manager::InfectionStatus,
-    population_loader::Person,
+    ContextParametersExt, Params,
+    infectiousness_manager::InfectionStatus,
+    population_loader::{Person, PersonId},
 };
 
 define_rng!(SymptomsRng);
@@ -28,41 +29,45 @@ impl_property!(
     default_const = SymptomStatus::NoSymptoms
 );
 
+fn plan_symptom_transition(
+    context: &mut Context,
+    person_id: PersonId,
+    next_status: SymptomStatus,
+    delay_mu: f64,
+    delay_sigma: f64,
+) {
+    let delay_dist = LogNormal::new(delay_mu, delay_sigma).unwrap();
+    let transition_time =
+        context.get_current_time() + context.sample_distr(SymptomsRng, delay_dist);
+    context.add_plan(transition_time, move |context| {
+        context.set_property::<Person, SymptomStatus>(person_id, next_status);
+    });
+}
+
 pub fn init(context: &mut Context) -> Result<(), IxaError> {
-    let &Params {
-        probability_mild_given_infect,
-        infect_to_mild_mu,
-        infect_to_mild_sigma,
-        probability_severe_given_mild,
-        mild_to_severe_mu,
-        mild_to_severe_sigma,
-        mild_to_resolved_mu,
-        mild_to_resolved_sigma,
-        probability_critical_given_severe,
-        severe_to_critical_mu,
-        severe_to_critical_sigma,
-        severe_to_resolved_mu,
-        severe_to_resolved_sigma,
-        probability_dead_given_critical,
-        critical_to_dead_mu,
-        critical_to_dead_sigma,
-        critical_to_resolved_mu,
-        critical_to_resolved_sigma,
+    let Params {
+        infected_to_mild,
+        mild_to_severe,
+        mild_to_resolved,
+        severe_to_critical,
+        severe_to_resolved,
+        critical_to_dead,
+        critical_to_resolved,
         ..
-    } = context.get_params();
+    } = context.get_params().clone();
 
     context.subscribe_to_event(
         move |context, event: PropertyChangeEvent<Person, InfectionStatus>| {
             if event.current == InfectionStatus::Infectious
-                && context.sample_bool(SymptomsRng, probability_mild_given_infect)
+                && context.sample_bool(SymptomsRng, infected_to_mild.probability)
             {
-                let infect_to_mild =
-                    LogNormal::new(infect_to_mild_mu, infect_to_mild_sigma).unwrap();
-                let mild_time =
-                    context.get_current_time() + context.sample_distr(SymptomsRng, infect_to_mild);
-                context.add_plan(mild_time, move |context| {
-                    context.set_property(event.entity_id, SymptomStatus::Mild);
-                });
+                plan_symptom_transition(
+                    context,
+                    event.entity_id,
+                    SymptomStatus::Mild,
+                    infected_to_mild.mu,
+                    infected_to_mild.sigma,
+                );
             }
         },
     );
@@ -70,61 +75,60 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
     context.subscribe_to_event(
         move |context, event: PropertyChangeEvent<Person, SymptomStatus>| match event.current {
             SymptomStatus::Mild => {
-                if context.sample_bool(SymptomsRng, probability_severe_given_mild) {
-                    let mild_to_severe =
-                        LogNormal::new(mild_to_severe_mu, mild_to_severe_sigma).unwrap();
-                    let severe_time = context.get_current_time()
-                        + context.sample_distr(SymptomsRng, mild_to_severe);
-                    context.add_plan(severe_time, move |context| {
-                        context.set_property(event.entity_id, SymptomStatus::Severe);
-                    });
+                if context.sample_bool(SymptomsRng, mild_to_severe.probability) {
+                    plan_symptom_transition(
+                        context,
+                        event.entity_id,
+                        SymptomStatus::Severe,
+                        mild_to_severe.mu,
+                        mild_to_severe.sigma,
+                    );
                 } else {
-                    let mild_to_resolved =
-                        LogNormal::new(mild_to_resolved_mu, mild_to_resolved_sigma).unwrap();
-                    let resolved_time = context.get_current_time()
-                        + context.sample_distr(SymptomsRng, mild_to_resolved);
-                    context.add_plan(resolved_time, move |context| {
-                        context.set_property(event.entity_id, SymptomStatus::Resolved);
-                    });
+                    plan_symptom_transition(
+                        context,
+                        event.entity_id,
+                        SymptomStatus::Resolved,
+                        mild_to_resolved.mu,
+                        mild_to_resolved.sigma,
+                    );
                 }
             }
             SymptomStatus::Severe => {
-                if context.sample_bool(SymptomsRng, probability_critical_given_severe) {
-                    let severe_to_critical =
-                        LogNormal::new(severe_to_critical_mu, severe_to_critical_sigma).unwrap();
-                    let critical_time = context.get_current_time()
-                        + context.sample_distr(SymptomsRng, severe_to_critical);
-                    context.add_plan(critical_time, move |context| {
-                        context.set_property(event.entity_id, SymptomStatus::Critical);
-                    });
+                if context.sample_bool(SymptomsRng, severe_to_critical.probability) {
+                    plan_symptom_transition(
+                        context,
+                        event.entity_id,
+                        SymptomStatus::Critical,
+                        severe_to_critical.mu,
+                        severe_to_critical.sigma,
+                    );
                 } else {
-                    let severe_to_resolved =
-                        LogNormal::new(severe_to_resolved_mu, severe_to_resolved_sigma).unwrap();
-                    let resolved_time = context.get_current_time()
-                        + context.sample_distr(SymptomsRng, severe_to_resolved);
-                    context.add_plan(resolved_time, move |context| {
-                        context.set_property(event.entity_id, SymptomStatus::Resolved);
-                    });
+                    plan_symptom_transition(
+                        context,
+                        event.entity_id,
+                        SymptomStatus::Resolved,
+                        severe_to_resolved.mu,
+                        severe_to_resolved.sigma,
+                    );
                 }
             }
             SymptomStatus::Critical => {
-                if context.sample_bool(SymptomsRng, probability_dead_given_critical) {
-                    let critical_to_dead =
-                        LogNormal::new(critical_to_dead_mu, critical_to_dead_sigma).unwrap();
-                    let dead_time = context.get_current_time()
-                        + context.sample_distr(SymptomsRng, critical_to_dead);
-                    context.add_plan(dead_time, move |context| {
-                        context.set_property(event.entity_id, SymptomStatus::Dead);
-                    });
+                if context.sample_bool(SymptomsRng, critical_to_dead.probability) {
+                    plan_symptom_transition(
+                        context,
+                        event.entity_id,
+                        SymptomStatus::Dead,
+                        critical_to_dead.mu,
+                        critical_to_dead.sigma,
+                    );
                 } else {
-                    let critical_to_resolved =
-                        LogNormal::new(critical_to_resolved_mu, critical_to_resolved_sigma)
-                            .unwrap();
-                    let resolved_time = context.get_current_time()
-                        + context.sample_distr(SymptomsRng, critical_to_resolved);
-                    context.add_plan(resolved_time, move |context| {
-                        context.set_property(event.entity_id, SymptomStatus::Resolved);
-                    });
+                    plan_symptom_transition(
+                        context,
+                        event.entity_id,
+                        SymptomStatus::Resolved,
+                        critical_to_resolved.mu,
+                        critical_to_resolved.sigma,
+                    );
                 }
             }
             _ => (),
@@ -140,7 +144,11 @@ mod test {
 
     use super::init;
     use crate::infectiousness_manager::InfectionContextExt;
-    use crate::parameters::GlobalParams;
+    use crate::parameters::{
+        CriticalToDeadParameters, CriticalToResolvedParameters, GlobalParams,
+        InfectedToMildParameters, MildToResolvedParameters, MildToSevereParameters,
+        SevereToCriticalParameters, SevereToResolvedParameters,
+    };
     use crate::population_loader::Person;
     use crate::symptom_status_manager::SymptomStatus;
     use crate::{Age, Params};
@@ -163,31 +171,71 @@ mod test {
 
             let parameters = match (current_status, next_status) {
                 (SymptomStatus::NoSymptoms, SymptomStatus::Mild) => Params {
-                    probability_mild_given_infect: expected_proportion,
+                    infected_to_mild: InfectedToMildParameters {
+                        probability: expected_proportion,
+                        mu: 1.0,
+                        sigma: 0.1,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Severe) => Params {
-                    probability_severe_given_mild: expected_proportion,
+                    mild_to_severe: MildToSevereParameters {
+                        probability: expected_proportion,
+                        mu: 1.0,
+                        sigma: 0.1,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Resolved) => Params {
-                    probability_severe_given_mild: 1.0 - expected_proportion,
+                    mild_to_severe: MildToSevereParameters {
+                        probability: 1.0 - expected_proportion,
+                        mu: 1.0,
+                        sigma: 0.1,
+                    },
+                    mild_to_resolved: MildToResolvedParameters {
+                        mu: 1.0,
+                        sigma: 0.1,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Severe, SymptomStatus::Critical) => Params {
-                    probability_critical_given_severe: expected_proportion,
+                    severe_to_critical: SevereToCriticalParameters {
+                        probability: expected_proportion,
+                        mu: 1.0,
+                        sigma: 0.1,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Severe, SymptomStatus::Resolved) => Params {
-                    probability_critical_given_severe: 1.0 - expected_proportion,
+                    severe_to_critical: SevereToCriticalParameters {
+                        probability: 1.0 - expected_proportion,
+                        mu: 1.0,
+                        sigma: 0.1,
+                    },
+                    severe_to_resolved: SevereToResolvedParameters {
+                        mu: 1.0,
+                        sigma: 0.1,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Critical, SymptomStatus::Dead) => Params {
-                    probability_dead_given_critical: expected_proportion,
+                    critical_to_dead: CriticalToDeadParameters {
+                        probability: expected_proportion,
+                        mu: 1.0,
+                        sigma: 0.1,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Critical, SymptomStatus::Resolved) => Params {
-                    probability_dead_given_critical: 1.0 - expected_proportion,
+                    critical_to_dead: CriticalToDeadParameters {
+                        probability: 1.0 - expected_proportion,
+                        mu: 1.0,
+                        sigma: 0.1,
+                    },
+                    critical_to_resolved: CriticalToResolvedParameters {
+                        mu: 1.0,
+                        sigma: 0.1,
+                    },
                     ..Default::default()
                 },
                 _ => panic!(
@@ -255,45 +303,71 @@ mod test {
 
             let parameters = match (current_status, next_status) {
                 (SymptomStatus::NoSymptoms, SymptomStatus::Mild) => Params {
-                    probability_mild_given_infect: 1.0,
-                    infect_to_mild_mu: expected_mu,
-                    infect_to_mild_sigma: expected_sigma,
+                    infected_to_mild: InfectedToMildParameters {
+                        probability: 1.0,
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Severe) => Params {
-                    probability_severe_given_mild: 1.0,
-                    mild_to_severe_mu: expected_mu,
-                    mild_to_severe_sigma: expected_sigma,
+                    mild_to_severe: MildToSevereParameters {
+                        probability: 1.0,
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Resolved) => Params {
-                    probability_severe_given_mild: 0.0,
-                    mild_to_resolved_mu: expected_mu,
-                    mild_to_resolved_sigma: expected_sigma,
+                    mild_to_severe: MildToSevereParameters {
+                        probability: 0.0,
+                        mu: 1.0,
+                        sigma: 0.1,
+                    },
+                    mild_to_resolved: MildToResolvedParameters {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Severe, SymptomStatus::Critical) => Params {
-                    probability_critical_given_severe: 1.0,
-                    severe_to_critical_mu: expected_mu,
-                    severe_to_critical_sigma: expected_sigma,
+                    severe_to_critical: SevereToCriticalParameters {
+                        probability: 1.0,
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Severe, SymptomStatus::Resolved) => Params {
-                    probability_critical_given_severe: 0.0,
-                    severe_to_resolved_mu: expected_mu,
-                    severe_to_resolved_sigma: expected_sigma,
+                    severe_to_critical: SevereToCriticalParameters {
+                        probability: 0.0,
+                        mu: 1.0,
+                        sigma: 0.1,
+                    },
+                    severe_to_resolved: SevereToResolvedParameters {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Critical, SymptomStatus::Dead) => Params {
-                    probability_dead_given_critical: 1.0,
-                    critical_to_dead_mu: expected_mu,
-                    critical_to_dead_sigma: expected_sigma,
+                    critical_to_dead: CriticalToDeadParameters {
+                        probability: 1.0,
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Critical, SymptomStatus::Resolved) => Params {
-                    probability_dead_given_critical: 0.0,
-                    critical_to_resolved_mu: expected_mu,
-                    critical_to_resolved_sigma: expected_sigma,
+                    critical_to_dead: CriticalToDeadParameters {
+                        probability: 0.0,
+                        mu: 1.0,
+                        sigma: 0.1,
+                    },
+                    critical_to_resolved: CriticalToResolvedParameters {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                    },
                     ..Default::default()
                 },
                 _ => panic!(
@@ -421,17 +495,33 @@ mod test {
         let mut count_no_symptoms: u64 = 0;
         let mut count_resolved: u64 = 0;
         let mut count_dead: u64 = 0;
-        let probability_mild_given_infect = 0.5;
-        let probability_severe_given_mild = 0.5;
-        let probability_critical_given_severe = 0.5;
-        let probability_dead_given_critical = 0.5;
+        let infected_to_mild: InfectedToMildParameters = InfectedToMildParameters {
+            probability: 0.5,
+            mu: 1.0,
+            sigma: 0.1,
+        };
+        let mild_to_severe: MildToSevereParameters = MildToSevereParameters {
+            probability: 0.5,
+            mu: 1.0,
+            sigma: 0.1,
+        };
+        let severe_to_critical: SevereToCriticalParameters = SevereToCriticalParameters {
+            probability: 0.5,
+            mu: 1.0,
+            sigma: 0.1,
+        };
+        let critical_to_dead: CriticalToDeadParameters = CriticalToDeadParameters {
+            probability: 0.5,
+            mu: 1.0,
+            sigma: 0.1,
+        };
         for seed in 0..num_sims {
             let mut context = Context::new();
             let parameters = Params {
-                probability_mild_given_infect,
-                probability_severe_given_mild,
-                probability_critical_given_severe,
-                probability_dead_given_critical,
+                infected_to_mild,
+                mild_to_severe,
+                severe_to_critical,
+                critical_to_dead,
                 ..Default::default()
             };
             context.init_random(seed);
@@ -461,27 +551,27 @@ mod test {
 
         assert_almost_eq!(
             count_no_symptoms as f64 / num_sims as f64,
-            1.0 - probability_mild_given_infect,
+            1.0 - infected_to_mild.probability,
             0.05
         );
         assert_almost_eq!(
             count_resolved as f64 / num_sims as f64,
-            probability_mild_given_infect * (1.0 - probability_severe_given_mild)
-                + probability_mild_given_infect
-                    * probability_severe_given_mild
-                    * (1.0 - probability_critical_given_severe)
-                + probability_mild_given_infect
-                    * probability_severe_given_mild
-                    * probability_critical_given_severe
-                    * (1.0 - probability_dead_given_critical),
+            infected_to_mild.probability * (1.0 - mild_to_severe.probability)
+                + infected_to_mild.probability
+                    * mild_to_severe.probability
+                    * (1.0 - severe_to_critical.probability)
+                + infected_to_mild.probability
+                    * mild_to_severe.probability
+                    * severe_to_critical.probability
+                    * (1.0 - critical_to_dead.probability),
             0.05
         );
         assert_almost_eq!(
             count_dead as f64 / num_sims as f64,
-            probability_mild_given_infect
-                * probability_severe_given_mild
-                * probability_critical_given_severe
-                * probability_dead_given_critical,
+            infected_to_mild.probability
+                * mild_to_severe.probability
+                * severe_to_critical.probability
+                * critical_to_dead.probability,
             0.05
         );
     }
