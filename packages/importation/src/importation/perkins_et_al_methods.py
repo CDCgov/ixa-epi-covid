@@ -205,9 +205,9 @@ def prob_undetected_infections(
             )
         else:
             return prob_data.with_columns(
-                ((pl.col("weight").log() - pl.sum("weight").log()).exp()).alias(
-                    "probability"
-                )
+                (
+                    (pl.col("weight").log() - pl.sum("weight").log()).exp()
+                ).alias("probability")
             )
     else:
         raise ValueError(

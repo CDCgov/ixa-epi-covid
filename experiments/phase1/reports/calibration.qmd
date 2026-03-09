@@ -67,8 +67,8 @@ uniq_id = 0
 model = CovidModel()
 for p in particles:
     model_inputs = default_particle_reader(
-        p, 
-        default_params=mrp_defaults, 
+        p,
+        default_params=mrp_defaults,
         headers=["ixa_inputs","epimodel.GlobalParams"]
     )
     importation_curves = []

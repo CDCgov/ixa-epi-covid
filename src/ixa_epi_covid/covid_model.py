@@ -19,7 +19,7 @@ class CovidModel(MRPModel):
         importation_inputs = model_inputs["importation_inputs"]
 
         # Write the ixa inputs to the specified file location so that downstream errors can be re-tried
-        input_file_path = Path(config_inputs["output_dir"],"input.json")
+        input_file_path = Path(config_inputs["output_dir"], "input.json")
         ixa_inputs["epimodel.GlobalParams"]["seed"] = int(
             ixa_inputs["epimodel.GlobalParams"]["seed"]
         )
