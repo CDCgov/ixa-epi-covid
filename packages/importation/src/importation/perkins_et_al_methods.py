@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import polars as pl
 from scipy.stats import multinomial
@@ -203,15 +205,27 @@ def prob_undetected_infections(
                 "n_undetected_infections": n_undetected,
                 "weight": pmf_prob,
             }
-        ).with_columns(
-            (pl.col("weight") / pl.col("weight").sum()).alias("probability")
         )
+        total_weight = prob_data.select(pl.sum("weight")).item()
+        if total_weight < 1e-15:
+            warnings.warn(
+                "Parameter combination yielded low total probability (p<1e-15) for all undetected infection values. Proceeding"
+            )
+
+        if total_weight == 0:
+            return prob_data.with_columns(
+                pl.lit(1.0 / prob_data.height).alias("probability")
+            )
+        else:
+            return prob_data.with_columns(
+                (pl.col("weight").log() - pl.sum("weight").log())
+                .exp()
+                .alias("probability")
+            )
     else:
         raise ValueError(
             "Calculating the probability of observing n undetected infections given known cases and deaths requires one parameter set in prop_ascf."
         )
-
-    return prob_data
 
 
 def sample_undetected_infections(
