@@ -5,10 +5,9 @@ format: pdf
 ---
 
 # Overview
-In this phase, we aim to calibrate the model to the timing of the first reported death due to COVID-19 in the state of Indiana. The first reported death in Indiana occurred on March 16th, 2020, 11 days after the first confirmed case.
+In this phase, we aim to calibrate the model to the timing of the first reported death due to COVID-19 in the state of Indiana. The first reported death in Indiana occurred on March 16th, 2020, 10 days after the first confirmed case.
 
 # Results
-
 ```{python}
 #| echo: false
 import pickle
@@ -17,6 +16,105 @@ from pathlib import Path
 
 with open(Path("..","calibration","output","results.pkl"), "rb") as fp:
     results: CalibrationResults = pickle.load(fp)
+```
 
-print(results)
+
+Quantiles for each fitted parameter
+```{python}
+#| echo: false
+import json
+diagnostics = results.get_diagnostics()
+print(
+    json.dumps(
+        {
+            k1: {k2: float(v2) for k2, v2 in v1.items()}
+            for k1, v1 in diagnostics["quantiles"].items()
+        },
+        indent=4,
+    )
+)
+```
+
+```{python}
+#| echo: false
+
+# Re-generating a random sample of parameter sets from posterior
+from ixa_epi_covid.run import run
+from calibrationtools import default_particle_reader
+import tempfile
+import polars as pl
+import os
+from ixa_epi_covid import CovidModel
+
+os.chdir('../')
+particles = results.sample_posterior_particles(n=5)
+default_params_file = Path("input","default_params.json")
+
+with open(default_params_file, "rb") as fp:
+    default_params = json.load(fp)
+
+mrp_defaults = {
+    'ixa_inputs': default_params,
+    "config_inputs": {
+        "exe_file": "./../../target/release/ixa-epi-covid",
+        "output_dir": "./experiments/phase1/calibration/output",
+        "force_overwrite": True,
+    },
+    "importation_inputs": {"state": "Indiana", "year": 2020},
+}
+
+uniq_id = 0
+model = CovidModel()
+for p in particles:
+    model_inputs = default_particle_reader(
+        p, 
+        default_params=mrp_defaults, 
+        headers=["ixa_inputs","epimodel.GlobalParams"]
+    )
+    importation_curves = []
+    prevalence_data = []
+    with tempfile.TemporaryDirectory(delete=False) as tmpdir:
+        model_inputs["config_inputs"]["output_dir"] = str(tmpdir)
+        importation_path = Path(tmpdir, "importation_timeseries.csv")
+        model_inputs["ixa_inputs"]["epimodel.GlobalParams"]["imported_cases_timeseries"]["filename"] = str(importation_path)
+        model.simulate(model_inputs)
+        prevalence_data.append(
+            pl.read_csv(Path(tmpdir, model_inputs['epimodel.GlobalParams']["prevalence_report"]["filename"])).with_columns(
+                pl.lit(uniq_id).alias("id")
+            )
+        )
+        importation_curves.append(
+            pl.read_csv(importation_path).with_columns(
+                pl.lit(uniq_id).alias("id")
+            )
+        )
+    uniq_id += 1
+```
+
+Plot the importation time series and death time series for the 50 sampled parameter sets
+```{python}
+#| echo: false
+#| eval: false
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+importations = pl.vstack(importation_curves)
+deaths = pl.vstack(prevalence_data).filter(pl.col('symptom_status') == 'Dead')
+
+sns.lineplot(
+    data = importations,
+    x="time",
+    y="imported_infections",
+    units="id",
+    estimator=None,
+)
+plt.show()
+
+sns.lineplot(
+    data = deaths,
+    x="time",
+    y="count",
+    units="id",
+    estimator=None,
+)
 ```
