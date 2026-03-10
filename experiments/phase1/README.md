@@ -9,7 +9,7 @@ uv run python scripts/phase_1_calibration.py
 Then, to render the analysis report, ensure that `tinytex` is installed with
 
 ```
-quarto install tinyext
+quarto install tinytex
 ```
 
 and then render the document using
