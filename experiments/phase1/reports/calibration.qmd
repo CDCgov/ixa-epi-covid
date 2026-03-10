@@ -57,11 +57,11 @@ Histograms of posterior samples compared to the probability density of each prio
 #| echo: false
 posterior_samples = results.sample_posterior_particles(n=int(results.ess))
 
-for param in diagnostics["quantiles"].keys():
+for param in results.fitted_params:
     vals = [p[param] for p in posterior_samples]
     min_val = min(vals)
     max_val = max(vals)
-    print(param, min_val, max_val)
+
     sns.histplot(x=vals, stat="density", kde=True, color='orange', edgecolor='black')
     eval_points = np.arange(
         min_val - np.var(vals), max_val + np.var(vals), 0.01
