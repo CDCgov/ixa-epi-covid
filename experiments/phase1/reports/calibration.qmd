@@ -190,17 +190,25 @@ plt.show()
 We can show the posterior variance in the imported infections time series by overlaying samples from the simulated particles. Each line in the plot below corresponds to the importation time series for a single particle.
 ```{python}
 #| echo: false
-sns.lineplot(
+sns.scatterplot(
+    data=importations.filter(pl.col('imported_infections') > 0),
+    x="time",
+    y="imported_infections",
+    alpha=0.05,
+)
+sns.pointplot(
     data=importations,
     x="time",
     y="imported_infections",
-    units="id",
-    estimator=None,
-    alpha=0.05,
+    linestyle="none",
+    errorbar=None,
+    marker="_",
+    native_scale=True,
+    color='black'
 )
 plt.title(f"Imported infections over time ({particle_count} posterior samples)")
 plt.xlabel("Time (days since simulation start)")
-plt.ylabel("Number of imported infections")
+plt.ylabel("Number of imported infections (daily)")
 plt.tight_layout()
 plt.show()
 ```
