@@ -11,10 +11,27 @@ In this phase, we aim to calibrate the model to the timing of the first reported
 ```{python}
 #| echo: false
 import pickle
-from calibrationtools.calibration_results import CalibrationResults
+from calibrationtools.calibration_results import CalibrationResults, Particle
 from pathlib import Path
+import os
+import seaborn as sns
+import matplotlib.pyplot as plt
+import numpy as np
+import polars as pl
+import json
+from calibrationtools import default_particle_reader
+import tempfile
+import polars as pl
+import os
+from ixa_epi_covid import CovidModel
 
-with open(Path("..","calibration","output","results.pkl"), "rb") as fp:
+
+os.chdir('../../../')
+
+wd = Path("experiments", "phase1")
+
+# Load results object from the calibration directory
+with open(wd / "calibration" / "output" / "results.pkl", "rb") as fp:
     results: CalibrationResults = pickle.load(fp)
 ```
 
@@ -22,12 +39,11 @@ with open(Path("..","calibration","output","results.pkl"), "rb") as fp:
 Quantiles for each fitted parameter
 ```{python}
 #| echo: false
-import json
 diagnostics = results.get_diagnostics()
 print(
     json.dumps(
         {
-            k1: {k2: float(v2) for k2, v2 in v1.items()}
+            k1: {k2: np.format_float_positional(v2, precision=3) for k2, v2 in v1.items()}
             for k1, v1 in diagnostics["quantiles"].items()
         },
         indent=4,
@@ -35,28 +51,63 @@ print(
 )
 ```
 
+Histograms of posterior samples compared to the probability density of each prior. To generate the histogram, we sample $n$ particles from the posterior population, where $n$ is the effective sample size of the population, in order to reflect the weight distribution of the posterior. For each plot, the prior is plotted as a blue line and the histogram of the posterior samples is plotted in orange with a kernel density estimator overlay.
+
 ```{python}
 #| echo: false
+posterior_samples = results.sample_posterior_particles(n=int(results.ess))
 
+for param in diagnostics["quantiles"].keys():
+    vals = [p[param] for p in posterior_samples]
+    min_val = min(vals)
+    max_val = max(vals)
+    print(param, min_val, max_val)
+    sns.histplot(x=vals, stat="density", kde=True, color='orange', edgecolor='black')
+    eval_points = np.arange(
+        min_val - np.var(vals), max_val + np.var(vals), 0.01
+    )
+    param_prior = None
+    for prior in results.priors.priors:
+        if prior.param == param:
+            param_prior = prior
+            break
+    if not param_prior:
+        raise (ValueError, f"Could not find prior {param}")
+
+    density_vals = [
+        param_prior.probability_density(Particle({param: v}))
+        for v in eval_points
+    ]
+
+    sns.lineplot(
+        data=pl.DataFrame({param: list(eval_points), "density": density_vals}),
+        x=param,
+        y="density",
+    )
+    plt.title(f"Posterior versus prior distribution")
+    plt.xlabel(" ".join(param.split(".")))
+    plt.ylabel("Density")
+    plt.tight_layout()
+    plt.show()
+
+```
+```{python}
+#| echo: false
+## Obtaining the importation time series and death incidence data frmaes for a random smaple form the posterior
 # Re-generating a random sample of parameter sets from posterior
-from ixa_epi_covid.run import run
-from calibrationtools import default_particle_reader
-import tempfile
-import polars as pl
-import os
-from ixa_epi_covid import CovidModel
-
-os.chdir('../')
-particles = results.sample_posterior_particles(n=5)
-default_params_file = Path("input","default_params.json")
+particle_count = 100
+particles = results.sample_posterior_particles(n=particle_count)
+default_params_file = wd / 'input' / 'default_params.json'
 
 with open(default_params_file, "rb") as fp:
     default_params = json.load(fp)
 
+default_params['epimodel.GlobalParams']['max_time'] = 200
+
 mrp_defaults = {
     'ixa_inputs': default_params,
     "config_inputs": {
-        "exe_file": "./../../target/release/ixa-epi-covid",
+        "exe_file": "./target/release/ixa-epi-covid",
         "output_dir": "./experiments/phase1/calibration/output",
         "force_overwrite": True,
     },
@@ -65,56 +116,135 @@ mrp_defaults = {
 
 uniq_id = 0
 model = CovidModel()
-for p in particles:
-    model_inputs = default_particle_reader(
-        p,
-        default_params=mrp_defaults,
-        headers=["ixa_inputs","epimodel.GlobalParams"]
-    )
-    importation_curves = []
-    prevalence_data = []
-    with tempfile.TemporaryDirectory(delete=False) as tmpdir:
-        model_inputs["config_inputs"]["output_dir"] = str(tmpdir)
-        importation_path = Path(tmpdir, "importation_timeseries.csv")
-        model_inputs["ixa_inputs"]["epimodel.GlobalParams"]["imported_cases_timeseries"]["filename"] = str(importation_path)
+importation_curves = []
+prevalence_data = []
+
+with tempfile.TemporaryDirectory() as tmpdir:
+    for p in particles:
+        model_inputs = default_particle_reader(
+            p,
+            default_params=mrp_defaults,
+            parameter_headers=["ixa_inputs", "epimodel.GlobalParams"],
+        )
+
+        model_inputs["config_inputs"]["output_dir"] = str(
+            Path(tmpdir, f"{uniq_id}")
+        )
+        os.makedirs(model_inputs["config_inputs"]["output_dir"], exist_ok=True)
+        importation_path = Path(
+            tmpdir, f"{uniq_id}", "importation_timeseries.csv"
+        )
+
+        model_inputs["ixa_inputs"]["epimodel.GlobalParams"][
+            "imported_cases_timeseries"
+        ]["filename"] = str(importation_path)
         model.simulate(model_inputs)
         prevalence_data.append(
-            pl.read_csv(Path(tmpdir, model_inputs['epimodel.GlobalParams']["prevalence_report"]["filename"])).with_columns(
-                pl.lit(uniq_id).alias("id")
-            )
+            pl.read_csv(
+                Path(
+                    tmpdir,
+                    f"{uniq_id}",
+                    model_inputs["ixa_inputs"]["epimodel.GlobalParams"][
+                        "prevalence_report"
+                    ]["filename"],
+                )
+            ).with_columns(pl.lit(uniq_id).alias("id"))
         )
         importation_curves.append(
             pl.read_csv(importation_path).with_columns(
                 pl.lit(uniq_id).alias("id")
             )
         )
-    uniq_id += 1
+        uniq_id += 1
+
+importations = pl.concat(importation_curves)
+all_prevalence_data = pl.concat(prevalence_data)
+deaths = (
+    all_prevalence_data
+    .filter(pl.col("symptom_status") == "Dead")
+    .group_by("t", "id")
+    .agg(pl.sum("count"))
+)
 ```
 
-Plot the importation time series and death time series for the 50 sampled parameter sets
+For a final SMC step with threshold toelrance above zero, we will observe some variance in the date of first reported death. Here we show a sampled histogram of the timing of the first death across the posterior simulations. The vertical dashed line indicates the observed timing of the first death in Indiana (March 16, 2020, or 75 days after the start of the simulation on January 1, 2020). We can see that while although the distribution is centered around the observed timing, there is a higher weight on earlier first reported deaths, indicating that imported infections occur faster in the simulated model than they occured in real life. This may be due to the proprotional sampling of Indiana importations from the domestic level imported infections, when in fact they may have been less probable due to mobility flow patterns.
+
 ```{python}
 #| echo: false
-#| eval: false
-import matplotlib.pyplot as plt
-import seaborn as sns
 
-importations = pl.vstack(importation_curves)
-deaths = pl.vstack(prevalence_data).filter(pl.col('symptom_status') == 'Dead')
+first_deaths = deaths.filter(pl.col("count") > 0).group_by("id").agg(pl.min("t"))
+sns.histplot(
+    data=first_deaths,
+    x="t",
+)
+plt.axvline(x=75, color="black", linestyle="--", label="Observed (March 16, 2020)")
+plt.title(f"Distribution of first death times ({particle_count} posterior samples)")
+plt.xlabel("Time of first death (days since simulation start)")
+plt.ylabel("Number of simulations")
+plt.legend()
+plt.tight_layout()
+plt.show()
 
+```
+
+We can show the posterior variance in the imported infections time series by overlaying samples from the simulated particles. Each line in the plot below corresponds to the importation time series for a single particle.
+```{python}
+#| echo: false
 sns.lineplot(
-    data = importations,
+    data=importations,
     x="time",
     y="imported_infections",
     units="id",
     estimator=None,
+    alpha=0.05,
 )
+plt.title(f"Imported infections over time ({particle_count} posterior samples)")
+plt.xlabel("Time (days since simulation start)")
+plt.ylabel("Number of imported infections")
+plt.tight_layout()
 plt.show()
+```
+We can project the cumulative number of deaths observed in the model up to the evaluation timepoint. Because the last SMC step has a distance tolerance threshold greater than zero, we see some simulations accrue deaths before the first reported death in the data.
+```{python}
+#| echo: false
 
 sns.lineplot(
-    data = deaths,
-    x="time",
+    data=deaths.filter(pl.col('t') <= 75),
+    x="t",
     y="count",
-    units="id",
-    estimator=None,
 )
+plt.title(f"Total observed deaths over time ({particle_count} posterior samples)")
+plt.xlabel("Time (days since simulation start)")
+plt.ylabel("Number of deaths")
+plt.axvline(x=75, color="black", linestyle="--", label="First death reported (March 16, 2020)")
+plt.tight_layout()
+plt.show()
+```
+
+Finally, we can plot the same trajectories for number of infections observed in the model over time, which includes both imported infections and locally acquired infections. This figure shows the issue with calibratin the model with a small population size (1,000 people). The susceptible pool is rapidly depleted by local transmission, and a high proportion of the population is already recovered by the timepoint of evaluation comparing the model results to the first reported death in the data.
+
+```{python}
+#| echo: false
+sir_data = all_prevalence_data.group_by(
+    't', 'infection_status', 'id'
+).agg(
+    pl.sum('count')
+)
+
+sns.lineplot(
+    data = sir_data,
+    x='t',
+    y='count',
+    hue='infection_status',
+    units='id',
+    estimator=None,
+    alpha=0.05
+)
+plt.title(f"Individuals by infection status over time ({particle_count} posterior samples)")
+plt.xlabel("Time (days since simulation start)")
+plt.axvline(x=65, color="black", linestyle="--", label="First case reported (March 6, 2020)")
+plt.axvline(x=75, color="red", linestyle="--", label="First death reported (March 16, 2020)")
+plt.ylabel("Number of people")
+plt.tight_layout()
+plt.show()
 ```
