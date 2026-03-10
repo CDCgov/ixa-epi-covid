@@ -55,6 +55,32 @@ Histograms of posterior samples compared to the probability density of each prio
 
 ```{python}
 #| echo: false
+#| eval: false
+# Preferred API ----------
+for param in results.fitted_params:
+    # get values and use weights to alter histogram instead of sampling with ESS
+    values = results.posterior_particles.get_values_of(param)
+    sns.histplot(values, weights=results.posterior_particles.weights)
+
+    # Method to obtain the marginal prior and call PDF on those values for certain evaluation list
+    marginal_prior = results.get_marginal_prior(param)
+    eval_points = np.arange(min(values) - np.var(values), max(values) + np.var(values), 0.01)
+    prior_density = marginal_prior.probability_density(eval_points)
+    sns.lineplot(
+        data = pl.DataFrame({
+            param: list(eval_points),
+            'density': prior_density
+        })
+    )
+    plt.title(f"Posterior versus prior distribution")
+    plt.xlabel(" ".join(param.split(".")))
+    plt.ylabel("Density")
+    plt.tight_layout()
+    plt.show()
+
+```
+```{python}
+#| echo: false
 posterior_samples = results.sample_posterior_particles(n=int(results.ess))
 
 for param in results.fitted_params:
