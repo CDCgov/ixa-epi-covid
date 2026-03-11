@@ -115,7 +115,7 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
 
     // Validate the symptom status parameters
 
-    let probability_params = [
+    let symptom_probability_params = [
         (
             "probability_mild_given_infect",
             &parameters.probability_mild_given_infect,
@@ -134,7 +134,7 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
         ),
     ];
 
-    for (param_name, param_value) in probability_params {
+    for (param_name, param_value) in symptom_probability_params {
         if !(0.0..=1.0).contains(param_value) {
             return Err(IxaError::IxaError(format!(
                 "{} = {} is not a valid transition probability; probabilities must be between 0 and 1, inclusive.",
@@ -143,7 +143,7 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
         }
     }
 
-    let sigma_params = [
+    let symptom_sigma_params = [
         ("infect_to_mild_sigma", &parameters.infect_to_mild_sigma),
         ("mild_to_severe_sigma", &parameters.mild_to_severe_sigma),
         ("mild_to_resolved_sigma", &parameters.mild_to_resolved_sigma),
@@ -162,7 +162,7 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
         ),
     ];
 
-    for (param_name, param_value) in sigma_params {
+    for (param_name, param_value) in symptom_sigma_params {
         if param_value < &0.0 {
             return Err(IxaError::IxaError(format!(
                 "{} = {} is not a valid value for sigma; log normal distribution sigmas must be non-negative.",

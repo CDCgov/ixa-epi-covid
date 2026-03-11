@@ -486,11 +486,3 @@ mod test {
         );
     }
 }
-
-// All persons should end up with a SymptomStatus of NoSymptoms, Dead, or Resolved.
-
-// TODO:
-// -set up parameters (essential to make it run) [DONE]
-// -add SymptomStatusData or some other mechanism to track what most symptom statuses a person had, even after resolved (and maybe track timing, too)
-// -make probabilities age (category) specific
-// -finish validation for parameters
