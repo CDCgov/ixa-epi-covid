@@ -3,7 +3,6 @@
         "seed": 1234,
         "max_time": 100.0,
         "synth_population_file": "input/people_test.csv",
-        "symptomatic_reporting_prob": 0.5,
         "initial_prevalence": 0.0,
         "imported_cases_timeseries": {
             "include": true,

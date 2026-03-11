@@ -163,7 +163,7 @@ css = [
 [[package]]
 name = "calibrationtools"
 version = "0.1.1"
-source = { git = "https://github.com/CDCgov/cfa-calibration-tools.git?branch=wtk-dev#95c00f9a19421af549e3fc9a7fdfb3e186f83713" }
+source = { git = "https://github.com/CDCgov/cfa-calibration-tools.git?branch=wtk-dev#67583fb42527f89516cb9d711b4d25a18b14b1cb" }
 dependencies = [
     { name = "cfa-mrp" },
     { name = "jsonschema" },

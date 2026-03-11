@@ -28,9 +28,16 @@ mrp_defaults = {
     "config_inputs": {
         "exe_file": "./target/release/ixa-epi-covid",
         "output_dir": "./experiments/phase1/calibration/output",
-        "force_overwrite": True,
+        "force_overwrite": True
+        # "ixa_overrides": {
+        #     "synth_population_file": Path(os.path.expanduser(os.getenv("SYNTH_POPULATION_DIR"))) / "in.csv"
+        # }
     },
-    "importation_inputs": {"state": "Indiana", "year": 2020},
+    "importation_inputs": {
+        "state": "Indiana", 
+        "year": 2020,
+        "symptomatic_reporting_prob": 0.5,
+    },
 }
 
 output_dir = Path(mrp_defaults["config_inputs"]["output_dir"])
@@ -64,9 +71,8 @@ def outputs_to_distance(model_output: pl.DataFrame, target_data: int):
     else:
         return 1000
 
-
 sampler = ABCSampler(
-    generation_particle_count=750,
+    generation_particle_count=500,
     tolerance_values=[30.0, 20.0, 10.0, 5.0],
     priors=P,
     perturbation_kernel=K,

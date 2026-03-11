@@ -61,7 +61,7 @@ fn create_person_from_record(
         append_itinerary_entry(
             &mut itinerary,
             context,
-            SettingId::new(School, school_string.parse()?),
+            SettingId::new(School, school_string.replace("xprvx", "0").parse()?),
             None,
         )?;
     }
