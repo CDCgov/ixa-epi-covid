@@ -500,9 +500,9 @@ checksum = "92ecc6618181def0457392ccd0ee51198e065e016d1d527a7ac1b6dc7c1f09d2"
 
 [[package]]
 name = "ixa"
-version = "2.0.0-beta1.1"
+version = "2.0.0-beta1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3518b182afbeb11780ce34c8ea466c746526d0a89e15073a1572224cc79488d6"
+checksum = "c9ab356efbea1cc89fb814322267a527161fabfdb7584b2ba2e032859cfcfdc2"
 dependencies = [
  "anyhow",
  "approx",
@@ -532,7 +532,6 @@ dependencies = [
  "serde_json",
  "shlex",
  "sysinfo",
- "thiserror",
  "wasm-bindgen",
  "web-sys",
  "xxhash-rust",
@@ -540,9 +539,9 @@ dependencies = [
 
 [[package]]
 name = "ixa-derive"
-version = "2.0.0-beta.1"
+version = "2.0.0-beta"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2377d465cd9978c98d2b6e51722ed70d2da5aef31d0e97a83bbaf638ad75497"
+checksum = "84a51f6f16cf553103252094322cdf617be53a707b3b657eea621038f92b2b8d"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
