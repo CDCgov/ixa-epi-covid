@@ -19,11 +19,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
 import json
-from calibrationtools import default_particle_reader
+from calibrationtools import ParticleReader
 import tempfile
 import polars as pl
 import os
 from ixa_epi_covid import CovidModel
+from mrp.api import apply_dict_overrides
 
 
 os.chdir('../../../')
@@ -129,6 +130,10 @@ with open(default_params_file, "rb") as fp:
     default_params = json.load(fp)
 
 default_params['epimodel.GlobalParams']['max_time'] = 200
+ixa_overrides = {
+    "synth_population_file": "/mnt/S_CFA_Predict/team-CMEI/synthetic_populations/cbsa_all_work_school_household_2020-04-24/cbsa_all_work_school_household/IN/Bloomington IN.csv"
+}
+default_params = apply_dict_overrides(default_params, {'epimodel.GlobalParams': ixa_overrides})
 
 mrp_defaults = {
     'ixa_inputs': default_params,
@@ -137,7 +142,11 @@ mrp_defaults = {
         "output_dir": "./experiments/phase1/calibration/output",
         "force_overwrite": True,
     },
-    "importation_inputs": {"state": "Indiana", "year": 2020},
+    "importation_inputs": {
+        "state": "Indiana",
+        "year": 2020,
+        "symptomatic_reporting_prob": 0.5
+    },
 }
 
 uniq_id = 0
@@ -146,12 +155,9 @@ importation_curves = []
 prevalence_data = []
 
 with tempfile.TemporaryDirectory() as tmpdir:
+    reader = ParticleReader(results.priors.params, mrp_defaults)
     for p in particles:
-        model_inputs = default_particle_reader(
-            p,
-            default_params=mrp_defaults,
-            parameter_headers=["ixa_inputs", "epimodel.GlobalParams"],
-        )
+        model_inputs = reader.read_particle(p)
 
         model_inputs["config_inputs"]["output_dir"] = str(
             Path(tmpdir, f"{uniq_id}")

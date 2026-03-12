@@ -12,26 +12,59 @@ from calibrationtools import (
     MultivariateNormalKernel,
     SeedKernel,
 )
+from mrp.api import apply_dict_overrides
 
 from ixa_epi_covid import CovidModel
 
-with open(Path("experiments", "phase1", "input", "priors.json"), "r") as f:
-    priors = json.load(f)
+# Run-specific parameters declaration ------------------------------------------------------
+# Default model and parameters
+exe_file = Path("target", "release", "ixa-epi-covid")
+output_dir = Path("experiments", "phase1", "calibration", "output")
+default_ixa_params_file = Path(
+    "experiments", "phase1", "input", "default_params.json"
+)
+ixa_overrides = {
+    "synth_population_file": "/mnt/S_CFA_Predict/team-CMEI/synthetic_populations/cbsa_all_work_school_household_2020-04-24/cbsa_all_work_school_household/IN/Bloomington IN.csv"
+}
+force_overwrite = True
 
-with open(
-    Path("experiments", "phase1", "input", "default_params.json"), "r"
-) as f:
+# State importation model declaration parameters
+state = "Indiana"
+year = 2020
+
+# Calibration inputs
+priors_file = Path("experiments", "phase1", "input", "priors.json")
+tolerance_values = [30.0, 20.0, 10.0, 5.0]  # , 2.0, 0.01]
+generation_particle_count = 500
+target_data = 75
+
+
+# Output processing function for calibration
+def outputs_to_distance(model_output: pl.DataFrame, target_data: int):
+    first_death_observed = model_output.filter(
+        (pl.col("event") == "Dead") & (pl.col("count") > 0)
+    ).filter(pl.col("t_upper") == pl.min("t_upper"))
+    if first_death_observed.height > 0:
+        return abs(target_data - first_death_observed.item(0, "t_upper"))
+    else:
+        return 1000
+
+
+# Load environment files, defaults, and setup configurations ---------------------
+with open(default_ixa_params_file, "r") as f:
     default_params = json.load(f)
+
+
+default_params = apply_dict_overrides(
+    default_params, {"epimodel.GlobalParams": ixa_overrides}
+)
 
 mrp_defaults = {
     "ixa_inputs": default_params,
     "config_inputs": {
-        "exe_file": "./target/release/ixa-epi-covid",
-        "output_dir": "./experiments/phase1/calibration/output",
-        "force_overwrite": True,
-        # "ixa_overrides": {
-        #     "synth_population_file": Path(os.path.expanduser(os.getenv("SYNTH_POPULATION_DIR"))) / "in.csv"
-        # }
+        "exe_file": str(exe_file),
+        "output_dir": str(output_dir),
+        "force_overwrite": force_overwrite,
     },
     "importation_inputs": {
         "state": "Indiana",
@@ -49,45 +82,34 @@ if (
 
 output_dir.mkdir(parents=True, exist_ok=False)
 
-P = priors
+# Create the model and sampler objects ------------------------------------------------
+with open(priors_file, "r") as f:
+    priors = json.load(f)
+
+P: dict[dict, dict] = priors
 K = IndependentKernels(
     [
-        MultivariateNormalKernel(
-            [p for p in P["priors"].keys()],
-        ),
+        MultivariateNormalKernel(list(P["priors"].keys())),
         SeedKernel("seed"),
     ]
 )
 
 model = CovidModel()
 
-
-def outputs_to_distance(model_output: pl.DataFrame, target_data: int):
-    first_death_observed = model_output.filter(
-        (pl.col("event") == "Dead") & (pl.col("count") > 0)
-    ).filter(pl.col("t_upper") == pl.min("t_upper"))
-    if first_death_observed.height > 0:
-        return abs(target_data - first_death_observed.item(0, "t_upper"))
-    else:
-        return 1000
-
-
 sampler = ABCSampler(
-    generation_particle_count=500,
-    tolerance_values=[30.0, 20.0, 10.0, 5.0],
+    generation_particle_count=generation_particle_count,
+    tolerance_values=tolerance_values,
     priors=P,
     perturbation_kernel=K,
     variance_adapter=AdaptMultivariateNormalVariance(),
     outputs_to_distance=outputs_to_distance,
-    target_data=75,
+    target_data=target_data,
     model_runner=model,
     seed=123,
 )
 
-results = sampler.run(
-    default_params=mrp_defaults,
-    parameter_headers=["ixa_inputs", "epimodel.GlobalParams"],
-)
+# Execute the sampler ----------------------------------------------------------------------
+results = sampler.run(default_params=mrp_defaults)
 
 print(results)
 
