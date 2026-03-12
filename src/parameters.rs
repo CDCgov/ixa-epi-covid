@@ -162,14 +162,6 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
             &parameters.critical_to_resolved_delay.sigma,
         ),
     ];
-    for (age_group, probability) in &parameters.probability_severe_given_mild {
-        // we also want to check whether all of the values for age_group from the enum SymptomAgeGroupNames is specified
-        if !(0.0..=1.0).contains(probability) {
-            return Err(IxaError::IxaError(
-                format!("The probability of severe illness given mild illness among {:?} must be between 0 and 1, inclusive.", age_group).to_string()
-            ));
-        }
-    }
 
     for (param_name, param_value) in symptom_sigma_params {
         if param_value < &0.0 {

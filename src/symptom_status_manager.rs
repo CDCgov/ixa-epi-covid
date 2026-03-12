@@ -1,6 +1,6 @@
 use ixa::{
-    Context, ContextEntitiesExt, ContextRandomExt, IxaError, define_property,
-    define_rng, impl_property, prelude::PropertyChangeEvent,
+    Context, ContextEntitiesExt, ContextRandomExt, IxaError, define_property, define_rng,
+    impl_property, prelude::PropertyChangeEvent,
 };
 use rand_distr::LogNormal;
 use serde::{Deserialize, Serialize};
@@ -31,13 +31,10 @@ impl_property!(
 
 pub enum SymptomAgeGroupNames {
     Young,
-    Old
+    Old,
 }
 
-define_property!(
-    SymptomAgeGroupNames,
-    Person,
-);
+define_property!(SymptomAgeGroupNames, Person,);
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone)]
 pub struct SymptomDelayDistLogNormParams {
