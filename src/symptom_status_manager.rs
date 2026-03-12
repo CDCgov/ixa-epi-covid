@@ -6,8 +6,9 @@ use rand_distr::LogNormal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ContextParametersExt, Params, infectiousness_manager::InfectionStatus,
-    population_loader::Person,
+    ContextParametersExt, Params,
+    infectiousness_manager::InfectionStatus,
+    population_loader::{Person, PersonId},
 };
 
 define_rng!(SymptomsRng);
@@ -34,6 +35,20 @@ pub struct SymptomDelayDistLogNormParams {
     pub sigma: f64,
 }
 
+fn plan_symptom_transition(
+    context: &mut Context,
+    person_id: PersonId,
+    next_symptom_status: SymptomStatus,
+    delay_params: SymptomDelayDistLogNormParams,
+) {
+    let delay_dist = LogNormal::new(delay_params.mu, delay_params.sigma).unwrap();
+    let transition_time =
+        context.get_current_time() + context.sample_distr(SymptomsRng, delay_dist);
+    context.add_plan(transition_time, move |context| {
+        context.set_property::<Person, SymptomStatus>(person_id, next_symptom_status);
+    });
+}
+
 pub fn init(context: &mut Context) -> Result<(), IxaError> {
     let &Params {
         probability_mild_given_infect,
@@ -55,13 +70,12 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
             if event.current == InfectionStatus::Infectious
                 && context.sample_bool(SymptomsRng, probability_mild_given_infect)
             {
-                let infect_to_mild =
-                    LogNormal::new(infect_to_mild_delay.mu, infect_to_mild_delay.sigma).unwrap();
-                let mild_time =
-                    context.get_current_time() + context.sample_distr(SymptomsRng, infect_to_mild);
-                context.add_plan(mild_time, move |context| {
-                    context.set_property(event.entity_id, SymptomStatus::Mild);
-                });
+                plan_symptom_transition(
+                    context,
+                    event.entity_id,
+                    SymptomStatus::Mild,
+                    infect_to_mild_delay,
+                );
             }
         },
     );
@@ -70,67 +84,53 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
         move |context, event: PropertyChangeEvent<Person, SymptomStatus>| match event.current {
             SymptomStatus::Mild => {
                 if context.sample_bool(SymptomsRng, probability_severe_given_mild) {
-                    let mild_to_severe =
-                        LogNormal::new(mild_to_severe_delay.mu, mild_to_severe_delay.sigma)
-                            .unwrap();
-                    let severe_time = context.get_current_time()
-                        + context.sample_distr(SymptomsRng, mild_to_severe);
-                    context.add_plan(severe_time, move |context| {
-                        context.set_property(event.entity_id, SymptomStatus::Severe);
-                    });
+                    plan_symptom_transition(
+                        context,
+                        event.entity_id,
+                        SymptomStatus::Severe,
+                        mild_to_severe_delay,
+                    );
                 } else {
-                    let mild_to_resolved =
-                        LogNormal::new(mild_to_resolved_delay.mu, mild_to_resolved_delay.sigma)
-                            .unwrap();
-                    let resolved_time = context.get_current_time()
-                        + context.sample_distr(SymptomsRng, mild_to_resolved);
-                    context.add_plan(resolved_time, move |context| {
-                        context.set_property(event.entity_id, SymptomStatus::Resolved);
-                    });
+                    plan_symptom_transition(
+                        context,
+                        event.entity_id,
+                        SymptomStatus::Resolved,
+                        mild_to_resolved_delay,
+                    );
                 }
             }
             SymptomStatus::Severe => {
                 if context.sample_bool(SymptomsRng, probability_critical_given_severe) {
-                    let severe_to_critical =
-                        LogNormal::new(severe_to_critical_delay.mu, severe_to_critical_delay.sigma)
-                            .unwrap();
-                    let critical_time = context.get_current_time()
-                        + context.sample_distr(SymptomsRng, severe_to_critical);
-                    context.add_plan(critical_time, move |context| {
-                        context.set_property(event.entity_id, SymptomStatus::Critical);
-                    });
+                    plan_symptom_transition(
+                        context,
+                        event.entity_id,
+                        SymptomStatus::Critical,
+                        severe_to_critical_delay,
+                    );
                 } else {
-                    let severe_to_resolved =
-                        LogNormal::new(severe_to_resolved_delay.mu, severe_to_resolved_delay.sigma)
-                            .unwrap();
-                    let resolved_time = context.get_current_time()
-                        + context.sample_distr(SymptomsRng, severe_to_resolved);
-                    context.add_plan(resolved_time, move |context| {
-                        context.set_property(event.entity_id, SymptomStatus::Resolved);
-                    });
+                    plan_symptom_transition(
+                        context,
+                        event.entity_id,
+                        SymptomStatus::Resolved,
+                        severe_to_resolved_delay,
+                    );
                 }
             }
             SymptomStatus::Critical => {
                 if context.sample_bool(SymptomsRng, probability_dead_given_critical) {
-                    let critical_to_dead =
-                        LogNormal::new(critical_to_dead_delay.mu, critical_to_dead_delay.sigma)
-                            .unwrap();
-                    let dead_time = context.get_current_time()
-                        + context.sample_distr(SymptomsRng, critical_to_dead);
-                    context.add_plan(dead_time, move |context| {
-                        context.set_property(event.entity_id, SymptomStatus::Dead);
-                    });
+                    plan_symptom_transition(
+                        context,
+                        event.entity_id,
+                        SymptomStatus::Dead,
+                        critical_to_dead_delay,
+                    );
                 } else {
-                    let critical_to_resolved = LogNormal::new(
-                        critical_to_resolved_delay.mu,
-                        critical_to_resolved_delay.sigma,
-                    )
-                    .unwrap();
-                    let resolved_time = context.get_current_time()
-                        + context.sample_distr(SymptomsRng, critical_to_resolved);
-                    context.add_plan(resolved_time, move |context| {
-                        context.set_property(event.entity_id, SymptomStatus::Resolved);
-                    });
+                    plan_symptom_transition(
+                        context,
+                        event.entity_id,
+                        SymptomStatus::Resolved,
+                        critical_to_resolved_delay,
+                    );
                 }
             }
             _ => (),
