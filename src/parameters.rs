@@ -5,6 +5,7 @@ use std::{fmt::Debug, path::PathBuf};
 use crate::infection_importation::ImportCasesFromFile;
 use crate::reports::ReportParams;
 use crate::settings::SettingProperties;
+use crate::symptom_status_manager::SymptomDelayDistLogNormParams;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RateFnType {
@@ -38,40 +39,26 @@ pub struct Params {
     pub infectiousness_rate_fn: RateFnType,
     /// Probability an infected person develops mild illness
     pub probability_mild_given_infect: f64,
-    /// Mu parameter for log normal delay distribution from infection to mild illness
-    pub infect_to_mild_mu: f64,
-    /// Sigma parameter for log normal delay distribution from infection to mild illness
-    pub infect_to_mild_sigma: f64,
+    /// Parameters for log normal delay distribution from infection to mild illness
+    pub infect_to_mild_delay: SymptomDelayDistLogNormParams,
     /// Probability a person with mild illness develops severe illness
     pub probability_severe_given_mild: f64,
-    /// Mu parameter for log normal delay distribution from mild to severe illness
-    pub mild_to_severe_mu: f64,
-    /// Sigma parameter for log normal delay distribution from mild to severe illness
-    pub mild_to_severe_sigma: f64,
-    /// Mu parameter for log normal delay distribution from mild illness to resolution
-    pub mild_to_resolved_mu: f64,
-    /// Sigma parameter for log normal delay distribution from mild illness to resolution
-    pub mild_to_resolved_sigma: f64,
+    /// Parameters for log normal delay distribution from mild to severe illness
+    pub mild_to_severe_delay: SymptomDelayDistLogNormParams,
+    /// Parameters for log normal delay distribution from mild illness to resolution
+    pub mild_to_resolved_delay: SymptomDelayDistLogNormParams,
     /// Probability a person with severe illness develops critical illness
     pub probability_critical_given_severe: f64,
-    /// Mu parameter for log normal delay distribution from severe to critical illness
-    pub severe_to_critical_mu: f64,
-    /// Sigma parameter for log normal delay distribution from severe to critical illness
-    pub severe_to_critical_sigma: f64,
-    /// Mu parameter for log normal delay distribution from severe illness to resolution
-    pub severe_to_resolved_mu: f64,
-    /// Sigma parameter for log normal delay distribution from severe illness to resolution
-    pub severe_to_resolved_sigma: f64,
+    /// Parameters for log normal delay distribution from severe to critical illness
+    pub severe_to_critical_delay: SymptomDelayDistLogNormParams,
+    /// Parameters for log normal delay distribution from severe illness to resolution
+    pub severe_to_resolved_delay: SymptomDelayDistLogNormParams,
     /// Probability a person with critical illness dies
     pub probability_dead_given_critical: f64,
-    /// Mu parameter for log normal delay distribution from critical illness to death
-    pub critical_to_dead_mu: f64,
-    /// Sigma parameter for log normal delay distribution from critical illness to death
-    pub critical_to_dead_sigma: f64,
-    /// Mu parameter for log normal delay distribution from critical illness to resolution
-    pub critical_to_resolved_mu: f64,
-    /// Sigma parameter for log normal delay distribution from critical illness to resolution
-    pub critical_to_resolved_sigma: f64,
+    /// Parameters for log normal delay distribution from critical illness to death
+    pub critical_to_dead_delay: SymptomDelayDistLogNormParams,
+    /// Parameters for log normal delay distribution from critical illness to resolution
+    pub critical_to_resolved_delay: SymptomDelayDistLogNormParams,
     /// Setting properties by setting type
     pub settings_properties: HashMap<CoreSettingsTypes, SettingProperties>,
     /// ratios used to initialize individuals itineraries by setting type.
@@ -144,21 +131,33 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
     }
 
     let symptom_sigma_params = [
-        ("infect_to_mild_sigma", &parameters.infect_to_mild_sigma),
-        ("mild_to_severe_sigma", &parameters.mild_to_severe_sigma),
-        ("mild_to_resolved_sigma", &parameters.mild_to_resolved_sigma),
+        (
+            "infect_to_mild_sigma",
+            &parameters.infect_to_mild_delay.sigma,
+        ),
+        (
+            "mild_to_severe_sigma",
+            &parameters.mild_to_severe_delay.sigma,
+        ),
+        (
+            "mild_to_resolved_sigma",
+            &parameters.mild_to_resolved_delay.sigma,
+        ),
         (
             "severe_to_critical_sigma",
-            &parameters.severe_to_critical_sigma,
+            &parameters.severe_to_critical_delay.sigma,
         ),
         (
             "severe_to_resolved_sigma",
-            &parameters.severe_to_resolved_sigma,
+            &parameters.severe_to_resolved_delay.sigma,
         ),
-        ("critical_to_dead_sigma", &parameters.critical_to_dead_sigma),
+        (
+            "critical_to_dead_sigma",
+            &parameters.critical_to_dead_delay.sigma,
+        ),
         (
             "critical_to_resolved_sigma",
-            &parameters.critical_to_resolved_sigma,
+            &parameters.critical_to_resolved_delay.sigma,
         ),
     ];
 
@@ -256,23 +255,37 @@ impl Default for Params {
                 duration: 5.0,
             },
             probability_mild_given_infect: 0.0,
-            infect_to_mild_mu: 0.0,
-            infect_to_mild_sigma: 0.0,
+            infect_to_mild_delay: SymptomDelayDistLogNormParams {
+                mu: 0.0,
+                sigma: 0.0,
+            },
             probability_severe_given_mild: 0.0,
-            mild_to_severe_mu: 0.0,
-            mild_to_severe_sigma: 0.0,
-            mild_to_resolved_mu: 0.0,
-            mild_to_resolved_sigma: 0.0,
+            mild_to_severe_delay: SymptomDelayDistLogNormParams {
+                mu: 0.0,
+                sigma: 0.0,
+            },
+            mild_to_resolved_delay: SymptomDelayDistLogNormParams {
+                mu: 0.0,
+                sigma: 0.0,
+            },
             probability_critical_given_severe: 0.0,
-            severe_to_critical_mu: 0.0,
-            severe_to_critical_sigma: 0.0,
-            severe_to_resolved_mu: 0.0,
-            severe_to_resolved_sigma: 0.0,
+            severe_to_critical_delay: SymptomDelayDistLogNormParams {
+                mu: 0.0,
+                sigma: 0.0,
+            },
+            severe_to_resolved_delay: SymptomDelayDistLogNormParams {
+                mu: 0.0,
+                sigma: 0.0,
+            },
             probability_dead_given_critical: 0.0,
-            critical_to_dead_mu: 0.0,
-            critical_to_dead_sigma: 0.0,
-            critical_to_resolved_mu: 0.0,
-            critical_to_resolved_sigma: 0.0,
+            critical_to_dead_delay: SymptomDelayDistLogNormParams {
+                mu: 0.0,
+                sigma: 0.0,
+            },
+            critical_to_resolved_delay: SymptomDelayDistLogNormParams {
+                mu: 0.0,
+                sigma: 0.0,
+            },
             settings_properties: HashMap::new(),
             itinerary_ratios: HashMap::new(),
             prevalence_report: ReportParams {

@@ -28,26 +28,25 @@ impl_property!(
     default_const = SymptomStatus::NoSymptoms
 );
 
+#[derive(Debug, Serialize, Deserialize, Copy, Clone)]
+pub struct SymptomDelayDistLogNormParams {
+    pub mu: f64,
+    pub sigma: f64,
+}
+
 pub fn init(context: &mut Context) -> Result<(), IxaError> {
     let &Params {
         probability_mild_given_infect,
-        infect_to_mild_mu,
-        infect_to_mild_sigma,
+        infect_to_mild_delay,
         probability_severe_given_mild,
-        mild_to_severe_mu,
-        mild_to_severe_sigma,
-        mild_to_resolved_mu,
-        mild_to_resolved_sigma,
+        mild_to_severe_delay,
+        mild_to_resolved_delay,
         probability_critical_given_severe,
-        severe_to_critical_mu,
-        severe_to_critical_sigma,
-        severe_to_resolved_mu,
-        severe_to_resolved_sigma,
+        severe_to_critical_delay,
+        severe_to_resolved_delay,
         probability_dead_given_critical,
-        critical_to_dead_mu,
-        critical_to_dead_sigma,
-        critical_to_resolved_mu,
-        critical_to_resolved_sigma,
+        critical_to_dead_delay,
+        critical_to_resolved_delay,
         ..
     } = context.get_params();
 
@@ -57,7 +56,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
                 && context.sample_bool(SymptomsRng, probability_mild_given_infect)
             {
                 let infect_to_mild =
-                    LogNormal::new(infect_to_mild_mu, infect_to_mild_sigma).unwrap();
+                    LogNormal::new(infect_to_mild_delay.mu, infect_to_mild_delay.sigma).unwrap();
                 let mild_time =
                     context.get_current_time() + context.sample_distr(SymptomsRng, infect_to_mild);
                 context.add_plan(mild_time, move |context| {
@@ -72,7 +71,8 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
             SymptomStatus::Mild => {
                 if context.sample_bool(SymptomsRng, probability_severe_given_mild) {
                     let mild_to_severe =
-                        LogNormal::new(mild_to_severe_mu, mild_to_severe_sigma).unwrap();
+                        LogNormal::new(mild_to_severe_delay.mu, mild_to_severe_delay.sigma)
+                            .unwrap();
                     let severe_time = context.get_current_time()
                         + context.sample_distr(SymptomsRng, mild_to_severe);
                     context.add_plan(severe_time, move |context| {
@@ -80,7 +80,8 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
                     });
                 } else {
                     let mild_to_resolved =
-                        LogNormal::new(mild_to_resolved_mu, mild_to_resolved_sigma).unwrap();
+                        LogNormal::new(mild_to_resolved_delay.mu, mild_to_resolved_delay.sigma)
+                            .unwrap();
                     let resolved_time = context.get_current_time()
                         + context.sample_distr(SymptomsRng, mild_to_resolved);
                     context.add_plan(resolved_time, move |context| {
@@ -91,7 +92,8 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
             SymptomStatus::Severe => {
                 if context.sample_bool(SymptomsRng, probability_critical_given_severe) {
                     let severe_to_critical =
-                        LogNormal::new(severe_to_critical_mu, severe_to_critical_sigma).unwrap();
+                        LogNormal::new(severe_to_critical_delay.mu, severe_to_critical_delay.sigma)
+                            .unwrap();
                     let critical_time = context.get_current_time()
                         + context.sample_distr(SymptomsRng, severe_to_critical);
                     context.add_plan(critical_time, move |context| {
@@ -99,7 +101,8 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
                     });
                 } else {
                     let severe_to_resolved =
-                        LogNormal::new(severe_to_resolved_mu, severe_to_resolved_sigma).unwrap();
+                        LogNormal::new(severe_to_resolved_delay.mu, severe_to_resolved_delay.sigma)
+                            .unwrap();
                     let resolved_time = context.get_current_time()
                         + context.sample_distr(SymptomsRng, severe_to_resolved);
                     context.add_plan(resolved_time, move |context| {
@@ -110,16 +113,19 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
             SymptomStatus::Critical => {
                 if context.sample_bool(SymptomsRng, probability_dead_given_critical) {
                     let critical_to_dead =
-                        LogNormal::new(critical_to_dead_mu, critical_to_dead_sigma).unwrap();
+                        LogNormal::new(critical_to_dead_delay.mu, critical_to_dead_delay.sigma)
+                            .unwrap();
                     let dead_time = context.get_current_time()
                         + context.sample_distr(SymptomsRng, critical_to_dead);
                     context.add_plan(dead_time, move |context| {
                         context.set_property(event.entity_id, SymptomStatus::Dead);
                     });
                 } else {
-                    let critical_to_resolved =
-                        LogNormal::new(critical_to_resolved_mu, critical_to_resolved_sigma)
-                            .unwrap();
+                    let critical_to_resolved = LogNormal::new(
+                        critical_to_resolved_delay.mu,
+                        critical_to_resolved_delay.sigma,
+                    )
+                    .unwrap();
                     let resolved_time = context.get_current_time()
                         + context.sample_distr(SymptomsRng, critical_to_resolved);
                     context.add_plan(resolved_time, move |context| {
@@ -142,7 +148,7 @@ mod test {
     use crate::infectiousness_manager::InfectionContextExt;
     use crate::parameters::GlobalParams;
     use crate::population_loader::Person;
-    use crate::symptom_status_manager::SymptomStatus;
+    use crate::symptom_status_manager::{SymptomDelayDistLogNormParams, SymptomStatus};
     use crate::{Age, Params};
     use ixa::assert_almost_eq;
     use ixa::prelude::*;
@@ -256,44 +262,58 @@ mod test {
             let parameters = match (current_status, next_status) {
                 (SymptomStatus::NoSymptoms, SymptomStatus::Mild) => Params {
                     probability_mild_given_infect: 1.0,
-                    infect_to_mild_mu: expected_mu,
-                    infect_to_mild_sigma: expected_sigma,
+                    infect_to_mild_delay: SymptomDelayDistLogNormParams {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Severe) => Params {
                     probability_severe_given_mild: 1.0,
-                    mild_to_severe_mu: expected_mu,
-                    mild_to_severe_sigma: expected_sigma,
+                    mild_to_severe_delay: SymptomDelayDistLogNormParams {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Resolved) => Params {
                     probability_severe_given_mild: 0.0,
-                    mild_to_resolved_mu: expected_mu,
-                    mild_to_resolved_sigma: expected_sigma,
+                    mild_to_resolved_delay: SymptomDelayDistLogNormParams {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Severe, SymptomStatus::Critical) => Params {
                     probability_critical_given_severe: 1.0,
-                    severe_to_critical_mu: expected_mu,
-                    severe_to_critical_sigma: expected_sigma,
+                    severe_to_critical_delay: SymptomDelayDistLogNormParams {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Severe, SymptomStatus::Resolved) => Params {
                     probability_critical_given_severe: 0.0,
-                    severe_to_resolved_mu: expected_mu,
-                    severe_to_resolved_sigma: expected_sigma,
+                    severe_to_resolved_delay: SymptomDelayDistLogNormParams {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Critical, SymptomStatus::Dead) => Params {
                     probability_dead_given_critical: 1.0,
-                    critical_to_dead_mu: expected_mu,
-                    critical_to_dead_sigma: expected_sigma,
+                    critical_to_dead_delay: SymptomDelayDistLogNormParams {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                    },
                     ..Default::default()
                 },
                 (SymptomStatus::Critical, SymptomStatus::Resolved) => Params {
                     probability_dead_given_critical: 0.0,
-                    critical_to_resolved_mu: expected_mu,
-                    critical_to_resolved_sigma: expected_sigma,
+                    critical_to_resolved_delay: SymptomDelayDistLogNormParams {
+                        mu: expected_mu,
+                        sigma: expected_sigma,
+                    },
                     ..Default::default()
                 },
                 _ => panic!(
