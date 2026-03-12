@@ -1,6 +1,6 @@
 use ixa::{
-    Context, ContextEntitiesExt, ContextRandomExt, IxaError, define_rng, impl_property,
-    prelude::PropertyChangeEvent,
+    Context, ContextEntitiesExt, ContextRandomExt, IxaError, define_rng,
+    impl_property, prelude::PropertyChangeEvent,
 };
 use rand_distr::LogNormal;
 use serde::{Deserialize, Serialize};
@@ -49,10 +49,11 @@ fn plan_symptom_transition(
     });
 }
 
-pub fn init(context: &mut Context) -> Result<(), IxaError> {
+fn process_symptom_change_event(
+    context: &mut Context,
+    event: PropertyChangeEvent<Person, SymptomStatus>,
+) {
     let &Params {
-        probability_mild_given_infect,
-        infect_to_mild_delay,
         probability_severe_given_mild,
         mild_to_severe_delay,
         mild_to_resolved_delay,
@@ -62,6 +63,69 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
         probability_dead_given_critical,
         critical_to_dead_delay,
         critical_to_resolved_delay,
+        ..
+    } = context.get_params();
+
+    match event.current {
+        SymptomStatus::Mild => {
+            if context.sample_bool(SymptomsRng, probability_severe_given_mild) {
+                plan_symptom_transition(
+                    context,
+                    event.entity_id,
+                    SymptomStatus::Severe,
+                    mild_to_severe_delay,
+                );
+            } else {
+                plan_symptom_transition(
+                    context,
+                    event.entity_id,
+                    SymptomStatus::Resolved,
+                    mild_to_resolved_delay,
+                );
+            }
+        }
+        SymptomStatus::Severe => {
+            if context.sample_bool(SymptomsRng, probability_critical_given_severe) {
+                plan_symptom_transition(
+                    context,
+                    event.entity_id,
+                    SymptomStatus::Critical,
+                    severe_to_critical_delay,
+                );
+            } else {
+                plan_symptom_transition(
+                    context,
+                    event.entity_id,
+                    SymptomStatus::Resolved,
+                    severe_to_resolved_delay,
+                );
+            }
+        }
+        SymptomStatus::Critical => {
+            if context.sample_bool(SymptomsRng, probability_dead_given_critical) {
+                plan_symptom_transition(
+                    context,
+                    event.entity_id,
+                    SymptomStatus::Dead,
+                    critical_to_dead_delay,
+                );
+            } else {
+                plan_symptom_transition(
+                    context,
+                    event.entity_id,
+                    SymptomStatus::Resolved,
+                    critical_to_resolved_delay,
+                );
+            }
+        }
+        _ => (),
+    }
+}
+
+pub fn init(context: &mut Context) -> Result<(), IxaError> {
+    let &Params {
+        probability_mild_given_infect,
+        infect_to_mild_delay,
         ..
     } = context.get_params();
 
@@ -81,59 +145,8 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
     );
 
     context.subscribe_to_event(
-        move |context, event: PropertyChangeEvent<Person, SymptomStatus>| match event.current {
-            SymptomStatus::Mild => {
-                if context.sample_bool(SymptomsRng, probability_severe_given_mild) {
-                    plan_symptom_transition(
-                        context,
-                        event.entity_id,
-                        SymptomStatus::Severe,
-                        mild_to_severe_delay,
-                    );
-                } else {
-                    plan_symptom_transition(
-                        context,
-                        event.entity_id,
-                        SymptomStatus::Resolved,
-                        mild_to_resolved_delay,
-                    );
-                }
-            }
-            SymptomStatus::Severe => {
-                if context.sample_bool(SymptomsRng, probability_critical_given_severe) {
-                    plan_symptom_transition(
-                        context,
-                        event.entity_id,
-                        SymptomStatus::Critical,
-                        severe_to_critical_delay,
-                    );
-                } else {
-                    plan_symptom_transition(
-                        context,
-                        event.entity_id,
-                        SymptomStatus::Resolved,
-                        severe_to_resolved_delay,
-                    );
-                }
-            }
-            SymptomStatus::Critical => {
-                if context.sample_bool(SymptomsRng, probability_dead_given_critical) {
-                    plan_symptom_transition(
-                        context,
-                        event.entity_id,
-                        SymptomStatus::Dead,
-                        critical_to_dead_delay,
-                    );
-                } else {
-                    plan_symptom_transition(
-                        context,
-                        event.entity_id,
-                        SymptomStatus::Resolved,
-                        critical_to_resolved_delay,
-                    );
-                }
-            }
-            _ => (),
+        move |context, event: PropertyChangeEvent<Person, SymptomStatus>| {
+            process_symptom_change_event(context, event);
         },
     );
     Ok(())
