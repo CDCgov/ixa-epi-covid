@@ -8,6 +8,7 @@ pub mod population_loader;
 pub mod rate_fns;
 pub mod reports;
 pub mod settings;
+pub mod plan_index;
 
 pub use model::initialize_model;
 pub use parameters::ContextParametersExt;
