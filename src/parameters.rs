@@ -5,7 +5,7 @@ use std::{fmt::Debug, path::PathBuf};
 use crate::infection_importation::ImportCasesFromFile;
 use crate::reports::ReportParams;
 use crate::settings::SettingProperties;
-use crate::symptom_status_manager::SymptomDelayDistLogNormParams;
+use crate::symptom_status_manager::{SymptomAgeGroupNames, SymptomDelayDistLogNormParams};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RateFnType {
@@ -37,12 +37,14 @@ pub struct Params {
     pub imported_cases_timeseries: ImportCasesFromFile,
     /// A library of infection rates to assign to infected people.
     pub infectiousness_rate_fn: RateFnType,
+    /// age thresholds
+    pub symptom_age_groups: HashMap<SymptomAgeGroupNames, u8>,
     /// Probability an infected person develops mild illness
     pub probability_mild_given_infect: f64,
     /// Parameters for log normal delay distribution from infection to mild illness
     pub infect_to_mild_delay: SymptomDelayDistLogNormParams,
     /// Probability a person with mild illness develops severe illness
-    pub probability_severe_given_mild: f64,
+    pub probability_severe_given_mild: HashMap<SymptomAgeGroupNames, f64>,
     /// Parameters for log normal delay distribution from mild to severe illness
     pub mild_to_severe_delay: SymptomDelayDistLogNormParams,
     /// Parameters for log normal delay distribution from mild illness to resolution
@@ -160,6 +162,14 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
             &parameters.critical_to_resolved_delay.sigma,
         ),
     ];
+    for (age_group, probability) in &parameters.probability_severe_given_mild {
+        // we also want to check whether all of the values for age_group from the enum SymptomAgeGroupNames is specified
+        if !(0.0..=1.0).contains(probability) {
+            return Err(IxaError::IxaError(
+                format!("The probability of severe illness given mild illness among {:?} must be between 0 and 1, inclusive.", age_group).to_string()
+            ));
+        }
+    }
 
     for (param_name, param_value) in symptom_sigma_params {
         if param_value < &0.0 {
@@ -254,6 +264,7 @@ impl Default for Params {
                 rate: 1.0,
                 duration: 5.0,
             },
+            symptom_age_groups: HashMap::new(),
             probability_mild_given_infect: 0.0,
             infect_to_mild_delay: SymptomDelayDistLogNormParams {
                 mu: 0.0,

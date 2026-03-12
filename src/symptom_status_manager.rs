@@ -1,6 +1,6 @@
 use ixa::{
-    Context, ContextEntitiesExt, ContextRandomExt, IxaError, define_rng,
-    impl_property, prelude::PropertyChangeEvent,
+    Context, ContextEntitiesExt, ContextRandomExt, IxaError, define_property,
+    define_rng, impl_property, prelude::PropertyChangeEvent,
 };
 use rand_distr::LogNormal;
 use serde::{Deserialize, Serialize};
@@ -27,6 +27,16 @@ impl_property!(
     SymptomStatus,
     Person,
     default_const = SymptomStatus::NoSymptoms
+);
+
+pub enum SymptomAgeGroupNames {
+    Young,
+    Old
+}
+
+define_property!(
+    SymptomAgeGroupNames,
+    Person,
 );
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone)]
@@ -128,6 +138,8 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
         infect_to_mild_delay,
         ..
     } = context.get_params();
+    
+    println!("{:?}", symptom_age_groups.clone());
 
     context.subscribe_to_event(
         move |context, event: PropertyChangeEvent<Person, InfectionStatus>| {
@@ -156,7 +168,6 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 mod test {
     use std::cell::RefCell;
     use std::rc::Rc;
-
     use super::init;
     use crate::infectiousness_manager::InfectionContextExt;
     use crate::parameters::GlobalParams;

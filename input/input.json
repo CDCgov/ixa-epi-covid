@@ -13,12 +13,13 @@
                 "duration": 5.0
             }
         },
+        "symptom_age_groups": {"Young": 0, "Old": 50},
         "probability_mild_given_infect": 0.7,
         "infect_to_mild_delay": {
             "mu": 0.1,
             "sigma": 0.0
         },
-        "probability_severe_given_mild": 0.2,
+        "probability_severe_given_mild": {"Young": 0.05, "Old": 0.3},
         "mild_to_severe_delay": {
             "mu": 0.1,
             "sigma": 0.1
