@@ -48,13 +48,19 @@ fn make_params(synth_file: PathBuf) -> Params {
         },
         probability_mild_given_infect: 0.7,
         infect_to_mild_delay: delay,
-        probability_severe_given_mild: 0.2,
+        probability_severe_given_mild: HashMap::from_iter([
+            ("Age0To120".to_string(), 0.2),
+        ]),
         mild_to_severe_delay: delay,
         mild_to_resolved_delay: delay,
-        probability_critical_given_severe: 0.2,
+        probability_critical_given_severe: HashMap::from_iter([
+            ("Age0To120".to_string(), 0.2),
+        ]),
         severe_to_critical_delay: delay,
         severe_to_resolved_delay: delay,
-        probability_dead_given_critical: 0.2,
+        probability_dead_given_critical: HashMap::from_iter([
+            ("Age0To120".to_string(), 0.2),
+        ]),
         critical_to_dead_delay: delay,
         critical_to_resolved_delay: delay,
         settings_properties: HashMap::from_iter(

@@ -1,20 +1,50 @@
 use ixa::{
-    Context, ContextEntitiesExt, ContextRandomExt, IxaError, define_rng, impl_property,
-    prelude::PropertyChangeEvent,
+    Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt, IxaError,
+    define_rng, impl_derived_property, impl_property, prelude::PropertyChangeEvent,
 };
 use rand_distr::LogNormal;
 use serde::{Deserialize, Serialize};
+use std::cmp::{Ordering, PartialOrd};
 
 use crate::{
-    ContextParametersExt, Params,
-    error::ModelError,
-    infectiousness_manager::InfectionStatus,
-    population_loader::{Person, PersonId},
+    Age, ContextParametersExt, Params, error::ModelError, infectiousness_manager::InfectionStatus,
+    parameters::OrderedAgeGroupsParam, population_loader::Person,
 };
 
 define_rng!(SymptomsRng);
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Copy, Clone, Eq, Hash)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Copy, Clone)]
+pub enum SymptomData {
+    NoSymptoms,
+    Mild {
+        mild_time: f64,
+    },
+    Severe {
+        mild_time: f64,
+        severe_time: f64,
+    },
+    Critical {
+        mild_time: f64,
+        severe_time: f64,
+        critical_time: f64,
+    },
+    Resolved {
+        mild_time: f64,
+        severe_time: Option<f64>,
+        critical_time: Option<f64>,
+        resolved_time: f64,
+    },
+    Dead {
+        mild_time: f64,
+        severe_time: f64,
+        critical_time: f64,
+        dead_time: f64,
+    },
+}
+
+impl_property!(SymptomData, Person, default_const = SymptomData::NoSymptoms);
+
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub enum SymptomStatus {
     NoSymptoms,
     Mild,
@@ -24,10 +54,63 @@ pub enum SymptomStatus {
     Dead,
 }
 
-impl_property!(
+impl_derived_property!(
     SymptomStatus,
     Person,
-    default_const = SymptomStatus::NoSymptoms
+    [SymptomData],
+    [],
+    |symptom_data| match symptom_data {
+        SymptomData::NoSymptoms => SymptomStatus::NoSymptoms,
+        SymptomData::Mild { .. } => SymptomStatus::Mild,
+        SymptomData::Severe { .. } => SymptomStatus::Severe,
+        SymptomData::Critical { .. } => SymptomStatus::Critical,
+        SymptomData::Resolved { .. } => SymptomStatus::Resolved,
+        SymptomData::Dead { .. } => SymptomStatus::Dead,
+    }
+);
+
+#[derive(Debug, Eq, PartialEq, Clone, Deserialize, Serialize)]
+pub struct SymptomAgeGroup {
+    pub label: String,
+    pub min: u8,
+    pub max: u8,
+}
+
+impl Ord for SymptomAgeGroup {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.min.cmp(&other.min)
+    }
+}
+
+impl PartialOrd for SymptomAgeGroup {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[derive(Debug, Serialize, PartialEq, Copy, Clone)]
+pub struct AgeGroupIndex(pub usize);
+
+impl_derived_property!(
+    AgeGroupIndex,
+    Person,
+    [Age],
+    [OrderedAgeGroupsParam],
+    |age, ordered_age_groups| {
+        let mut found_age_group = false;
+        let mut index = 0;
+        while index < ordered_age_groups.len() {
+            if age.0 >= ordered_age_groups[index].min && age.0 <= ordered_age_groups[index].max {
+                found_age_group = true;
+                break;
+            }
+            index += 1;
+        }
+        if !found_age_group {
+            panic!("No valid age group for age");
+        }
+        return AgeGroupIndex(index);
+    }
 );
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone)]
@@ -49,87 +132,173 @@ impl SymptomDelayDistLogNormParams {
     }
 }
 
-fn plan_symptom_transition(
-    context: &mut Context,
-    person_id: PersonId,
-    next_symptom_status: SymptomStatus,
-    delay_params: SymptomDelayDistLogNormParams,
-) {
+fn draw_transition_time(context: &mut Context, delay_params: SymptomDelayDistLogNormParams) -> f64 {
     let delay_dist = LogNormal::new(delay_params.mu, delay_params.sigma).unwrap();
-    let transition_time =
-        context.get_current_time() + context.sample_distr(SymptomsRng, delay_dist);
-    context.add_plan(transition_time, move |context| {
-        context.set_property::<Person, SymptomStatus>(person_id, next_symptom_status);
-    });
+    context.get_current_time() + context.sample_distr(SymptomsRng, delay_dist)
 }
 
 fn process_symptom_change_event(
     context: &mut Context,
-    event: PropertyChangeEvent<Person, SymptomStatus>,
+    event: PropertyChangeEvent<Person, SymptomData>,
 ) {
     let &Params {
-        probability_severe_given_mild,
+        ref probability_severe_given_mild,
         mild_to_severe_delay,
         mild_to_resolved_delay,
-        probability_critical_given_severe,
+        ref probability_critical_given_severe,
         severe_to_critical_delay,
         severe_to_resolved_delay,
-        probability_dead_given_critical,
+        ref probability_dead_given_critical,
         critical_to_dead_delay,
         critical_to_resolved_delay,
         ..
     } = context.get_params();
 
+    let ordered_symptom_age_groups = context
+        .get_global_property_value(OrderedAgeGroupsParam)
+        .unwrap();
+
+    let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(event.entity_id);
+    let symptom_age_group_label = &ordered_symptom_age_groups[symptom_age_group_index.0].label;
+
     match event.current {
-        SymptomStatus::Mild => {
-            if context.sample_bool(SymptomsRng, probability_severe_given_mild) {
-                plan_symptom_transition(
-                    context,
-                    event.entity_id,
-                    SymptomStatus::Severe,
-                    mild_to_severe_delay,
-                );
+        SymptomData::Mild { .. } => {
+            if context.sample_bool(
+                SymptomsRng,
+                *probability_severe_given_mild
+                    .get(symptom_age_group_label)
+                    .unwrap(),
+            ) {
+                let transition_time = draw_transition_time(context, mild_to_severe_delay);
+                let SymptomData::Mild { mild_time } =
+                    context.get_property::<Person, SymptomData>(event.entity_id)
+                else {
+                    panic!("Person is not in Mild.")
+                };
+                context.add_plan(transition_time, move |context| {
+                    context.set_property::<Person, SymptomData>(
+                        event.entity_id,
+                        SymptomData::Severe {
+                            mild_time,
+                            severe_time: transition_time,
+                        },
+                    );
+                });
             } else {
-                plan_symptom_transition(
-                    context,
-                    event.entity_id,
-                    SymptomStatus::Resolved,
-                    mild_to_resolved_delay,
-                );
+                let transition_time = draw_transition_time(context, mild_to_resolved_delay);
+                let SymptomData::Mild { mild_time } =
+                    context.get_property::<Person, SymptomData>(event.entity_id)
+                else {
+                    panic!("Person is not in Mild.")
+                };
+                context.add_plan(transition_time, move |context| {
+                    context.set_property::<Person, SymptomData>(
+                        event.entity_id,
+                        SymptomData::Resolved {
+                            mild_time,
+                            severe_time: None,
+                            critical_time: None,
+                            resolved_time: transition_time,
+                        },
+                    );
+                });
             }
         }
-        SymptomStatus::Severe => {
-            if context.sample_bool(SymptomsRng, probability_critical_given_severe) {
-                plan_symptom_transition(
-                    context,
-                    event.entity_id,
-                    SymptomStatus::Critical,
-                    severe_to_critical_delay,
-                );
+        SymptomData::Severe { .. } => {
+            if context.sample_bool(
+                SymptomsRng,
+                *probability_critical_given_severe
+                    .get(symptom_age_group_label)
+                    .unwrap(),
+            ) {
+                let transition_time = draw_transition_time(context, severe_to_critical_delay);
+                let SymptomData::Severe {
+                    mild_time,
+                    severe_time,
+                } = context.get_property::<Person, SymptomData>(event.entity_id)
+                else {
+                    panic!("Person is not in Severe.")
+                };
+                context.add_plan(transition_time, move |context| {
+                    context.set_property::<Person, SymptomData>(
+                        event.entity_id,
+                        SymptomData::Critical {
+                            mild_time,
+                            severe_time,
+                            critical_time: transition_time,
+                        },
+                    );
+                });
             } else {
-                plan_symptom_transition(
-                    context,
-                    event.entity_id,
-                    SymptomStatus::Resolved,
-                    severe_to_resolved_delay,
-                );
+                let transition_time = draw_transition_time(context, severe_to_resolved_delay);
+                let SymptomData::Severe {
+                    mild_time,
+                    severe_time,
+                } = context.get_property::<Person, SymptomData>(event.entity_id)
+                else {
+                    panic!("Person is not in Severe.")
+                };
+                context.add_plan(transition_time, move |context| {
+                    context.set_property::<Person, SymptomData>(
+                        event.entity_id,
+                        SymptomData::Resolved {
+                            mild_time,
+                            severe_time: Some(severe_time),
+                            critical_time: None,
+                            resolved_time: transition_time,
+                        },
+                    );
+                });
             }
         }
-        SymptomStatus::Critical => {
-            if context.sample_bool(SymptomsRng, probability_dead_given_critical) {
-                plan_symptom_transition(
-                    context,
-                    event.entity_id,
-                    SymptomStatus::Dead,
-                    critical_to_dead_delay,
-                );
+        SymptomData::Critical { .. } => {
+            if context.sample_bool(
+                SymptomsRng,
+                *probability_dead_given_critical
+                    .get(symptom_age_group_label)
+                    .unwrap(),
+            ) {
+                let transition_time = draw_transition_time(context, critical_to_dead_delay);
+                let SymptomData::Critical {
+                    mild_time,
+                    severe_time,
+                    critical_time,
+                } = context.get_property::<Person, SymptomData>(event.entity_id)
+                else {
+                    panic!("Person is not in Critical.")
+                };
+                context.add_plan(transition_time, move |context| {
+                    context.set_property::<Person, SymptomData>(
+                        event.entity_id,
+                        SymptomData::Dead {
+                            mild_time,
+                            severe_time,
+                            critical_time,
+                            dead_time: transition_time,
+                        },
+                    );
+                });
             } else {
-                plan_symptom_transition(
-                    context,
-                    event.entity_id,
-                    SymptomStatus::Resolved,
-                    critical_to_resolved_delay,
-                );
+                let transition_time = draw_transition_time(context, critical_to_resolved_delay);
+                let SymptomData::Critical {
+                    mild_time,
+                    severe_time,
+                    critical_time,
+                } = context.get_property::<Person, SymptomData>(event.entity_id)
+                else {
+                    panic!("Person is not in Severe.")
+                };
+                context.add_plan(transition_time, move |context| {
+                    context.set_property::<Person, SymptomData>(
+                        event.entity_id,
+                        SymptomData::Resolved {
+                            mild_time,
+                            severe_time: Some(severe_time),
+                            critical_time: Some(critical_time),
+                            resolved_time: transition_time,
+                        },
+                    );
+                });
             }
         }
         _ => (),
@@ -148,18 +317,21 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
             if event.current == InfectionStatus::Infectious
                 && context.sample_bool(SymptomsRng, probability_mild_given_infect)
             {
-                plan_symptom_transition(
-                    context,
-                    event.entity_id,
-                    SymptomStatus::Mild,
-                    infect_to_mild_delay,
-                );
+                let transition_time = draw_transition_time(context, infect_to_mild_delay);
+                context.add_plan(transition_time, move |context| {
+                    context.set_property::<Person, SymptomData>(
+                        event.entity_id,
+                        SymptomData::Mild {
+                            mild_time: transition_time,
+                        },
+                    );
+                });
             }
         },
     );
 
     context.subscribe_to_event(
-        move |context, event: PropertyChangeEvent<Person, SymptomStatus>| {
+        move |context, event: PropertyChangeEvent<Person, SymptomData>| {
             process_symptom_change_event(context, event);
         },
     );
@@ -168,14 +340,13 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 
 #[cfg(test)]
 mod test {
-
     use super::init;
     use crate::infectiousness_manager::InfectionContextExt;
-    use crate::parameters::GlobalParams;
-    use crate::population_loader::Person;
+    use crate::parameters::{GlobalParams, OrderedAgeGroupsParam};
+    use crate::population_loader::{Person, PersonId};
     use crate::symptom_status_manager::{
-        SymptomDelayDistLogNormParams, SymptomStatus, plan_symptom_transition,
-        process_symptom_change_event,
+        AgeGroupIndex, SymptomAgeGroup, SymptomData, SymptomDelayDistLogNormParams, SymptomStatus,
+        draw_transition_time, process_symptom_change_event,
     };
     use crate::{Age, Params};
     use ixa::assert_almost_eq;
@@ -192,294 +363,301 @@ mod test {
     }
 
     #[test]
-    fn test_plan_symptom_transition() {
+    fn test_age_group_property_derivation() {
+        let ordered_symptom_age_groups: Vec<SymptomAgeGroup> = vec![
+            SymptomAgeGroup {
+                label: "Age0To17".to_string(),
+                min: 0,
+                max: 17,
+            },
+            SymptomAgeGroup {
+                label: "Age18To49".to_string(),
+                min: 18,
+                max: 49,
+            },
+            SymptomAgeGroup {
+                label: "Age50To64".to_string(),
+                min: 50,
+                max: 64,
+            },
+            SymptomAgeGroup {
+                label: "Age65Plus".to_string(),
+                min: 65,
+                max: 120,
+            },
+        ];
         let mut context = Context::new();
+        context.init_random(1234);
+        context
+            .set_global_property_value(OrderedAgeGroupsParam, ordered_symptom_age_groups)
+            .unwrap();
+
+        // test people who are 0, 17, 18, 49, 50, 64, 65, and 100 years old for correct derived person property
+        let person_id: PersonId = context.add_entity((Age(0),)).unwrap();
+        let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
+        assert_eq!(symptom_age_group_index, AgeGroupIndex(0));
+
+        let person_id: PersonId = context.add_entity((Age(17),)).unwrap();
+        let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
+        assert_eq!(symptom_age_group_index, AgeGroupIndex(0));
+
+        let person_id: PersonId = context.add_entity((Age(18),)).unwrap();
+        let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
+        assert_eq!(symptom_age_group_index, AgeGroupIndex(1));
+
+        let person_id: PersonId = context.add_entity((Age(49),)).unwrap();
+        let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
+        assert_eq!(symptom_age_group_index, AgeGroupIndex(1));
+
+        let person_id: PersonId = context.add_entity((Age(50),)).unwrap();
+        let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
+        assert_eq!(symptom_age_group_index, AgeGroupIndex(2));
+
+        let person_id: PersonId = context.add_entity((Age(64),)).unwrap();
+        let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
+        assert_eq!(symptom_age_group_index, AgeGroupIndex(2));
+
+        let person_id: PersonId = context.add_entity((Age(65),)).unwrap();
+        let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
+        assert_eq!(symptom_age_group_index, AgeGroupIndex(3));
+
+        let person_id: PersonId = context.add_entity((Age(100),)).unwrap();
+        let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
+        assert_eq!(symptom_age_group_index, AgeGroupIndex(3));
+    }
+
+    #[test]
+    fn test_draw_transition_time() {
+        let start_time = 3.0;
+        let state_duration: f64 = 5.0;
         let log_normal_delay_params = SymptomDelayDistLogNormParams {
-            mu: 1.0,
+            mu: state_duration.ln(),
             sigma: 0.0,
         };
-        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
-        context.init_random(1234);
-        assert_eq!(
-            context.get_property::<Person, SymptomStatus>(p1),
-            SymptomStatus::NoSymptoms // this helps check defaults
-        );
-        plan_symptom_transition(
-            &mut context,
-            p1,
-            SymptomStatus::Mild,
-            log_normal_delay_params,
-        );
-        context.execute();
-        assert_eq!(
-            context.get_property::<Person, SymptomStatus>(p1),
-            SymptomStatus::Mild
-        );
-        assert_almost_eq!(
-            context.get_current_time(),
-            log_normal_delay_params.mu.exp(),
-            1e-8
-        );
+        let mut context = Context::new();
+        context.set_start_time(start_time);
+        let transition_time = draw_transition_time(&mut context, log_normal_delay_params);
+        assert_eq!(transition_time, start_time + state_duration)
     }
 
-    // test process_symptom_change_event by specifying a given symptom status and probability
-    // and then checking that the person moves to the correct symptom status
-    // because the function has "hard coded" transitions, we need multiple tests
+    // most of the substantive logic in this module is in process_symptom_change_event;
+    // to test the logic of this function as used in a closure when subscribed to SymptomData changes,
+    // we want simulated people who will follow each of the following trajectories
+    // mild -> resolved
+    // mild -> severe -> resolved
+    // mild -> severe -> critical -> resolved
+    // mild -> severe -> critical -> dead
+    // each trajectory is defined by a series of transition probability values
+    // here, all probabilities are either 0.0 or 1.0, so the test is deterministic
+    // conveniently, we have four age categories, so we can make simulated people have different ages,
+    // with each age coresponding to a different trajectory; this also serves to test that the function
+    // is getting the correct probabilities for each age category
+    // we use unique durations for each symptom to help test that the timing of events is as expected
     #[test]
-    fn test_mild_to_severe_symptom_change_event() {
+    fn test_age_specific_symptom_trajectories() {
+        let mild_to_severe_duration: f64 = 1.0;
+        let mild_to_resolved_duration: f64 = 2.0;
+        let severe_to_critical_duration: f64 = 3.0;
+        let severe_to_resolved_duration: f64 = 4.0;
+        let critical_to_dead_duration: f64 = 5.0;
+        let critical_to_resolved_duration: f64 = 6.0;
         let mut context = Context::new();
         let parameters = Params {
-            probability_severe_given_mild: 1.0,
+            probability_severe_given_mild: ixa::HashMap::from_iter([
+                ("Age0To17".to_string(), 0.0),
+                ("Age18To49".to_string(), 1.0),
+                ("Age50To64".to_string(), 1.0),
+                ("Age65Plus".to_string(), 1.0),
+            ]),
             mild_to_severe_delay: SymptomDelayDistLogNormParams {
-                mu: 0.0,
+                mu: mild_to_severe_duration.ln(),
                 sigma: 0.0,
             },
-            ..Default::default()
-        };
-        context.init_random(123);
-        context
-            .set_global_property_value(GlobalParams, parameters.clone())
-            .unwrap();
-
-        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
-        context.subscribe_to_event(
-            move |context, event: PropertyChangeEvent<Person, SymptomStatus>| {
-                process_symptom_change_event(context, event);
-            },
-        );
-        context.set_property::<Person, SymptomStatus>(p1, SymptomStatus::Mild);
-        context.add_plan_with_phase(
-            parameters.mild_to_severe_delay.mu.exp(),
-            move |context| {
-                assert_eq!(
-                    context.get_property::<Person, SymptomStatus>(p1),
-                    SymptomStatus::Severe
-                );
-                context.shutdown();
-            },
-            ixa::ExecutionPhase::Last,
-        );
-        context.execute();
-    }
-
-    #[test]
-    fn test_mild_to_resolved_symptom_change_event() {
-        let mut context = Context::new();
-        let parameters = Params {
-            probability_severe_given_mild: 0.0,
             mild_to_resolved_delay: SymptomDelayDistLogNormParams {
-                mu: 0.0,
+                mu: mild_to_resolved_duration.ln(),
                 sigma: 0.0,
             },
-            ..Default::default()
-        };
-        context.init_random(123);
-        context
-            .set_global_property_value(GlobalParams, parameters.clone())
-            .unwrap();
-
-        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
-        context.subscribe_to_event(
-            move |context, event: PropertyChangeEvent<Person, SymptomStatus>| {
-                process_symptom_change_event(context, event);
-            },
-        );
-        context.set_property::<Person, SymptomStatus>(p1, SymptomStatus::Mild);
-        context.add_plan_with_phase(
-            parameters.mild_to_resolved_delay.mu.exp(),
-            move |context| {
-                assert_eq!(
-                    context.get_property::<Person, SymptomStatus>(p1),
-                    SymptomStatus::Resolved
-                );
-                context.shutdown();
-            },
-            ixa::ExecutionPhase::Last,
-        );
-        context.execute();
-    }
-
-    #[test]
-    fn test_severe_to_critical_symptom_change_event() {
-        let mut context = Context::new();
-        let parameters = Params {
-            probability_critical_given_severe: 1.0,
+            probability_critical_given_severe: ixa::HashMap::from_iter([
+                ("Age0To17".to_string(), 0.0),
+                ("Age18To49".to_string(), 0.0),
+                ("Age50To64".to_string(), 1.0),
+                ("Age65Plus".to_string(), 1.0),
+            ]),
             severe_to_critical_delay: SymptomDelayDistLogNormParams {
-                mu: 0.0,
+                mu: severe_to_critical_duration.ln(),
                 sigma: 0.0,
             },
-            ..Default::default()
-        };
-        context.init_random(123);
-        context
-            .set_global_property_value(GlobalParams, parameters.clone())
-            .unwrap();
-
-        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
-        context.subscribe_to_event(
-            move |context, event: PropertyChangeEvent<Person, SymptomStatus>| {
-                process_symptom_change_event(context, event);
-            },
-        );
-        context.set_property::<Person, SymptomStatus>(p1, SymptomStatus::Severe);
-        context.add_plan_with_phase(
-            parameters.severe_to_critical_delay.mu.exp(),
-            move |context| {
-                assert_eq!(
-                    context.get_property::<Person, SymptomStatus>(p1),
-                    SymptomStatus::Critical
-                );
-                context.shutdown();
-            },
-            ixa::ExecutionPhase::Last,
-        );
-        context.execute();
-    }
-
-    #[test]
-    fn test_severe_to_resolved_symptom_change_event() {
-        let mut context = Context::new();
-        let parameters = Params {
-            probability_critical_given_severe: 0.0,
             severe_to_resolved_delay: SymptomDelayDistLogNormParams {
-                mu: 0.0,
+                mu: severe_to_resolved_duration.ln(),
                 sigma: 0.0,
             },
-            ..Default::default()
-        };
-        context.init_random(123);
-        context
-            .set_global_property_value(GlobalParams, parameters.clone())
-            .unwrap();
-
-        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
-        context.subscribe_to_event(
-            move |context, event: PropertyChangeEvent<Person, SymptomStatus>| {
-                process_symptom_change_event(context, event);
-            },
-        );
-        context.set_property::<Person, SymptomStatus>(p1, SymptomStatus::Severe);
-        context.add_plan_with_phase(
-            parameters.severe_to_resolved_delay.mu.exp(),
-            move |context| {
-                assert_eq!(
-                    context.get_property::<Person, SymptomStatus>(p1),
-                    SymptomStatus::Resolved
-                );
-                context.shutdown();
-            },
-            ixa::ExecutionPhase::Last,
-        );
-        context.execute();
-    }
-
-    #[test]
-    fn test_critical_to_dead_symptom_change_event() {
-        let mut context = Context::new();
-        let parameters = Params {
-            probability_dead_given_critical: 1.0,
+            probability_dead_given_critical: ixa::HashMap::from_iter([
+                ("Age0To17".to_string(), 0.0),
+                ("Age18To49".to_string(), 0.0),
+                ("Age50To64".to_string(), 0.0),
+                ("Age65Plus".to_string(), 1.0),
+            ]),
             critical_to_dead_delay: SymptomDelayDistLogNormParams {
-                mu: 0.0,
+                mu: critical_to_dead_duration.ln(),
                 sigma: 0.0,
             },
-            ..Default::default()
-        };
-        context.init_random(123);
-        context
-            .set_global_property_value(GlobalParams, parameters.clone())
-            .unwrap();
-
-        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
-        context.subscribe_to_event(
-            move |context, event: PropertyChangeEvent<Person, SymptomStatus>| {
-                process_symptom_change_event(context, event);
-            },
-        );
-        context.set_property::<Person, SymptomStatus>(p1, SymptomStatus::Critical);
-        context.add_plan_with_phase(
-            parameters.severe_to_critical_delay.mu.exp(),
-            move |context| {
-                assert_eq!(
-                    context.get_property::<Person, SymptomStatus>(p1),
-                    SymptomStatus::Dead
-                );
-                context.shutdown();
-            },
-            ixa::ExecutionPhase::Last,
-        );
-        context.execute();
-    }
-
-    #[test]
-    fn test_critical_to_resolved_symptom_change_event() {
-        let mut context = Context::new();
-        let parameters = Params {
-            probability_critical_given_severe: 0.0,
             critical_to_resolved_delay: SymptomDelayDistLogNormParams {
-                mu: 0.0,
+                mu: critical_to_resolved_duration.ln(),
                 sigma: 0.0,
             },
             ..Default::default()
         };
+        let ordered_symptom_age_groups: Vec<SymptomAgeGroup> = vec![
+            SymptomAgeGroup {
+                label: "Age0To17".to_string(),
+                min: 0,
+                max: 17,
+            },
+            SymptomAgeGroup {
+                label: "Age18To49".to_string(),
+                min: 18,
+                max: 49,
+            },
+            SymptomAgeGroup {
+                label: "Age50To64".to_string(),
+                min: 50,
+                max: 64,
+            },
+            SymptomAgeGroup {
+                label: "Age65Plus".to_string(),
+                min: 65,
+                max: 120,
+            },
+        ];
         context.init_random(123);
         context
             .set_global_property_value(GlobalParams, parameters.clone())
             .unwrap();
+        context
+            .set_global_property_value(OrderedAgeGroupsParam, ordered_symptom_age_groups)
+            .unwrap();
+        let p1 = context.add_entity::<Person, _>((Age(10),)).unwrap();
+        let p2 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let p3 = context.add_entity::<Person, _>((Age(60),)).unwrap();
+        let p4 = context.add_entity::<Person, _>((Age(80),)).unwrap();
 
-        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
         context.subscribe_to_event(
-            move |context, event: PropertyChangeEvent<Person, SymptomStatus>| {
+            move |context, event: PropertyChangeEvent<Person, SymptomData>| {
                 process_symptom_change_event(context, event);
             },
         );
-        context.set_property::<Person, SymptomStatus>(p1, SymptomStatus::Critical);
-        context.add_plan_with_phase(
-            parameters.critical_to_resolved_delay.mu.exp(),
-            move |context| {
-                assert_eq!(
-                    context.get_property::<Person, SymptomStatus>(p1),
-                    SymptomStatus::Resolved
-                );
-                context.shutdown();
-            },
-            ixa::ExecutionPhase::Last,
-        );
+        for person in [p1, p2, p3, p4] {
+            context.set_property::<Person, SymptomData>(
+                person,
+                SymptomData::Mild {
+                    mild_time: context.get_current_time(),
+                },
+            );
+        }
         context.execute();
+
+        assert_eq!(
+            // mild -> resolved
+            context.get_property::<Person, SymptomData>(p1),
+            SymptomData::Resolved {
+                mild_time: 0.0,
+                severe_time: None,
+                critical_time: None,
+                resolved_time: 0.0 + mild_to_resolved_duration,
+            }
+        );
+        assert_eq!(
+            // mild -> severe -> resolved
+            context.get_property::<Person, SymptomData>(p2),
+            SymptomData::Resolved {
+                mild_time: 0.0,
+                severe_time: Some(0.0 + mild_to_severe_duration),
+                critical_time: None,
+                resolved_time: 0.0 + mild_to_severe_duration + severe_to_resolved_duration,
+            }
+        );
+        assert_eq!(
+            // mild -> severe -> critical -> resolved
+            context.get_property::<Person, SymptomData>(p3),
+            SymptomData::Resolved {
+                mild_time: 0.0,
+                severe_time: Some(0.0 + mild_to_severe_duration),
+                critical_time: Some(0.0 + mild_to_severe_duration + severe_to_critical_duration),
+                resolved_time: 0.0
+                    + mild_to_severe_duration
+                    + severe_to_critical_duration
+                    + critical_to_resolved_duration,
+            }
+        );
+        assert_eq!(
+            // mild -> severe -> critical -> dead
+            context.get_property::<Person, SymptomData>(p4),
+            SymptomData::Dead {
+                mild_time: 0.0,
+                severe_time: 0.0 + mild_to_severe_duration,
+                critical_time: 0.0 + mild_to_severe_duration + severe_to_critical_duration,
+                dead_time: 0.0
+                    + mild_to_severe_duration
+                    + severe_to_critical_duration
+                    + critical_to_dead_duration,
+            }
+        );
     }
 
-    // testing NoSymptoms to Mild is a bit different because the trigger is an infection
-    // and this is coded in the init, rather than using process_symptom_change_event
+    // testing NoSymptoms to Mild is different because the trigger is an infection
+    // and this is coded in the init, rather than using process_symptom_change_event,
+    // although process_symptom_change_event is later called in the init
     #[test]
     fn test_no_symptoms_to_mild() {
+        let infect_to_mild_duration: f64 = 1.0;
         let mut context = Context::new();
         let parameters = Params {
             probability_mild_given_infect: 1.0,
             infect_to_mild_delay: SymptomDelayDistLogNormParams {
-                mu: 0.0,
+                mu: infect_to_mild_duration.ln(),
                 sigma: 0.0,
             },
+            probability_severe_given_mild: ixa::HashMap::from_iter([(
+                "Age0To120".to_string(),
+                0.0,
+            )]),
+            // some probability_severe_given_mild needs to be specified because mild -> severe or mild -> resolved
+            // is *scheduled* the moment the person goes from no symptoms to mild, even though
+            // the simulation is shut down before the person actually leaves the mild state
             ..Default::default()
         };
         context.init_random(123);
         context
             .set_global_property_value(GlobalParams, parameters.clone())
+            .unwrap();
+        context
+            .set_global_property_value(
+                OrderedAgeGroupsParam,
+                vec![SymptomAgeGroup {
+                    label: "Age0To120".to_string(),
+                    min: 0,
+                    max: 120,
+                }],
+            )
             .unwrap();
 
         let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
         init(&mut context).unwrap();
         context.infect_person(p1, None, None);
         context.add_plan_with_phase(
-            parameters.infect_to_mild_delay.mu.exp(),
-            move |context| {
-                assert_eq!(
-                    context.get_property::<Person, SymptomStatus>(p1),
-                    SymptomStatus::Mild
-                );
-                context.shutdown();
-            },
+            infect_to_mild_duration,
+            ixa::Context::shutdown,
             ixa::ExecutionPhase::Last,
         );
         context.execute();
+
+        assert_eq!(
+            // no symptoms -> mild -> resolved
+            context.get_property::<Person, SymptomData>(p1),
+            SymptomData::Mild {
+                mild_time: infect_to_mild_duration
+            }
+        );
     }
 
     #[test]
@@ -499,14 +677,14 @@ mod test {
         context.infect_person(p1, None, None);
         context.execute();
         assert_eq!(
-            context.get_property::<Person, SymptomStatus>(p1),
-            SymptomStatus::NoSymptoms
+            context.get_property::<Person, SymptomData>(p1),
+            SymptomData::NoSymptoms
         );
     }
 
     #[test]
     fn test_absorbing_states() {
-        // We want to check that infected individuals eventually end up in an absorbing state (No Syptoms, Resolved, or Dead).
+        // We want to check that infected individuals eventually end up in an absorbing state (No Symptoms, Resolved, or Dead).
         let num_sims: u64 = 5000;
         let mut count_no_symptoms: u64 = 0;
         let mut count_resolved: u64 = 0;
@@ -519,14 +697,33 @@ mod test {
             let mut context = Context::new();
             let parameters = Params {
                 probability_mild_given_infect,
-                probability_severe_given_mild,
-                probability_critical_given_severe,
-                probability_dead_given_critical,
+                probability_severe_given_mild: ixa::HashMap::from_iter([(
+                    "Age0To120".to_string(),
+                    probability_severe_given_mild,
+                )]),
+                probability_critical_given_severe: ixa::HashMap::from_iter([(
+                    "Age0To120".to_string(),
+                    probability_critical_given_severe,
+                )]),
+                probability_dead_given_critical: ixa::HashMap::from_iter([(
+                    "Age0To120".to_string(),
+                    probability_dead_given_critical,
+                )]),
                 ..Default::default()
             };
             context.init_random(seed);
             context
                 .set_global_property_value(GlobalParams, parameters)
+                .unwrap();
+            context
+                .set_global_property_value(
+                    OrderedAgeGroupsParam,
+                    vec![SymptomAgeGroup {
+                        label: "Age0To120".to_string(),
+                        min: 0,
+                        max: 120,
+                    }],
+                )
                 .unwrap();
 
             // Add our person
@@ -535,7 +732,7 @@ mod test {
             init(&mut context).unwrap();
             // Infect the person to trigger the symptom status manager
             context.infect_person(p1, None, None);
-            // Add a plan to shutdown after we see they progress to an absorbing state
+            // Add a plan to shutdown after long period once everyone should have progressed to an absorbing state
             context.add_plan(1000.0, ixa::Context::shutdown);
 
             context.execute();

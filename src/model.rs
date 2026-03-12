@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use ixa::{ExecutionPhase, prelude::*};
 
 use crate::{
-    error::ModelError, infection_importation, infection_propagation_loop, population_loader,
-    reports, settings, symptom_status_manager,
+    error::ModelError, infection_importation, infection_propagation_loop, parameters,
+    population_loader, reports, settings, symptom_status_manager,
 };
 
 pub fn initialize_model(
@@ -15,6 +15,8 @@ pub fn initialize_model(
 ) -> Result<(), ModelError> {
     // Initialize the random number generator with the provided seed
     context.init_random(seed);
+
+    parameters::init(context)?;
 
     // Plan to shut down the model at designated maximum run time
     context.add_plan_with_phase(
