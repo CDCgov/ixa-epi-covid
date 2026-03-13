@@ -158,7 +158,7 @@ mod test {
                     "transmission_report": {
                         "write": true,
                         "filename": "transmission.csv"
-                    }
+                    },
                     "first_death_terminates_run": false
                 }
             }
