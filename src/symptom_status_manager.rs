@@ -1,11 +1,15 @@
 use ixa::{
-    Context, ContextEntitiesExt, ContextRandomExt, IxaError, define_derived_property, define_rng, impl_derived_property, impl_property, prelude::PropertyChangeEvent
+    Context, ContextEntitiesExt, ContextRandomExt, IxaError, define_rng, impl_derived_property,
+    impl_property, prelude::PropertyChangeEvent,
 };
 use rand_distr::LogNormal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Age, ContextParametersExt, Params, infectiousness_manager::InfectionStatus, population_loader::{Person, PersonId}
+    Age, ContextParametersExt, Params,
+    infectiousness_manager::InfectionStatus,
+    parameters::GlobalParams,
+    population_loader::{Person, PersonId},
 };
 
 define_rng!(SymptomsRng);
@@ -26,21 +30,28 @@ impl_property!(
     default_const = SymptomStatus::NoSymptoms
 );
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub enum SymptomAgeGroup {
     Young,
     Old,
 }
 
-impl_derived_property!(SymptomAgeGroup, Person, [Age], [GlobalParams],
-|age, params|{
-    let symptom_age_group_thresholds = params.symptom_age_groups.clone();
-    for (age_group, min_age) in symptom_age_group_thresholds{
-        if age >= min_age {
-            let symptom_age_group: SymptomAgeGroup = age_group; 
+impl_derived_property!(
+    SymptomAgeGroup,
+    Person,
+    [Age],
+    [GlobalParams],
+    |age, params| {
+        let symptom_age_group_thresholds = params.symptom_age_groups.clone();
+        let mut correct_age_group = SymptomAgeGroup::Young;
+        for (age_group, min_age) in symptom_age_group_thresholds {
+            if age.0 >= min_age {
+                correct_age_group = age_group;
+            }
         }
+        return correct_age_group;
     }
-});
+);
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone)]
 pub struct SymptomDelayDistLogNormParams {
@@ -67,22 +78,28 @@ fn process_symptom_change_event(
     event: PropertyChangeEvent<Person, SymptomStatus>,
 ) {
     let &Params {
-        symptom_age_groups,
-        probability_severe_given_mild,
+        ref probability_severe_given_mild,
         mild_to_severe_delay,
         mild_to_resolved_delay,
-        probability_critical_given_severe,
+        ref probability_critical_given_severe,
         severe_to_critical_delay,
         severe_to_resolved_delay,
-        probability_dead_given_critical,
+        ref probability_dead_given_critical,
         critical_to_dead_delay,
         critical_to_resolved_delay,
         ..
     } = context.get_params();
 
+    let symptom_age_group: SymptomAgeGroup = context.get_property(event.entity_id);
+
     match event.current {
         SymptomStatus::Mild => {
-            if context.sample_bool(SymptomsRng, probability_severe_given_mild.get(symptom_age_group)) {
+            if context.sample_bool(
+                SymptomsRng,
+                *probability_severe_given_mild
+                    .get(&symptom_age_group)
+                    .unwrap(),
+            ) {
                 plan_symptom_transition(
                     context,
                     event.entity_id,
@@ -99,7 +116,12 @@ fn process_symptom_change_event(
             }
         }
         SymptomStatus::Severe => {
-            if context.sample_bool(SymptomsRng, probability_critical_given_severe.get(symptom_age_group)) {
+            if context.sample_bool(
+                SymptomsRng,
+                *probability_critical_given_severe
+                    .get(&symptom_age_group)
+                    .unwrap(),
+            ) {
                 plan_symptom_transition(
                     context,
                     event.entity_id,
@@ -116,7 +138,12 @@ fn process_symptom_change_event(
             }
         }
         SymptomStatus::Critical => {
-            if context.sample_bool(SymptomsRng, probability_dead_given_critical.get(&symptom_age_group)) {
+            if context.sample_bool(
+                SymptomsRng,
+                *probability_dead_given_critical
+                    .get(&symptom_age_group)
+                    .unwrap(),
+            ) {
                 plan_symptom_transition(
                     context,
                     event.entity_id,
@@ -142,8 +169,6 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
         infect_to_mild_delay,
         ..
     } = context.get_params();
-    
-    println!("{:?}", symptom_age_groups.clone());
 
     context.subscribe_to_event(
         move |context, event: PropertyChangeEvent<Person, InfectionStatus>| {
@@ -170,16 +195,20 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 
 #[cfg(test)]
 mod test {
-    use std::cell::RefCell;
-    use std::rc::Rc;
     use super::init;
     use crate::infectiousness_manager::InfectionContextExt;
     use crate::parameters::GlobalParams;
     use crate::population_loader::Person;
-    use crate::symptom_status_manager::{SymptomDelayDistLogNormParams, SymptomStatus};
+    use crate::symptom_status_manager::{
+        SymptomAgeGroup, SymptomDelayDistLogNormParams, SymptomStatus,
+    };
     use crate::{Age, Params};
+    use ixa::HashMap;
+    use ixa::HashMapExt;
     use ixa::assert_almost_eq;
     use ixa::prelude::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
 
     fn test_proportion(
         current_status: SymptomStatus,
@@ -195,45 +224,54 @@ mod test {
             let count_clone = Rc::clone(&count);
             let mut context = Context::new();
 
+            let mut expected_proportion_by_age: HashMap<SymptomAgeGroup, f64> = HashMap::new();
+            expected_proportion_by_age.insert(SymptomAgeGroup::Young, expected_proportion);
+            expected_proportion_by_age.insert(SymptomAgeGroup::Old, expected_proportion);
+
+            let mut complement_proportion_by_age: HashMap<SymptomAgeGroup, f64> = HashMap::new();
+            complement_proportion_by_age.insert(SymptomAgeGroup::Young, 1.0 - expected_proportion);
+            complement_proportion_by_age.insert(SymptomAgeGroup::Old, 1.0 - expected_proportion);
+
+            let mut never_probability_by_age: HashMap<SymptomAgeGroup, f64> = HashMap::new();
+            never_probability_by_age.insert(SymptomAgeGroup::Young, 0.0);
+            never_probability_by_age.insert(SymptomAgeGroup::Old, 0.0);
+
             let parameters = match (current_status, next_status) {
                 (SymptomStatus::NoSymptoms, SymptomStatus::Mild) => Params {
                     probability_mild_given_infect: expected_proportion,
+                    probability_severe_given_mild: never_probability_by_age.clone(),
+                    probability_critical_given_severe: never_probability_by_age.clone(),
+                    probability_dead_given_critical: never_probability_by_age.clone(),
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Severe) => Params {
-                    probability_severe_given_mild: HashMap::from([
-                        ("all", expected_proportion)
-                    ]),
+                    probability_severe_given_mild: expected_proportion_by_age,
+                    probability_critical_given_severe: never_probability_by_age.clone(),
+                    probability_dead_given_critical: never_probability_by_age.clone(),
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Resolved) => Params {
-                    probability_severe_given_mild: HashMap::from([
-                        ("all", 1.0 - expected_proportion)
-                    ]),
+                    probability_severe_given_mild: complement_proportion_by_age,
+                    probability_critical_given_severe: never_probability_by_age.clone(),
+                    probability_dead_given_critical: never_probability_by_age.clone(),
                     ..Default::default()
                 },
                 (SymptomStatus::Severe, SymptomStatus::Critical) => Params {
-                    probability_critical_given_severe: HashMap::from([
-                        ("all", expected_proportion)
-                    ]),
+                    probability_critical_given_severe: expected_proportion_by_age,
+                    probability_dead_given_critical: never_probability_by_age,
                     ..Default::default()
                 },
                 (SymptomStatus::Severe, SymptomStatus::Resolved) => Params {
-                    probability_critical_given_severe: HashMap::from([
-                        ("all", 1.0 - expected_proportion)
-                    ]),
+                    probability_critical_given_severe: complement_proportion_by_age,
+                    probability_dead_given_critical: never_probability_by_age,
                     ..Default::default()
                 },
                 (SymptomStatus::Critical, SymptomStatus::Dead) => Params {
-                    probability_dead_given_critical: HashMap::from([
-                        ("all", expected_proportion)
-                    ]),
+                    probability_dead_given_critical: expected_proportion_by_age,
                     ..Default::default()
                 },
                 (SymptomStatus::Critical, SymptomStatus::Resolved) => Params {
-                    probability_dead_given_critical: HashMap::from([
-                        ("all", 1.0 - expected_proportion)
-                    ]),
+                    probability_dead_given_critical: complement_proportion_by_age,
                     ..Default::default()
                 },
                 _ => panic!(
@@ -299,6 +337,14 @@ mod test {
             let durations_clone = Rc::clone(&durations);
             let mut context = Context::new();
 
+            let mut always_probability_by_age: HashMap<SymptomAgeGroup, f64> = HashMap::new();
+            always_probability_by_age.insert(SymptomAgeGroup::Young, 1.0);
+            always_probability_by_age.insert(SymptomAgeGroup::Old, 1.0);
+
+            let mut never_probability_by_age: HashMap<SymptomAgeGroup, f64> = HashMap::new();
+            never_probability_by_age.insert(SymptomAgeGroup::Young, 0.0);
+            never_probability_by_age.insert(SymptomAgeGroup::Old, 0.0);
+
             let parameters = match (current_status, next_status) {
                 (SymptomStatus::NoSymptoms, SymptomStatus::Mild) => Params {
                     probability_mild_given_infect: 1.0,
@@ -306,22 +352,23 @@ mod test {
                         mu: expected_mu,
                         sigma: expected_sigma,
                     },
+                    probability_severe_given_mild: never_probability_by_age.clone(),
+                    probability_critical_given_severe: never_probability_by_age.clone(),
+                    probability_dead_given_critical: never_probability_by_age.clone(),
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Severe) => Params {
-                    probability_severe_given_mild: HashMap::from([
-                        ("all", 1.0)
-                    ]),
+                    probability_severe_given_mild: always_probability_by_age,
                     mild_to_severe_delay: SymptomDelayDistLogNormParams {
                         mu: expected_mu,
                         sigma: expected_sigma,
                     },
+                    probability_critical_given_severe: never_probability_by_age.clone(),
+                    probability_dead_given_critical: never_probability_by_age.clone(),
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Resolved) => Params {
-                    probability_severe_given_mild: HashMap::from([
-                        ("all", 0.0)
-                    ]),
+                    probability_severe_given_mild: never_probability_by_age,
                     mild_to_resolved_delay: SymptomDelayDistLogNormParams {
                         mu: expected_mu,
                         sigma: expected_sigma,
@@ -329,19 +376,16 @@ mod test {
                     ..Default::default()
                 },
                 (SymptomStatus::Severe, SymptomStatus::Critical) => Params {
-                    probability_critical_given_severe: HashMap::from([
-                        ("all", 1.0)
-                    ]),
+                    probability_critical_given_severe: always_probability_by_age,
                     severe_to_critical_delay: SymptomDelayDistLogNormParams {
                         mu: expected_mu,
                         sigma: expected_sigma,
                     },
+                    probability_dead_given_critical: never_probability_by_age,
                     ..Default::default()
                 },
                 (SymptomStatus::Severe, SymptomStatus::Resolved) => Params {
-                    probability_critical_given_severe: HashMap::from([
-                        ("all", 0.0)
-                    ]),
+                    probability_critical_given_severe: never_probability_by_age,
                     severe_to_resolved_delay: SymptomDelayDistLogNormParams {
                         mu: expected_mu,
                         sigma: expected_sigma,
@@ -349,9 +393,7 @@ mod test {
                     ..Default::default()
                 },
                 (SymptomStatus::Critical, SymptomStatus::Dead) => Params {
-                    probability_dead_given_critical: HashMap::from([
-                        ("all", 1.0)
-                    ]),
+                    probability_dead_given_critical: always_probability_by_age,
                     critical_to_dead_delay: SymptomDelayDistLogNormParams {
                         mu: expected_mu,
                         sigma: expected_sigma,
@@ -359,9 +401,7 @@ mod test {
                     ..Default::default()
                 },
                 (SymptomStatus::Critical, SymptomStatus::Resolved) => Params {
-                    probability_dead_given_critical: HashMap::from([
-                        ("all", 0.0)
-                    ]),
+                    probability_dead_given_critical: never_probability_by_age,
                     critical_to_resolved_delay: SymptomDelayDistLogNormParams {
                         mu: expected_mu,
                         sigma: expected_sigma,
@@ -494,22 +534,21 @@ mod test {
         let mut count_resolved: u64 = 0;
         let mut count_dead: u64 = 0;
         let probability_mild_given_infect = 0.5;
-        let probability_severe_given_mild = HashMap::from([
-                        ("all", 0.5)
-                    ]);
-        let probability_critical_given_severe = HashMap::from([
-                        ("all", 0.5)
-                    ]);
-        let probability_dead_given_critical = HashMap::from([
-                        ("all", 0.5)
-                    ]);
+
+        let mut half_probability_by_age: HashMap<SymptomAgeGroup, f64> = HashMap::new();
+        half_probability_by_age.insert(SymptomAgeGroup::Young, 0.5);
+        half_probability_by_age.insert(SymptomAgeGroup::Old, 0.5);
+
+        let probability_severe_given_mild = &half_probability_by_age;
+        let probability_critical_given_severe = &half_probability_by_age;
+        let probability_dead_given_critical = &half_probability_by_age;
         for seed in 0..num_sims {
             let mut context = Context::new();
             let parameters = Params {
                 probability_mild_given_infect,
-                probability_severe_given_mild,
-                probability_critical_given_severe,
-                probability_dead_given_critical,
+                probability_severe_given_mild: probability_severe_given_mild.clone(),
+                probability_critical_given_severe: probability_critical_given_severe.clone(),
+                probability_dead_given_critical: probability_dead_given_critical.clone(),
                 ..Default::default()
             };
             context.init_random(seed);
@@ -544,22 +583,44 @@ mod test {
         );
         assert_almost_eq!(
             count_resolved as f64 / num_sims as f64,
-            probability_mild_given_infect * (1.0 - probability_severe_given_mild)
+            probability_mild_given_infect
+                * (1.0
+                    - probability_severe_given_mild
+                        .get(&SymptomAgeGroup::Young)
+                        .unwrap())
                 + probability_mild_given_infect
                     * probability_severe_given_mild
-                    * (1.0 - probability_critical_given_severe)
+                        .get(&SymptomAgeGroup::Young)
+                        .unwrap()
+                    * (1.0
+                        - probability_critical_given_severe
+                            .get(&SymptomAgeGroup::Young)
+                            .unwrap())
                 + probability_mild_given_infect
                     * probability_severe_given_mild
+                        .get(&SymptomAgeGroup::Young)
+                        .unwrap()
                     * probability_critical_given_severe
-                    * (1.0 - probability_dead_given_critical),
+                        .get(&SymptomAgeGroup::Young)
+                        .unwrap()
+                    * (1.0
+                        - probability_dead_given_critical
+                            .get(&SymptomAgeGroup::Young)
+                            .unwrap()),
             0.05
         );
         assert_almost_eq!(
             count_dead as f64 / num_sims as f64,
             probability_mild_given_infect
                 * probability_severe_given_mild
+                    .get(&SymptomAgeGroup::Young)
+                    .unwrap()
                 * probability_critical_given_severe
-                * probability_dead_given_critical,
+                    .get(&SymptomAgeGroup::Young)
+                    .unwrap()
+                * probability_dead_given_critical
+                    .get(&SymptomAgeGroup::Young)
+                    .unwrap(),
             0.05
         );
     }

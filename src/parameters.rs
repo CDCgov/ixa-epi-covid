@@ -2,7 +2,6 @@ use ixa::{HashMap, HashMapExt, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, path::PathBuf};
 
-use crate::Age;
 use crate::infection_importation::ImportCasesFromFile;
 use crate::reports::ReportParams;
 use crate::settings::SettingProperties;
