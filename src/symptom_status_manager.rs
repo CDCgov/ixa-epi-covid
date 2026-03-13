@@ -90,7 +90,7 @@ fn process_symptom_change_event(
         ..
     } = context.get_params();
 
-    let symptom_age_group: SymptomAgeGroup = context.get_property(event.entity_id);
+    let symptom_age_group = context.get_property::<Person, SymptomAgeGroup>(event.entity_id);
 
     match event.current {
         SymptomStatus::Mild => {
@@ -198,7 +198,7 @@ mod test {
     use super::init;
     use crate::infectiousness_manager::InfectionContextExt;
     use crate::parameters::GlobalParams;
-    use crate::population_loader::Person;
+    use crate::population_loader::{Person, PersonId};
     use crate::symptom_status_manager::{
         SymptomAgeGroup, SymptomDelayDistLogNormParams, SymptomStatus,
     };
@@ -528,7 +528,7 @@ mod test {
 
     #[test]
     fn test_absorbing_states() {
-        // We want to check that infected individuals eventually end up in an absorbing state (No Syptoms, Resolved, or Dead).
+        // We want to check that infected individuals eventually end up in an absorbing state (No Symptoms, Resolved, or Dead).
         let num_sims: u64 = 5000;
         let mut count_no_symptoms: u64 = 0;
         let mut count_resolved: u64 = 0;
@@ -624,4 +624,46 @@ mod test {
             0.05
         );
     }
+
+    #[test]
+    fn test_age_groups() {
+        let mut age_group_hash_map: HashMap<SymptomAgeGroup, u8> = HashMap::new();
+        age_group_hash_map.insert(SymptomAgeGroup::Young, 50);
+        age_group_hash_map.insert(SymptomAgeGroup::Old, 0);
+
+        let mut context = Context::new();
+        context.init_random(1234);
+        context
+            .set_global_property_value(
+                GlobalParams,
+                Params {
+                    symptom_age_groups: age_group_hash_map,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        // test people who are 0, 10, 50, and 100 years old for correct derived person property
+        let person_id: PersonId = context.add_entity((Age(0),)).unwrap();
+        let symptom_age_group = context.get_property::<Person, SymptomAgeGroup>(person_id);
+        assert_eq!(symptom_age_group, SymptomAgeGroup::Young);
+
+        let person_id: PersonId = context.add_entity((Age(10),)).unwrap();
+        let symptom_age_group = context.get_property::<Person, SymptomAgeGroup>(person_id);
+        assert_eq!(symptom_age_group, SymptomAgeGroup::Young);
+
+        let person_id: PersonId = context.add_entity((Age(50),)).unwrap();
+        let symptom_age_group = context.get_property::<Person, SymptomAgeGroup>(person_id);
+        assert_eq!(symptom_age_group, SymptomAgeGroup::Old);
+
+        let person_id: PersonId = context.add_entity((Age(100),)).unwrap();
+        let symptom_age_group = context.get_property::<Person, SymptomAgeGroup>(person_id);
+        assert_eq!(symptom_age_group, SymptomAgeGroup::Old);
+
+
+    }
 }
+
+// if the age groups are misspecified, should panic (this requires checks in the validation)
+// we want in validation: make sure lowest age is zero, and that ages are in order.
+// give ages that will give you a certain path and ensure that those things work without 
