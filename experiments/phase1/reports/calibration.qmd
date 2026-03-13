@@ -52,12 +52,12 @@ print(
 )
 ```
 
-Histograms of posterior samples compared to the probability density of each prior. To generate the histogram, we sample $n$ particles from the posterior population, where $n$ is the effective sample size of the population, in order to reflect the weight distribution of the posterior. For each plot, the prior is plotted as a blue line and the histogram of the posterior samples is plotted in orange with a kernel density estimator overlay.
+Histograms of posterior samples compared to the probability density of each prior. For each plot, the prior is plotted as a blue line and the histogram of the posterior samples is plotted in orange with a kernel density estimator overlay. To generate the histogram, we sample $n$ particles from the posterior population, where $n$ is the effective sample size of the population. Re-sampling particles in this manner reflects the posterior weight distribution, the probability mass function over accepted particles determined by the ABC-SMC algorithm perturbation kernel and prior distributions.
 
 ```{python}
 #| echo: false
 #| eval: false
-# Preferred API ----------
+# Preferred API for development in calibrationtools----------
 for param in results.fitted_params:
     # get values and use weights to alter histogram instead of sampling with ESS
     values = results.posterior_particles.get_values_of(param)
@@ -120,7 +120,7 @@ for param in results.fitted_params:
 ```
 ```{python}
 #| echo: false
-## Obtaining the importation time series and death incidence data frmaes for a random smaple form the posterior
+## Obtaining the importation time series and death incidence data frames for a random smaple form the posterior
 # Re-generating a random sample of parameter sets from posterior
 particle_count = int(min(100, results.ess))
 particles = results.sample_posterior_particles(n=particle_count)
@@ -129,9 +129,12 @@ default_params_file = wd / 'input' / 'default_params.json'
 with open(default_params_file, "rb") as fp:
     default_params = json.load(fp)
 
-default_params['epimodel.GlobalParams']['max_time'] = 200
 ixa_overrides = {
-    "synth_population_file": "/mnt/S_CFA_Predict/team-CMEI/synthetic_populations/cbsa_all_work_school_household_2020-04-24/cbsa_all_work_school_household/IN/Bloomington IN.csv"
+    "synth_population_file": "/mnt/S_CFA_Predict/team-CMEI/synthetic_populations/cbsa_all_work_school_household_2020-04-24/cbsa_all_work_school_household/IN/Bloomington IN.csv",
+    "imported_cases_timeseries": {
+        "filename": "./experiments/phase1/projection/imported_cases_timeseries.csv"
+    },
+    "max_time": 200
 }
 default_params = apply_dict_overrides(default_params, {'epimodel.GlobalParams': ixa_overrides})
 
@@ -139,8 +142,9 @@ mrp_defaults = {
     'ixa_inputs': default_params,
     "config_inputs": {
         "exe_file": "./target/release/ixa-epi-covid",
-        "output_dir": "./experiments/phase1/calibration/output",
+        "output_dir": "./experiments/phase1/projection/output",
         "force_overwrite": True,
+        "outputs_to_read": ['prevalence_report', 'imported_cases_timeseries']
     },
     "importation_inputs": {
         "state": "Indiana",
@@ -153,41 +157,16 @@ uniq_id = 0
 model = CovidModel()
 importation_curves = []
 prevalence_data = []
+os.makedirs(mrp_defaults["config_inputs"]["output_dir"], exist_ok=True)
 
-with tempfile.TemporaryDirectory() as tmpdir:
-    reader = ParticleReader(results.priors.params, mrp_defaults)
-    for p in particles:
-        model_inputs = reader.read_particle(p)
+reader = ParticleReader(results.priors.params, mrp_defaults)
+for p in particles:
+    model_inputs = reader.read_particle(p)
+    outputs = model.simulate(model_inputs)
 
-        model_inputs["config_inputs"]["output_dir"] = str(
-            Path(tmpdir, f"{uniq_id}")
-        )
-        os.makedirs(model_inputs["config_inputs"]["output_dir"], exist_ok=True)
-        importation_path = Path(
-            tmpdir, f"{uniq_id}", "importation_timeseries.csv"
-        )
-
-        model_inputs["ixa_inputs"]["epimodel.GlobalParams"][
-            "imported_cases_timeseries"
-        ]["filename"] = str(importation_path)
-        model.simulate(model_inputs)
-        prevalence_data.append(
-            pl.read_csv(
-                Path(
-                    tmpdir,
-                    f"{uniq_id}",
-                    model_inputs["ixa_inputs"]["epimodel.GlobalParams"][
-                        "prevalence_report"
-                    ]["filename"],
-                )
-            ).with_columns(pl.lit(uniq_id).alias("id"))
-        )
-        importation_curves.append(
-            pl.read_csv(importation_path).with_columns(
-                pl.lit(uniq_id).alias("id")
-            )
-        )
-        uniq_id += 1
+    importation_curves.append(outputs["imported_cases_timeseries"].with_columns(pl.lit(uniq_id).alias("id")))
+    prevalence_data.append(outputs["prevalence_report"].with_columns(pl.lit(uniq_id).alias("id")))
+    uniq_id += 1
 
 importations = pl.concat(importation_curves)
 all_prevalence_data = pl.concat(prevalence_data)

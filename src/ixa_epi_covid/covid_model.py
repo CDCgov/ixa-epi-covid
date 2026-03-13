@@ -85,7 +85,7 @@ class CovidModel(MRPModel):
             str(input_file_path),
             "--output",
             config_inputs["output_dir"],
-            "-f",
+            "--force-overwrite",
             "--no-stats",
         ]
 
@@ -99,11 +99,21 @@ class CovidModel(MRPModel):
             raise e
 
         # Read the model incidence report from the specified location and return as a DataFrame
-        incidence_report_filename = ixa_inputs["epimodel.GlobalParams"][
-            "incidence_report"
-        ]["filename"]
-        incidence_report_path = Path(
-            config_inputs["output_dir"], incidence_report_filename
-        )
-
-        return pl.read_csv(incidence_report_path)
+        outputs = {}
+        for output in config_inputs["outputs_to_read"]:
+            fp = ixa_inputs["epimodel.GlobalParams"][output]["filename"]
+            if Path(config_inputs["output_dir"], fp).exists():
+                outputs.update(
+                    {
+                        output: pl.read_csv(
+                            Path(config_inputs["output_dir"], fp)
+                        )
+                    }
+                )
+            elif Path(fp).exists():
+                outputs.update({output: pl.read_csv(Path(fp))})
+            else:
+                raise FileNotFoundError(
+                    f"Expected output file {fp} not found. Looked in {config_inputs['output_dir']}"
+                )
+        return outputs

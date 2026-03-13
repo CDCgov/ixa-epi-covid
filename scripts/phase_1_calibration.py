@@ -26,26 +26,32 @@ default_ixa_params_file = Path(
 )
 ixa_overrides = {
     "synth_population_file": "/mnt/S_CFA_Predict/team-CMEI/synthetic_populations/cbsa_all_work_school_household_2020-04-24/cbsa_all_work_school_household/IN/Bloomington IN.csv",
-    "first_death_terminates_run": True
+    "first_death_terminates_run": True,
 }
 force_overwrite = False
+outputs_to_read = ["incidence_report"]
 
 # State importation model declaration parameters
 state = "Indiana"
 year = 2020
+symptomatic_reporting_prob_default = 0.5
 
 # Calibration inputs
 priors_file = Path("experiments", "phase1", "input", "priors.json")
-tolerance_values = [2.0, 0.1]  # , 2.0, 0.01]
+tolerance_values = [2.0, 0.1]
 generation_particle_count = 500
 target_data = 75
 
 
 # Output processing function for calibration
-def outputs_to_distance(model_output: pl.DataFrame, target_data: int):
-    first_death_observed = model_output.filter(
-        (pl.col("event") == "Dead") & (pl.col("count") > 0)
-    ).filter(pl.col("t_upper") == pl.min("t_upper"))
+def outputs_to_distance(
+    model_output: dict[str, pl.DataFrame], target_data: int
+):
+    first_death_observed = (
+        model_output["incidence_report"]
+        .filter((pl.col("event") == "Dead") & (pl.col("count") > 0))
+        .filter(pl.col("t_upper") == pl.min("t_upper"))
+    )
     if first_death_observed.height > 0:
         return abs(target_data - first_death_observed.item(0, "t_upper"))
     else:
@@ -74,11 +80,12 @@ mrp_defaults = {
         "exe_file": str(exe_file),
         "output_dir": str(output_dir),
         "force_overwrite": force_overwrite,
+        "outputs_to_read": outputs_to_read,
     },
     "importation_inputs": {
-        "state": "Indiana",
-        "year": 2020,
-        "symptomatic_reporting_prob": 0.5,
+        "state": state,
+        "year": year,
+        "symptomatic_reporting_prob": symptomatic_reporting_prob_default,
     },
 }
 
