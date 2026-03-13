@@ -659,11 +659,9 @@ mod test {
         let person_id: PersonId = context.add_entity((Age(100),)).unwrap();
         let symptom_age_group = context.get_property::<Person, SymptomAgeGroup>(person_id);
         assert_eq!(symptom_age_group, SymptomAgeGroup::Old);
-
-
     }
 }
 
 // if the age groups are misspecified, should panic (this requires checks in the validation)
 // we want in validation: make sure lowest age is zero, and that ages are in order.
-// give ages that will give you a certain path and ensure that those things work without 
+// give ages that will give you a certain path and ensure that those things work deterministically
