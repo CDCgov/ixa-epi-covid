@@ -22,23 +22,16 @@ Other parameters, such as report generation and maximum runtime do not affect mo
 ## Symptom status parameters
 The following input parameters characterize the progression of illness in infected individuals. The parameters specify the probability of progressing to a particular state (mild, severe, critical, and dead) and specify the delay distributions (assumed to be log normally distributed) for each progression.
 - `probability_mild_given_infect`: Probability an infected person develops mild illness
-- `infect_to_mild_mu`: Mu parameter for log normal delay distribution from infection to mild illness
-- `infect_to_mild_sigma`: Sigma parameter for log normal delay distribution from infection to mild illness
+- `infect_to_mild_delay`: Log normal delay distribution from infection to mild illness; struct with `mu` and `sigma` parameters
 - `probability_severe_given_mild`: Probability a person with mild illness develops severe illness
-- `mild_to_severe_mu`: Mu parameter for log normal delay distribution from mild to severe illness
-- `mild_to_severe_sigma`: Sigma parameter for log normal delay distribution from mild to severe illness
-- `mild_to_resolved_mu`: Mu parameter for log normal delay distribution from mild illness to resolution
-- `mild_to_resolved_sigma`: Sigma parameter for log normal delay distribution from mild illness to resolution
+- `mild_to_severe_delay`: Log normal delay distribution from mild to severe illness; struct with `mu` and `sigma` parameters
+- `mild_to_resolved_delay`: Log normal delay distribution from mild illness to resolution; struct with `mu` and `sigma` parameters
 - `probability_critical_given_severe`: Probability a person with severe illness develops critical illness
-- `severe_to_critical_mu`: Mu parameter for log normal delay distribution from severe to critical illness
-- `severe_to_critical_sigma`: Sigma parameter for log normal delay distribution from severe to critical illness
-- `severe_to_resolved_mu`: Mu parameter for log normal delay distribution from severe illness to resolution
-- `severe_to_resolved_sigma`: Sigma parameter for log normal delay distribution from severe illness to resolution
+- `severe_to_critical_delay`: Log normal delay distribution from severe to critical illness; struct with `mu` and `sigma` parameters
+- `severe_to_resolved_delay`: Log normal delay distribution from severe illness to resolution; struct with `mu` and `sigma` parameters
 - `probability_dead_given_critical`: Probability a person with critical illness dies
-- `critical_to_dead_mu`: Mu parameter for log normal delay distribution from critical illness to death
-- `critical_to_dead_sigma`: Sigma parameter for log normal delay distribution from critical illness to death
-- `critical_to_resolved_mu`: Mu parameter for log normal delay distribution from critical illness to resolution
-- `critical_to_resolved_sigma`: Sigma parameter for log normal delay distribution from critical illness to resolution
+- `critical_to_dead_delay`: Log normal delay distribution from critical illness to death; struct with `mu` and `sigma` parameters
+- `critical_to_resolved_delay`: Log normal delay distribution from critical illness to resolution; struct with `mu` and `sigma` parameters
 
 ## Model execution parameters
 The following parameters specified in the input parameter dictionary are relevant to model output and execution, but do not affect dynamics. All report variables can be turned off using `"write": false` in the input file.
