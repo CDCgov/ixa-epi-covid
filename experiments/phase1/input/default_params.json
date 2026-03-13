@@ -49,6 +49,7 @@
         "transmission_report": {
             "write": false,
             "filename": "transmission_report.csv"
-        }
+        },
+        "first_death_terminates_run": false
     }
 }

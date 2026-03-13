@@ -82,6 +82,8 @@ pub struct Params {
     pub incidence_report: ReportParams,
     /// Transmission report with a name required
     pub transmission_report: ReportParams,
+    /// Terminate run on first observed death
+    pub first_death_terminates_run: bool,
 }
 
 #[allow(clippy::too_many_lines)]
@@ -259,6 +261,7 @@ impl Default for Params {
                 filename: None,
                 period: None,
             },
+            first_death_terminates_run: false,
         }
     }
 }

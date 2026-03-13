@@ -2,6 +2,7 @@ import json
 import os
 import pickle
 import shutil
+import timeit
 from pathlib import Path
 
 import polars as pl
@@ -24,9 +25,10 @@ default_ixa_params_file = Path(
     "experiments", "phase1", "input", "default_params.json"
 )
 ixa_overrides = {
-    "synth_population_file": "/mnt/S_CFA_Predict/team-CMEI/synthetic_populations/cbsa_all_work_school_household_2020-04-24/cbsa_all_work_school_household/IN/Bloomington IN.csv"
+    "synth_population_file": "/mnt/S_CFA_Predict/team-CMEI/synthetic_populations/cbsa_all_work_school_household_2020-04-24/cbsa_all_work_school_household/IN/Bloomington IN.csv",
+    "first_death_terminates_run": True
 }
-force_overwrite = True
+force_overwrite = False
 
 # State importation model declaration parameters
 state = "Indiana"
@@ -34,7 +36,7 @@ year = 2020
 
 # Calibration inputs
 priors_file = Path("experiments", "phase1", "input", "priors.json")
-tolerance_values = [30.0, 20.0, 10.0, 5.0]  # , 2.0, 0.01]
+tolerance_values = [2.0, 0.1]  # , 2.0, 0.01]
 generation_particle_count = 500
 target_data = 75
 
@@ -54,6 +56,13 @@ def outputs_to_distance(model_output: pl.DataFrame, target_data: int):
 with open(default_ixa_params_file, "r") as f:
     default_params = json.load(f)
 
+ixa_overrides.update(
+    {
+        "epimodel.GlobalParams": {
+            "max_time": target_data + tolerance_values[0] + 1
+        }
+    }
+)
 
 default_params = apply_dict_overrides(
     default_params, {"epimodel.GlobalParams": ixa_overrides}
@@ -74,11 +83,13 @@ mrp_defaults = {
 }
 
 output_dir = Path(mrp_defaults["config_inputs"]["output_dir"])
-if (
-    os.path.exists(output_dir)
-    and mrp_defaults["config_inputs"]["force_overwrite"]
-):
-    shutil.rmtree(str(output_dir))
+if os.path.exists(output_dir):
+    if force_overwrite:
+        shutil.rmtree(str(output_dir))
+    else:
+        raise FileExistsError(
+            f"Output directory {output_dir} already exists and force_overwrite is set to False."
+        )
 
 output_dir.mkdir(parents=True, exist_ok=False)
 
@@ -109,8 +120,10 @@ sampler = ABCSampler(
 )
 
 # Execute the sampler ----------------------------------------------------------------------
+start = timeit.default_timer()  # Start the timer
 results = sampler.run(default_params=mrp_defaults)
-
+finish = timeit.default_timer()  # Stop the timer
+print(f"Calibration completed in {finish - start:.2f} seconds.")
 print(results)
 
 diagnostics = results.get_diagnostics()

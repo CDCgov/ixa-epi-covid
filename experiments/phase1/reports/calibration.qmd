@@ -122,7 +122,7 @@ for param in results.fitted_params:
 #| echo: false
 ## Obtaining the importation time series and death incidence data frmaes for a random smaple form the posterior
 # Re-generating a random sample of parameter sets from posterior
-particle_count = 100
+particle_count = int(min(100, results.ess))
 particles = results.sample_posterior_particles(n=particle_count)
 default_params_file = wd / 'input' / 'default_params.json'
 
@@ -271,14 +271,16 @@ sir_data = all_prevalence_data.group_by(
     pl.sum('count')
 )
 
-sns.lineplot(
+sns.relplot(
     data = sir_data,
     x='t',
     y='count',
+    kind='line',
     hue='infection_status',
     units='id',
     estimator=None,
-    alpha=0.05
+    alpha=0.1,
+    row='infection_status',
 )
 plt.title(f"Individuals by infection status over time ({particle_count} posterior samples)")
 plt.xlabel("Time (days since simulation start)")
