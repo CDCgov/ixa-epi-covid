@@ -1,6 +1,6 @@
 use ixa::{
-    Context, ContextEntitiesExt, ContextRandomExt, IxaError, define_rng,
-    impl_property, prelude::PropertyChangeEvent,
+    Context, ContextEntitiesExt, ContextRandomExt, IxaError, define_rng, impl_property,
+    prelude::PropertyChangeEvent,
 };
 use rand_distr::LogNormal;
 use serde::{Deserialize, Serialize};
