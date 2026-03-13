@@ -152,6 +152,7 @@ mrp_defaults = {
         "symptomatic_reporting_prob": 0.5
     },
 }
+reader = ParticleReader(results.priors.params, mrp_defaults)
 
 uniq_id = 0
 model = CovidModel()
@@ -159,7 +160,6 @@ importation_curves = []
 prevalence_data = []
 os.makedirs(mrp_defaults["config_inputs"]["output_dir"], exist_ok=True)
 
-reader = ParticleReader(results.priors.params, mrp_defaults)
 for p in particles:
     model_inputs = reader.read_particle(p)
     outputs = model.simulate(model_inputs)
@@ -178,27 +178,7 @@ deaths = (
 )
 ```
 
-For a final SMC step with threshold toelrance above zero, we will observe some variance in the date of first reported death. Here we show a sampled histogram of the timing of the first death across the posterior simulations. The vertical dashed line indicates the observed timing of the first death in Indiana (March 16, 2020, or 75 days after the start of the simulation on January 1, 2020). We can see that while although the distribution is centered around the observed timing, there is a higher weight on earlier first reported deaths, indicating that imported infections occur faster in the simulated model than they occured in real life. This may be due to the proprotional sampling of Indiana importations from the domestic level imported infections, when in fact they may have been less probable due to mobility flow patterns.
-
-```{python}
-#| echo: false
-
-first_deaths = deaths.filter(pl.col("count") > 0).group_by("id").agg(pl.min("t"))
-sns.histplot(
-    data=first_deaths,
-    x="t",
-)
-plt.axvline(x=75, color="black", linestyle="--", label="Observed (March 16, 2020)")
-plt.title(f"Distribution of first death times ({particle_count} posterior samples)")
-plt.xlabel("Time of first death (days since simulation start)")
-plt.ylabel("Number of simulations")
-plt.legend()
-plt.tight_layout()
-plt.show()
-
-```
-
-We can show the posterior variance in the imported infections time series by overlaying samples from the simulated particles. Each line in the plot below corresponds to the importation time series for a single particle.
+We can show the posterior variance in the imported infections time series by overlaying samples from the simulated particles. Blue points on the plot represent the count of imported infections for a given day in a given simulation if the number of importations was above zero. Black line show the median and 95% credible interval of the number of imported infections on each day from January 1st to March 12th.
 ```{python}
 #| echo: false
 sns.scatterplot(
@@ -207,15 +187,11 @@ sns.scatterplot(
     y="imported_infections",
     alpha=0.05,
 )
-sns.pointplot(
+sns.lineplot(
     data=importations,
     x="time",
     y="imported_infections",
-    linestyle="none",
-    errorbar=None,
-    marker="_",
-    native_scale=True,
-    color='black'
+    estimator='median'
 )
 plt.title(f"Imported infections over time ({particle_count} posterior samples)")
 plt.xlabel("Time (days since simulation start)")
@@ -223,14 +199,21 @@ plt.ylabel("Number of imported infections (daily)")
 plt.tight_layout()
 plt.show()
 ```
-We can project the cumulative number of deaths observed in the model up to the evaluation timepoint. Because the last SMC step has a distance tolerance threshold greater than zero, we see some simulations accrue deaths before the first reported death in the data.
+We can project the cumulative number of deaths observed in the model projections. Because the last SMC step has a distance tolerance threshold below one, we see no simulations accrue deaths before the first reported death in the data.
 ```{python}
 #| echo: false
 
 sns.lineplot(
-    data=deaths.filter(pl.col('t') <= 75),
+    data=deaths,
     x="t",
     y="count",
+    units='id', estimator=None,
+    alpha=0.05
+)
+sns.lineplot(
+    data=deaths,
+    x="t",
+    y="count"
 )
 plt.title(f"Total observed deaths over time ({particle_count} posterior samples)")
 plt.xlabel("Time (days since simulation start)")
@@ -240,7 +223,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-Finally, we can plot the same trajectories for number of infections observed in the model over time, which includes both imported infections and locally acquired infections. This figure shows the issue with calibratin the model with a small population size (1,000 people). The susceptible pool is rapidly depleted by local transmission, and a high proportion of the population is already recovered by the timepoint of evaluation comparing the model results to the first reported death in the data.
+Finally, we can plot the same trajectories for number of infections observed in the model over time, which includes both imported infections and locally acquired infections. We see that some epidemic trajectories are strongly delayed from first imported infections due to stochasticity.
 
 ```{python}
 #| echo: false
@@ -250,7 +233,7 @@ sir_data = all_prevalence_data.group_by(
     pl.sum('count')
 )
 
-sns.relplot(
+g = sns.relplot(
     data = sir_data,
     x='t',
     y='count',
@@ -261,11 +244,15 @@ sns.relplot(
     alpha=0.1,
     row='infection_status',
 )
-plt.title(f"Individuals by infection status over time ({particle_count} posterior samples)")
-plt.xlabel("Time (days since simulation start)")
-plt.axvline(x=65, color="black", linestyle="--", label="First case reported (March 6, 2020)")
-plt.axvline(x=75, color="red", linestyle="--", label="First death reported (March 16, 2020)")
-plt.ylabel("Number of people")
-plt.tight_layout()
+g.fig.suptitle(
+    f"Individuals by infection status over time ({particle_count} posterior samples)",
+    fontsize='x-large',
+    fontweight='bold'
+)
+g.fig.subplots_adjust(top=0.85)
+g.set_axis_labels("Time (days since simulation start)", "Number of people")
+for ax in g.axes.flat:
+    ax.axvline(x=65, color="black", linestyle="--", label="First case reported (March 6, 2020)")
+    ax.axvline(x=75, color="red", linestyle="--", label="First death reported (March 16, 2020)")
 plt.show()
 ```
