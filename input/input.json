@@ -28,7 +28,7 @@
             "mu": 0.1,
             "sigma": 0.1
         },
-        "probability_critical_given_severe": 0.2,
+        "probability_critical_given_severe": {"Young": 0.05, "Old": 0.1},
         "severe_to_critical_delay": {
             "mu": 0.1,
             "sigma": 0.1
@@ -37,7 +37,7 @@
             "mu": 0.1,
             "sigma": 0.1
         },
-        "probability_dead_given_critical": 0.2,
+        "probability_dead_given_critical": {"Young": 0.005, "Old": 0.1},
         "critical_to_dead_delay": {
             "mu": 0.1,
             "sigma": 0.1

@@ -1,14 +1,11 @@
 use ixa::{
-    Context, ContextEntitiesExt, ContextRandomExt, IxaError, define_property, define_rng,
-    impl_property, prelude::PropertyChangeEvent,
+    Context, ContextEntitiesExt, ContextRandomExt, IxaError, define_derived_property, define_rng, impl_derived_property, impl_property, prelude::PropertyChangeEvent
 };
 use rand_distr::LogNormal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ContextParametersExt, Params,
-    infectiousness_manager::InfectionStatus,
-    population_loader::{Person, PersonId},
+    Age, ContextParametersExt, Params, infectiousness_manager::InfectionStatus, population_loader::{Person, PersonId}
 };
 
 define_rng!(SymptomsRng);
@@ -29,12 +26,21 @@ impl_property!(
     default_const = SymptomStatus::NoSymptoms
 );
 
-pub enum SymptomAgeGroupNames {
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub enum SymptomAgeGroup {
     Young,
     Old,
 }
 
-define_property!(SymptomAgeGroupNames, Person,);
+impl_derived_property!(SymptomAgeGroup, Person, [Age], [GlobalParams],
+|age, params|{
+    let symptom_age_group_thresholds = params.symptom_age_groups.clone();
+    for (age_group, min_age) in symptom_age_group_thresholds{
+        if age >= min_age {
+            let symptom_age_group: SymptomAgeGroup = age_group; 
+        }
+    }
+});
 
 #[derive(Debug, Serialize, Deserialize, Copy, Clone)]
 pub struct SymptomDelayDistLogNormParams {
@@ -61,6 +67,7 @@ fn process_symptom_change_event(
     event: PropertyChangeEvent<Person, SymptomStatus>,
 ) {
     let &Params {
+        symptom_age_groups,
         probability_severe_given_mild,
         mild_to_severe_delay,
         mild_to_resolved_delay,
@@ -75,7 +82,7 @@ fn process_symptom_change_event(
 
     match event.current {
         SymptomStatus::Mild => {
-            if context.sample_bool(SymptomsRng, probability_severe_given_mild) {
+            if context.sample_bool(SymptomsRng, probability_severe_given_mild.get(symptom_age_group)) {
                 plan_symptom_transition(
                     context,
                     event.entity_id,
@@ -92,7 +99,7 @@ fn process_symptom_change_event(
             }
         }
         SymptomStatus::Severe => {
-            if context.sample_bool(SymptomsRng, probability_critical_given_severe) {
+            if context.sample_bool(SymptomsRng, probability_critical_given_severe.get(symptom_age_group)) {
                 plan_symptom_transition(
                     context,
                     event.entity_id,
@@ -109,7 +116,7 @@ fn process_symptom_change_event(
             }
         }
         SymptomStatus::Critical => {
-            if context.sample_bool(SymptomsRng, probability_dead_given_critical) {
+            if context.sample_bool(SymptomsRng, probability_dead_given_critical.get(&symptom_age_group)) {
                 plan_symptom_transition(
                     context,
                     event.entity_id,
@@ -194,27 +201,39 @@ mod test {
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Severe) => Params {
-                    probability_severe_given_mild: expected_proportion,
+                    probability_severe_given_mild: HashMap::from([
+                        ("all", expected_proportion)
+                    ]),
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Resolved) => Params {
-                    probability_severe_given_mild: 1.0 - expected_proportion,
+                    probability_severe_given_mild: HashMap::from([
+                        ("all", 1.0 - expected_proportion)
+                    ]),
                     ..Default::default()
                 },
                 (SymptomStatus::Severe, SymptomStatus::Critical) => Params {
-                    probability_critical_given_severe: expected_proportion,
+                    probability_critical_given_severe: HashMap::from([
+                        ("all", expected_proportion)
+                    ]),
                     ..Default::default()
                 },
                 (SymptomStatus::Severe, SymptomStatus::Resolved) => Params {
-                    probability_critical_given_severe: 1.0 - expected_proportion,
+                    probability_critical_given_severe: HashMap::from([
+                        ("all", 1.0 - expected_proportion)
+                    ]),
                     ..Default::default()
                 },
                 (SymptomStatus::Critical, SymptomStatus::Dead) => Params {
-                    probability_dead_given_critical: expected_proportion,
+                    probability_dead_given_critical: HashMap::from([
+                        ("all", expected_proportion)
+                    ]),
                     ..Default::default()
                 },
                 (SymptomStatus::Critical, SymptomStatus::Resolved) => Params {
-                    probability_dead_given_critical: 1.0 - expected_proportion,
+                    probability_dead_given_critical: HashMap::from([
+                        ("all", 1.0 - expected_proportion)
+                    ]),
                     ..Default::default()
                 },
                 _ => panic!(
@@ -290,7 +309,9 @@ mod test {
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Severe) => Params {
-                    probability_severe_given_mild: 1.0,
+                    probability_severe_given_mild: HashMap::from([
+                        ("all", 1.0)
+                    ]),
                     mild_to_severe_delay: SymptomDelayDistLogNormParams {
                         mu: expected_mu,
                         sigma: expected_sigma,
@@ -298,7 +319,9 @@ mod test {
                     ..Default::default()
                 },
                 (SymptomStatus::Mild, SymptomStatus::Resolved) => Params {
-                    probability_severe_given_mild: 0.0,
+                    probability_severe_given_mild: HashMap::from([
+                        ("all", 0.0)
+                    ]),
                     mild_to_resolved_delay: SymptomDelayDistLogNormParams {
                         mu: expected_mu,
                         sigma: expected_sigma,
@@ -306,7 +329,9 @@ mod test {
                     ..Default::default()
                 },
                 (SymptomStatus::Severe, SymptomStatus::Critical) => Params {
-                    probability_critical_given_severe: 1.0,
+                    probability_critical_given_severe: HashMap::from([
+                        ("all", 1.0)
+                    ]),
                     severe_to_critical_delay: SymptomDelayDistLogNormParams {
                         mu: expected_mu,
                         sigma: expected_sigma,
@@ -314,7 +339,9 @@ mod test {
                     ..Default::default()
                 },
                 (SymptomStatus::Severe, SymptomStatus::Resolved) => Params {
-                    probability_critical_given_severe: 0.0,
+                    probability_critical_given_severe: HashMap::from([
+                        ("all", 0.0)
+                    ]),
                     severe_to_resolved_delay: SymptomDelayDistLogNormParams {
                         mu: expected_mu,
                         sigma: expected_sigma,
@@ -322,7 +349,9 @@ mod test {
                     ..Default::default()
                 },
                 (SymptomStatus::Critical, SymptomStatus::Dead) => Params {
-                    probability_dead_given_critical: 1.0,
+                    probability_dead_given_critical: HashMap::from([
+                        ("all", 1.0)
+                    ]),
                     critical_to_dead_delay: SymptomDelayDistLogNormParams {
                         mu: expected_mu,
                         sigma: expected_sigma,
@@ -330,7 +359,9 @@ mod test {
                     ..Default::default()
                 },
                 (SymptomStatus::Critical, SymptomStatus::Resolved) => Params {
-                    probability_dead_given_critical: 0.0,
+                    probability_dead_given_critical: HashMap::from([
+                        ("all", 0.0)
+                    ]),
                     critical_to_resolved_delay: SymptomDelayDistLogNormParams {
                         mu: expected_mu,
                         sigma: expected_sigma,
@@ -463,9 +494,15 @@ mod test {
         let mut count_resolved: u64 = 0;
         let mut count_dead: u64 = 0;
         let probability_mild_given_infect = 0.5;
-        let probability_severe_given_mild = 0.5;
-        let probability_critical_given_severe = 0.5;
-        let probability_dead_given_critical = 0.5;
+        let probability_severe_given_mild = HashMap::from([
+                        ("all", 0.5)
+                    ]);
+        let probability_critical_given_severe = HashMap::from([
+                        ("all", 0.5)
+                    ]);
+        let probability_dead_given_critical = HashMap::from([
+                        ("all", 0.5)
+                    ]);
         for seed in 0..num_sims {
             let mut context = Context::new();
             let parameters = Params {

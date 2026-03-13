@@ -2,10 +2,11 @@ use ixa::{HashMap, HashMapExt, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, path::PathBuf};
 
+use crate::Age;
 use crate::infection_importation::ImportCasesFromFile;
 use crate::reports::ReportParams;
 use crate::settings::SettingProperties;
-use crate::symptom_status_manager::{SymptomAgeGroupNames, SymptomDelayDistLogNormParams};
+use crate::symptom_status_manager::{SymptomAgeGroup, SymptomDelayDistLogNormParams};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RateFnType {
@@ -38,25 +39,25 @@ pub struct Params {
     /// A library of infection rates to assign to infected people.
     pub infectiousness_rate_fn: RateFnType,
     /// age thresholds
-    pub symptom_age_groups: HashMap<SymptomAgeGroupNames, u8>,
+    pub symptom_age_groups: HashMap<SymptomAgeGroup, u8>,
     /// Probability an infected person develops mild illness
     pub probability_mild_given_infect: f64,
     /// Parameters for log normal delay distribution from infection to mild illness
     pub infect_to_mild_delay: SymptomDelayDistLogNormParams,
     /// Probability a person with mild illness develops severe illness
-    pub probability_severe_given_mild: HashMap<SymptomAgeGroupNames, f64>,
+    pub probability_severe_given_mild: HashMap<SymptomAgeGroup, f64>,
     /// Parameters for log normal delay distribution from mild to severe illness
     pub mild_to_severe_delay: SymptomDelayDistLogNormParams,
     /// Parameters for log normal delay distribution from mild illness to resolution
     pub mild_to_resolved_delay: SymptomDelayDistLogNormParams,
     /// Probability a person with severe illness develops critical illness
-    pub probability_critical_given_severe: f64,
+    pub probability_critical_given_severe: HashMap<SymptomAgeGroup, f64>,
     /// Parameters for log normal delay distribution from severe to critical illness
     pub severe_to_critical_delay: SymptomDelayDistLogNormParams,
     /// Parameters for log normal delay distribution from severe illness to resolution
     pub severe_to_resolved_delay: SymptomDelayDistLogNormParams,
     /// Probability a person with critical illness dies
-    pub probability_dead_given_critical: f64,
+    pub probability_dead_given_critical: HashMap<SymptomAgeGroup, f64>,
     /// Parameters for log normal delay distribution from critical illness to death
     pub critical_to_dead_delay: SymptomDelayDistLogNormParams,
     /// Parameters for log normal delay distribution from critical illness to resolution
@@ -102,35 +103,35 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
         }
     }
 
-    // Validate the symptom status parameters
+    // // Validate the symptom status parameters
 
-    let symptom_probability_params = [
-        (
-            "probability_mild_given_infect",
-            &parameters.probability_mild_given_infect,
-        ),
-        (
-            "probability_severe_given_mild",
-            &parameters.probability_severe_given_mild,
-        ),
-        (
-            "probability_critical_given_severe",
-            &parameters.probability_critical_given_severe,
-        ),
-        (
-            "probability_dead_given_critical",
-            &parameters.probability_dead_given_critical,
-        ),
-    ];
+    // let symptom_probability_params = [
+    //     (
+    //         "probability_mild_given_infect",
+    //         &parameters.probability_mild_given_infect,
+    //     ),
+    //     (
+    //         "probability_severe_given_mild",
+    //         &parameters.probability_severe_given_mild,
+    //     ),
+    //     (
+    //         "probability_critical_given_severe",
+    //         &parameters.probability_critical_given_severe,
+    //     ),
+    //     (
+    //         "probability_dead_given_critical",
+    //         &parameters.probability_dead_given_critical,
+    //     ),
+    // ];
 
-    for (param_name, param_value) in symptom_probability_params {
-        if !(0.0..=1.0).contains(param_value) {
-            return Err(IxaError::IxaError(format!(
-                "{} = {} is not a valid transition probability; probabilities must be between 0 and 1, inclusive.",
-                param_name, param_value
-            )));
-        }
-    }
+    // for (param_name, param_value) in symptom_probability_params {
+    //     if !(0.0..=1.0).contains(param_value) {
+    //         return Err(IxaError::IxaError(format!(
+    //             "{} = {} is not a valid transition probability; probabilities must be between 0 and 1, inclusive.",
+    //             param_name, param_value
+    //         )));
+    //     }
+    // }
 
     let symptom_sigma_params = [
         (
@@ -262,7 +263,7 @@ impl Default for Params {
                 mu: 0.0,
                 sigma: 0.0,
             },
-            probability_severe_given_mild: 0.0,
+            probability_severe_given_mild: HashMap::new(),
             mild_to_severe_delay: SymptomDelayDistLogNormParams {
                 mu: 0.0,
                 sigma: 0.0,
@@ -271,7 +272,7 @@ impl Default for Params {
                 mu: 0.0,
                 sigma: 0.0,
             },
-            probability_critical_given_severe: 0.0,
+            probability_critical_given_severe: HashMap::new(),
             severe_to_critical_delay: SymptomDelayDistLogNormParams {
                 mu: 0.0,
                 sigma: 0.0,
@@ -280,7 +281,7 @@ impl Default for Params {
                 mu: 0.0,
                 sigma: 0.0,
             },
-            probability_dead_given_critical: 0.0,
+            probability_dead_given_critical: HashMap::new(),
             critical_to_dead_delay: SymptomDelayDistLogNormParams {
                 mu: 0.0,
                 sigma: 0.0,

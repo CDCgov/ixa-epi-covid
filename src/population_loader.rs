@@ -20,7 +20,7 @@ pub struct PeopleRecord<'a> {
     workplaceId: &'a [u8],
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash, PartialOrd, Deserialize)]
 pub struct Age(pub u8);
 impl_property!(Age, Person);
 
