@@ -35,6 +35,19 @@ pub struct SymptomDelayDistLogNormParams {
     pub sigma: f64,
 }
 
+impl SymptomDelayDistLogNormParams {
+    pub fn validate(&self, param_name: &str) -> Result<(), IxaError> {
+        if self.sigma < 0.0 {
+            Err(IxaError::IxaError(format!(
+                "sigma value for {} is {}; log normal distribution sigmas must be non-negative.",
+                param_name, self.sigma
+            )))
+        } else {
+            Ok(())
+        }
+    }
+}
+
 fn plan_symptom_transition(
     context: &mut Context,
     person_id: PersonId,

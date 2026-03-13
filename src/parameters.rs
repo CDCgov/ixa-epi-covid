@@ -130,45 +130,27 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
         }
     }
 
-    let symptom_sigma_params = [
-        (
-            "infect_to_mild_sigma",
-            &parameters.infect_to_mild_delay.sigma,
-        ),
-        (
-            "mild_to_severe_sigma",
-            &parameters.mild_to_severe_delay.sigma,
-        ),
-        (
-            "mild_to_resolved_sigma",
-            &parameters.mild_to_resolved_delay.sigma,
-        ),
-        (
-            "severe_to_critical_sigma",
-            &parameters.severe_to_critical_delay.sigma,
-        ),
-        (
-            "severe_to_resolved_sigma",
-            &parameters.severe_to_resolved_delay.sigma,
-        ),
-        (
-            "critical_to_dead_sigma",
-            &parameters.critical_to_dead_delay.sigma,
-        ),
-        (
-            "critical_to_resolved_sigma",
-            &parameters.critical_to_resolved_delay.sigma,
-        ),
-    ];
-
-    for (param_name, param_value) in symptom_sigma_params {
-        if param_value < &0.0 {
-            return Err(IxaError::IxaError(format!(
-                "{} = {} is not a valid value for sigma; log normal distribution sigmas must be non-negative.",
-                param_name, param_value
-            )));
-        }
-    }
+    parameters
+        .infect_to_mild_delay
+        .validate("infect_to_mild_delay")?;
+    parameters
+        .mild_to_severe_delay
+        .validate("mild_to_severe_delay")?;
+    parameters
+        .mild_to_resolved_delay
+        .validate("mild_to_resolved_delay")?;
+    parameters
+        .severe_to_critical_delay
+        .validate("severe_to_critical_delay")?;
+    parameters
+        .severe_to_resolved_delay
+        .validate("severe_to_resolved_delay")?;
+    parameters
+        .critical_to_dead_delay
+        .validate("critical_to_dead_delay")?;
+    parameters
+        .critical_to_resolved_delay
+        .validate("critical_to_resolved_delay")?;
 
     // We only want to fail when all itinerary ratios are 0.
     // Instead of holding the itinerary ratios in a vector, we sum them because we error if they

@@ -16,7 +16,7 @@
         "probability_mild_given_infect": 0.7,
         "infect_to_mild_delay": {
             "mu": 0.1,
-            "sigma": 0.0
+            "sigma": 0.1
         },
         "probability_severe_given_mild": 0.2,
         "mild_to_severe_delay": {
