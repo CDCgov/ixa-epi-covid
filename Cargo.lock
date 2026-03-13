@@ -500,9 +500,8 @@ checksum = "92ecc6618181def0457392ccd0ee51198e065e016d1d527a7ac1b6dc7c1f09d2"
 
 [[package]]
 name = "ixa"
-version = "2.0.0-beta1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9ab356efbea1cc89fb814322267a527161fabfdb7584b2ba2e032859cfcfdc2"
+version = "2.0.0-beta1.1"
+source = "git+https://github.com/CDCgov/ixa?branch=RobertJacobsonCDC_cancel_plans#0af158bd56d01bf0f9ad1b071d1433928ce42dde"
 dependencies = [
  "anyhow",
  "approx",
@@ -532,6 +531,7 @@ dependencies = [
  "serde_json",
  "shlex",
  "sysinfo",
+ "thiserror",
  "wasm-bindgen",
  "web-sys",
  "xxhash-rust",
@@ -539,9 +539,8 @@ dependencies = [
 
 [[package]]
 name = "ixa-derive"
-version = "2.0.0-beta"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84a51f6f16cf553103252094322cdf617be53a707b3b657eea621038f92b2b8d"
+version = "2.0.0-beta.1"
+source = "git+https://github.com/CDCgov/ixa?branch=RobertJacobsonCDC_cancel_plans#0af158bd56d01bf0f9ad1b071d1433928ce42dde"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
