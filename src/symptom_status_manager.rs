@@ -628,8 +628,8 @@ mod test {
     #[test]
     fn test_age_groups() {
         let mut age_group_hash_map: HashMap<SymptomAgeGroup, u8> = HashMap::new();
-        age_group_hash_map.insert(SymptomAgeGroup::Young, 50);
-        age_group_hash_map.insert(SymptomAgeGroup::Old, 0);
+        age_group_hash_map.insert(SymptomAgeGroup::Young, 0);
+        age_group_hash_map.insert(SymptomAgeGroup::Old, 50);
 
         let mut context = Context::new();
         context.init_random(1234);
