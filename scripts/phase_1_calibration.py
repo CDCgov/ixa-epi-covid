@@ -28,7 +28,7 @@ ixa_overrides = {
     "synth_population_file": "/mnt/S_CFA_Predict/team-CMEI/synthetic_populations/cbsa_all_work_school_household_2020-04-24/cbsa_all_work_school_household/IN/Bloomington IN.csv",
     "first_death_terminates_run": True,
 }
-force_overwrite = False
+force_overwrite = True
 outputs_to_read = ["incidence_report"]
 
 # State importation model declaration parameters
