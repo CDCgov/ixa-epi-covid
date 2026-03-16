@@ -39,7 +39,7 @@ symptomatic_reporting_prob_default = 0.5
 # Calibration inputs
 priors_file = Path("experiments", "phase1", "input", "priors.json")
 tolerance_values = [2.0, 0.1]
-generation_particle_count = 5
+generation_particle_count = 500
 target_data = 75
 
 
@@ -62,13 +62,7 @@ def outputs_to_distance(
 with open(default_ixa_params_file, "r") as f:
     default_params = json.load(f)
 
-ixa_overrides.update(
-    {
-        "epimodel.GlobalParams": {
-            "max_time": target_data + tolerance_values[0] + 1
-        }
-    }
-)
+ixa_overrides.update({"max_time": target_data + tolerance_values[0] + 1})
 
 default_params = apply_dict_overrides(
     default_params, {"epimodel.GlobalParams": ixa_overrides}
