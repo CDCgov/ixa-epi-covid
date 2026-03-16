@@ -39,7 +39,7 @@ symptomatic_reporting_prob_default = 0.5
 # Calibration inputs
 priors_file = Path("experiments", "phase1", "input", "priors.json")
 tolerance_values = [2.0, 0.1]
-generation_particle_count = 500
+generation_particle_count = 5
 target_data = 75
 
 
