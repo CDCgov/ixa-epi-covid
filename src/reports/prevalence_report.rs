@@ -1,6 +1,7 @@
 use crate::{
     infectiousness_manager::InfectionStatus,
     population_loader::{Age, Alive, Person},
+    symptom_status_manager::SymptomStatus,
 };
 use ixa::prelude::*;
 use ixa::{ExecutionPhase, HashMap};
@@ -12,36 +13,29 @@ struct PersonPropertyReport {
     t: f64,
     age: u8,
     infection_status: InfectionStatus,
+    symptom_status: SymptomStatus,
     count: usize,
 }
 
 define_report!(PersonPropertyReport);
 
-define_multi_property!((Age, InfectionStatus), Person);
-
-// #[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Copy, Clone, Debug)]
-// pub struct PersonReportProperties {
-//     age: u8,
-//     infection_status: InfectionStatus,
-// }
-
-// impl_derived_property!(PersonReportProperties, Person, ((Age, InfectionStatus)));
+define_multi_property!((Age, InfectionStatus, SymptomStatus), Person);
 
 struct PropertyReportDataContainer {
-    report_map_container: HashMap<(Age, InfectionStatus), usize>,
+    report_map_container: HashMap<(Age, InfectionStatus, SymptomStatus), usize>,
 }
 
 define_data_plugin!(
     PropertyReportDataPlugin,
     PropertyReportDataContainer,
     PropertyReportDataContainer {
-        report_map_container: HashMap::default(),
+        report_map_container: HashMap::default()
     }
 );
 
-type ReportEvent = PropertyChangeEvent<Person, (Age, InfectionStatus)>;
+type ReportEvent = PropertyChangeEvent<Person, (Age, InfectionStatus, SymptomStatus)>;
 
-fn update_property_change_counts(context: &mut Context, event: ReportEvent) {
+fn update_change_counts(context: &mut Context, event: ReportEvent) {
     let report_container_mut = context.get_data_mut(PropertyReportDataPlugin);
 
     let _ = *report_container_mut
@@ -65,12 +59,13 @@ fn send_property_counts(context: &mut Context) {
             t: context.get_current_time(),
             age: values.0.0,
             infection_status: values.1,
+            symptom_status: values.2,
             count: *count_property,
         });
     }
 }
 
-/// Count initial number of people per property status and subscribe to cahnges
+/// Count initial number of people per property status and subscribe to changes
 /// # Errors
 ///
 /// Will return `IxaError` if the report cannot be added
@@ -82,10 +77,11 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), I
     context.add_report::<PersonPropertyReport>(file_name)?;
 
     let mut map_counts = HashMap::default();
+
     context.with_query_results::<Person, _>((Alive(true),), &mut |current_people| {
         //current_people = results.to_owned_vec();
         for person in current_people {
-            let value: (Age, InfectionStatus) = context.get_property(*person);
+            let value: (Age, InfectionStatus, SymptomStatus) = context.get_property(*person);
             map_counts
                 .entry(value)
                 .and_modify(|count| *count += 1)
@@ -97,7 +93,7 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), I
     report_container.report_map_container = map_counts;
 
     context.subscribe_to_event::<ReportEvent>(|context, event| {
-        update_property_change_counts(context, event);
+        update_change_counts(context, event);
     });
 
     context.add_periodic_plan_with_phase(
@@ -114,7 +110,7 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), I
 mod test {
     use crate::{
         Age,
-        infectiousness_manager::InfectionContextExt,
+        infectiousness_manager::{InfectionContextExt, InfectionStatus},
         parameters::{ContextParametersExt, GlobalParams, Params},
         population_loader::PersonId,
         rate_fns::load_rate_fns,
@@ -182,24 +178,38 @@ mod test {
 
         assert!(file_path.exists());
         let mut reader = csv::Reader::from_path(file_path).unwrap();
+        let mut line_count = 0;
+        for result in reader.deserialize() {
+            let record: crate::reports::prevalence_report::PersonPropertyReport = result.unwrap();
+            line_count += 1;
+            if record.t == 0.0 {
+                if record.age == 42 {
+                    assert_eq!(record.infection_status, InfectionStatus::Infectious);
+                    assert_eq!(record.count, 1);
+                } else if record.age == 43 {
+                    assert_eq!(record.infection_status, InfectionStatus::Susceptible);
+                    assert_eq!(record.count, 1);
+                } else {
+                    panic!("invalid age at t == 0.0")
+                }
+            } else if record.t == 2.0 {
+                if record.age == 42 {
+                    assert_eq!(record.infection_status, InfectionStatus::Infectious);
+                    assert_eq!(record.count, 1);
+                } else if record.age == 43 {
+                    match record.infection_status {
+                        InfectionStatus::Susceptible => assert_eq!(record.count, 0),
+                        InfectionStatus::Infectious => assert_eq!(record.count, 1),
+                        _ => panic!("All InfectionStatus should be susceptible or infectious"),
+                    }
+                } else {
+                    panic!("invalid age at t == 2.0")
+                }
+            } else {
+                panic!("record times other than 0.0 and 2.0 are invalid")
+            }
+        }
 
-        let mut actual: Vec<Vec<String>> = reader
-            .records()
-            .map(|result| result.unwrap().iter().map(String::from).collect())
-            .collect();
-        let mut expected = vec![
-            //   t    | age | inf status | count
-            vec!["0.0", "42", "Infectious", "1"],
-            vec!["0.0", "43", "Susceptible", "1"],
-            vec!["2.0", "42", "Infectious", "1"],
-            vec!["2.0", "43", "Infectious", "1"],
-            // Only an initialized combination can have a zero count
-            vec!["2.0", "43", "Susceptible", "0"],
-        ];
-
-        actual.sort();
-        expected.sort();
-
-        assert_eq!(actual, expected, "CSV file should contain the correct data");
+        assert_eq!(line_count, 5);
     }
 }
