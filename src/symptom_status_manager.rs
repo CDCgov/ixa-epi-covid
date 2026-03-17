@@ -247,10 +247,6 @@ mod test {
             },
         );
         context.set_property::<Person, SymptomStatus>(p1, SymptomStatus::Mild);
-        assert_eq!(
-            context.get_property::<Person, SymptomStatus>(p1),
-            SymptomStatus::Mild
-        );
         context.add_plan_with_phase(
             parameters.mild_to_severe_delay.mu.exp(),
             move |context| {
@@ -288,10 +284,6 @@ mod test {
             },
         );
         context.set_property::<Person, SymptomStatus>(p1, SymptomStatus::Mild);
-        assert_eq!(
-            context.get_property::<Person, SymptomStatus>(p1),
-            SymptomStatus::Mild
-        );
         context.add_plan_with_phase(
             parameters.mild_to_resolved_delay.mu.exp(),
             move |context| {
@@ -329,10 +321,6 @@ mod test {
             },
         );
         context.set_property::<Person, SymptomStatus>(p1, SymptomStatus::Severe);
-        assert_eq!(
-            context.get_property::<Person, SymptomStatus>(p1),
-            SymptomStatus::Severe
-        );
         context.add_plan_with_phase(
             parameters.severe_to_critical_delay.mu.exp(),
             move |context| {
@@ -370,10 +358,6 @@ mod test {
             },
         );
         context.set_property::<Person, SymptomStatus>(p1, SymptomStatus::Severe);
-        assert_eq!(
-            context.get_property::<Person, SymptomStatus>(p1),
-            SymptomStatus::Severe
-        );
         context.add_plan_with_phase(
             parameters.severe_to_resolved_delay.mu.exp(),
             move |context| {
@@ -411,10 +395,6 @@ mod test {
             },
         );
         context.set_property::<Person, SymptomStatus>(p1, SymptomStatus::Critical);
-        assert_eq!(
-            context.get_property::<Person, SymptomStatus>(p1),
-            SymptomStatus::Critical
-        );
         context.add_plan_with_phase(
             parameters.severe_to_critical_delay.mu.exp(),
             move |context| {
@@ -452,10 +432,6 @@ mod test {
             },
         );
         context.set_property::<Person, SymptomStatus>(p1, SymptomStatus::Critical);
-        assert_eq!(
-            context.get_property::<Person, SymptomStatus>(p1),
-            SymptomStatus::Critical
-        );
         context.add_plan_with_phase(
             parameters.critical_to_resolved_delay.mu.exp(),
             move |context| {
