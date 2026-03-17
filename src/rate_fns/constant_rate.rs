@@ -1,4 +1,4 @@
-use ixa::prelude::*;
+use ixa::IxaError;
 
 use super::InfectiousnessRateFn;
 
@@ -56,8 +56,8 @@ impl InfectiousnessRateFn for ConstantRate {
 
 #[cfg(test)]
 mod test {
+    use ixa::IxaError;
     use ixa::assert_almost_eq;
-    use ixa::prelude::*;
 
     use super::ConstantRate;
     use super::InfectiousnessRateFn;

@@ -672,6 +672,7 @@ dependencies = [
     { name = "jupyter" },
     { name = "matplotlib" },
     { name = "numpy" },
+    { name = "polars" },
     { name = "pyarrow" },
     { name = "pytest" },
     { name = "scipy" },
@@ -704,6 +705,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "matplotlib", specifier = ">=3.10.8" },
     { name = "numpy", specifier = ">=2.3.4" },
     { name = "polars", specifier = ">=1.35.1" },
 ]

@@ -1,25 +1,17 @@
-use ixa::{HashMap, HashMapExt, prelude::*};
+use ixa::{
+    Context, ContextGlobalPropertiesExt, HashMap, HashMapExt, IxaError, PluginContext,
+    define_global_property,
+};
 use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, path::PathBuf};
 
-use crate::infection_importation::ImportCasesFromFile;
-use crate::reports::ReportParams;
-use crate::settings::SettingProperties;
-use crate::symptom_status_manager::SymptomDelayDistLogNormParams;
+use crate::{reports::ReportParams, settings_entities::SettingCategory};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RateFnType {
     /// A constant rate of infectiousness (constant hazard -> exponential waiting times) for a given
     /// duration.
     Constant { rate: f64, duration: f64 },
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Hash, PartialEq, Eq)]
-pub enum CoreSettingsTypes {
-    Home,
-    School,
-    Workplace,
-    CensusTract,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
