@@ -73,33 +73,46 @@ mod test {
     use crate::Age;
     use crate::infection_propagation_loop::InfectionRng;
     use crate::infectiousness_manager::InfectionData;
+    use crate::itinerary::{BelongsTo, CensusTractItinerary, HomeItinerary, SchoolItinerary, WorkplaceItinerary};
     use crate::population_loader::PersonId;
+    use crate::settings_entities::{SettingCategory, SettingId};
     use crate::{
-        define_setting_category,
         infection_propagation_loop::{
             InfectionStatus, init, schedule_next_forecasted_infection, schedule_recovery,
         },
         infectiousness_manager::{InfectionContextExt, max_total_infectiousness_multiplier},
-        parameters::{ContextParametersExt, CoreSettingsTypes, GlobalParams, Params, RateFnType},
+        parameters::{ContextParametersExt, GlobalParams, Params, RateFnType},
         population_loader::Person,
-        rate_fns::{InfectiousnessRateExt, load_rate_fns},
-        settings::{
-            CensusTract, ContextSettingExt, Home, ItineraryEntry, SettingId, SettingProperties,
-            Workplace,
-        },
+        rate_fns::{InfectiousnessRateExt, load_rate_fns}
     };
-
-    define_setting_category!(HomogeneousMixing);
 
     fn set_homogeneous_mixing_itinerary(
         context: &mut Context,
         person_id: PersonId,
+        setting_id: Option<SettingId>,
     ) -> Result<(), IxaError> {
-        let itinerary = vec![ItineraryEntry::new(
-            SettingId::new(HomogeneousMixing, 0),
-            1.0,
-        )];
-        context.add_itinerary(person_id, itinerary)
+        let _itinerary_id = context
+            .add_entity((
+                BelongsTo(person_id),
+                HomeItinerary {
+                    home_id: None,
+                    ratio: None,
+                },
+                SchoolItinerary {
+                    school_id: None,
+                    ratio: None,
+                },
+                WorkplaceItinerary {
+                    workplace_id: None,
+                    ratio: None,
+                },
+                CensusTractItinerary {
+                    census_tract_id: setting_id,
+                    ratio: Some(1.0),
+                },
+            ))
+            .unwrap();
+        Ok(())
     }
 
     fn setup_context(seed: u64, rate: f64, alpha: f64, duration: f64) -> Context {
@@ -110,29 +123,19 @@ mod test {
             max_time: 100.0,
             infectiousness_rate_fn: RateFnType::Constant { rate, duration },
             settings_properties: HashMap::from_iter(
-                [
-                    (CoreSettingsTypes::Home, SettingProperties { alpha: 0.5 }),
-                    (
-                        CoreSettingsTypes::Workplace,
-                        SettingProperties { alpha: 0.5 },
+                        [
+                            (SettingCategory::Home, 1.0),
+                            (SettingCategory::Workplace, 1.0),
+                            (SettingCategory::CensusTract, 1.0),
+                        ]
+                        .into_iter()
+                        .collect::<HashMap<_, _>>(),
                     ),
-                    (
-                        CoreSettingsTypes::CensusTract,
-                        SettingProperties {
-                            alpha: 0.5,
-                            // Itinerary is specified in the `set_homogeneous_mixing_itinerary` function
-                            // so we do not need to set it here.
-                        },
-                    ),
-                ]
-                .into_iter()
-                .collect::<HashMap<_, _>>(),
-            ),
-            itinerary_ratios: HashMap::from_iter([
-                (CoreSettingsTypes::Home, 1.0),
-                (CoreSettingsTypes::Workplace, 1.0),
-                (CoreSettingsTypes::CensusTract, 0.0),
-            ]),
+                    itinerary_ratios: HashMap::from_iter([
+                        (SettingCategory::Home, 1.0),
+                        (SettingCategory::Workplace, 1.0),
+                        (SettingCategory::CensusTract, 0.0),
+                    ]),
             ..Default::default()
         };
         context.init_random(parameters.seed);

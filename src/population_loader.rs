@@ -3,22 +3,17 @@ use ixa::{csv, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-<<<<<<< HEAD
 use crate::parameters::{ContextParametersExt, Params};
-use crate::settings::{
-    CensusTract, ContextSettingExt, Home, School, SettingId, Workplace, append_itinerary_entry,
-};
-=======
+
 use crate::{
     itinerary::{
         Activity, BelongsTo, CensusTractId, CensusTractItinerary, ContextItineraryExt, HomeId,
         HomeItinerary, Itinerary, SchoolId, SchoolItinerary, WorkplaceId, WorkplaceItinerary,
     },
-    parameters::{ContextParametersExt, Params},
     settings_entities::{ContextSettingExt, Setting, SettingCategory, SettingCode, SettingId},
 };
 
->>>>>>> 8ec06b6 (Squash)
+
 use ixa::profiling::open_span;
 
 define_entity!(Person);

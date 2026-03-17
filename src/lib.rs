@@ -1,5 +1,6 @@
 pub mod infection_propagation_loop;
 pub mod infectiousness_manager;
+pub mod infection_importation;
 pub mod itinerary;
 pub mod model;
 pub mod natural_history_parameter_manager;
@@ -8,6 +9,7 @@ pub mod population_loader;
 pub mod rate_fns;
 pub mod reports;
 pub mod settings_entities;
+pub mod symptom_status_manager;
 
 pub use model::initialize_model;
 pub use parameters::ContextParametersExt;

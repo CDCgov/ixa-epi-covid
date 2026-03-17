@@ -5,7 +5,7 @@ use ixa::{
 use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, path::PathBuf};
 
-use crate::{reports::ReportParams, settings_entities::SettingCategory};
+use crate::{infection_importation::ImportCasesFromFile, reports::ReportParams, settings_entities::SettingCategory, symptom_status_manager::SymptomDelayDistLogNormParams};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RateFnType {
@@ -52,9 +52,9 @@ pub struct Params {
     /// Parameters for log normal delay distribution from critical illness to resolution
     pub critical_to_resolved_delay: SymptomDelayDistLogNormParams,
     /// Setting properties by setting type
-    pub settings_properties: HashMap<CoreSettingsTypes, SettingProperties>,
+    pub settings_properties: HashMap<SettingCategory, f64>,
     /// ratios used to initialize individuals itineraries by setting type.
-    pub itinerary_ratios: HashMap<CoreSettingsTypes, f64>,
+    pub itinerary_ratios: HashMap<SettingCategory, f64>,
     /// Prevalence report with a period and name required
     pub prevalence_report: ReportParams,
     /// Incidence report with a period and name required
@@ -169,10 +169,9 @@ fn validate_inputs(parameters: &Params) -> Result<(), IxaError> {
 
     let mut itinerary_ratio_sum = None;
 
-    for setting in parameters.settings_properties.values() {
-        let alpha = setting.alpha;
+    for alpha in parameters.settings_properties.values() {
         // Check alpha
-        if !(0.0..=1.0).contains(&alpha) {
+        if !(0.0..=1.0).contains(alpha) {
             return Err(IxaError::IxaError(
                 "The alpha values for each setting must be between 0 and 1, inclusive.".to_string(),
             ));
@@ -358,16 +357,16 @@ mod tests {
         let parameters = Params {
             settings_properties: HashMap::from_iter(
                 [
-                    (CoreSettingsTypes::Home, SettingProperties { alpha: 0.5 }),
-                    (CoreSettingsTypes::School, SettingProperties { alpha: 0.5 }),
+                    (SettingCategory::Home, 0.5),
+                    (SettingCategory::School, 0.5),
                 ]
                 .into_iter()
                 .collect::<HashMap<_, _>>(),
             ),
             itinerary_ratios: HashMap::from_iter(
                 [
-                    (CoreSettingsTypes::Home, 0.0),
-                    (CoreSettingsTypes::School, 0.0),
+                    (SettingCategory::Home, 0.0),
+                    (SettingCategory::School, 0.0),
                 ]
                 .into_iter()
                 .collect::<HashMap<_, _>>(),
@@ -395,16 +394,16 @@ mod tests {
         let parameters = Params {
             settings_properties: HashMap::from_iter(
                 [
-                    (CoreSettingsTypes::Home, SettingProperties { alpha: 0.5 }),
-                    (CoreSettingsTypes::School, SettingProperties { alpha: 0.5 }),
+                    (SettingCategory::Home, 0.5),
+                    (SettingCategory::School, 0.5),
                 ]
                 .into_iter()
                 .collect::<HashMap<_, _>>(),
             ),
             itinerary_ratios: HashMap::from_iter(
                 [
-                    (CoreSettingsTypes::Home, -0.1),
-                    (CoreSettingsTypes::School, 0.0),
+                    (SettingCategory::Home, -0.1),
+                    (SettingCategory::School, 0.0),
                 ]
                 .into_iter()
                 .collect::<HashMap<_, _>>(),
