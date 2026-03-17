@@ -23,6 +23,7 @@ pub fn initialize_model(context: &mut Context, seed: u64, max_time: f64) -> Resu
     symptom_status_manager::init(context)?;
     infection_propagation_loop::init(context)?;
     infection_importation::init(context)?;
+    death::init(context)?;
     reports::init(context)?;
 
     Ok(())

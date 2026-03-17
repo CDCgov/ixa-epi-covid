@@ -35,3 +35,17 @@ plt.xlabel("Day")
 plt.ylabel("Number of people")
 plt.tight_layout()
 plt.show()
+
+# Symptom curves
+symp_plot = person_property_report.group_by(["t", "symptom_status"]).agg(
+    pl.col("count").sum()
+)
+
+plt.figure(figsize=(10, 6))
+sns.lineplot(
+    data=symp_plot.to_pandas(), x="t", y="count", hue="symptom_status"
+)
+plt.xlabel("Day")
+plt.ylabel("Number of people")
+plt.tight_layout()
+plt.show()

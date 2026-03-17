@@ -1,3 +1,4 @@
+pub mod death;
 pub mod infection_importation;
 pub mod infection_propagation_loop;
 pub mod infectiousness_manager;
