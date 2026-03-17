@@ -14,7 +14,7 @@ pub trait ContextDeathExt: PluginContext + ContextEntitiesExt {
 
     /// Adds a plan for the given person if and only if that person is
     /// alive when the plan comes due.
-    fn add_plan_for_person(
+    fn add_plan_if_alive(
         &mut self,
         person_id: PersonId,
         time: f64,
@@ -33,6 +33,8 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
     context.subscribe_to_event(
         move |context, event: PropertyChangeEvent<Person, SymptomStatus>| {
             if event.current == SymptomStatus::Dead {
+                // When the person's symptom status changes to Dead, we set their Alive property to false and remove them from all settings.
+                // If the person is currently infectious, we also immediately transition them to recovered.
                 context.set_property::<Person, Alive>(event.entity_id, Alive(false));
                 context.remove_person_from_settings(event.entity_id);
                 if context.get_property::<Person, InfectionStatus>(event.entity_id)
@@ -48,6 +50,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 
 #[cfg(test)]
 mod test {
+    use core::panic;
     use std::{cell::RefCell, rc::Rc};
 
     use ixa::{ExecutionPhase, prelude::*};
@@ -135,24 +138,11 @@ mod test {
         let person_id: PersonId = context.add_entity((Age(30),)).unwrap();
         symptom_status_manager::init(&mut context).unwrap();
         init(&mut context).unwrap();
-        // We schedule the person to be set to dead at time 0.0,
+        // We set the person to be dead,
         // and then we check their alive status both before and after the death event is processed.
-        context.add_plan_with_phase(
-            0.0,
-            move |context| {
-                assert!(context.is_alive(person_id));
-                context.set_property::<Person, SymptomStatus>(person_id, SymptomStatus::Dead);
-            },
-            ExecutionPhase::First,
-        );
-        context.add_plan_with_phase(
-            0.0,
-            move |context| {
-                assert!(!context.is_alive(person_id));
-            },
-            ExecutionPhase::Last,
-        );
+        context.set_property::<Person, SymptomStatus>(person_id, SymptomStatus::Dead);
         context.execute();
+        assert!(!context.is_alive(person_id));
     }
 
     #[test]
@@ -165,36 +155,24 @@ mod test {
         set_homogeneous_mixing_itinerary(&mut context, person_id).unwrap();
         symptom_status_manager::init(&mut context).unwrap();
         init(&mut context).unwrap();
-        // We schedule the person to be set to dead at time 0.0,
+        // We set the person to be dead
         // and then we check that they are removed from the homogeneous mixing setting after the death event is processed.
-        context.add_plan_with_phase(
-            0.0,
-            move |context| {
-                assert!(context.is_alive(person_id));
-                assert!(
-                    context
-                        .get_setting_members(&SettingId::new(HomogeneousMixing, 0))
-                        .unwrap()
-                        .contains(&person_id)
-                );
-                context.set_property::<Person, SymptomStatus>(person_id, SymptomStatus::Dead);
-            },
-            ExecutionPhase::First,
+        assert!(context.is_alive(person_id));
+        assert!(
+            context
+                .get_setting_members(&SettingId::new(HomogeneousMixing, 0))
+                .unwrap()
+                .contains(&person_id)
         );
-        context.add_plan_with_phase(
-            0.0,
-            move |context| {
-                assert!(!context.is_alive(person_id));
-                assert!(
-                    !context
-                        .get_setting_members(&SettingId::new(HomogeneousMixing, 0))
-                        .unwrap()
-                        .contains(&person_id)
-                );
-            },
-            ExecutionPhase::Last,
-        );
+        context.set_property::<Person, SymptomStatus>(person_id, SymptomStatus::Dead);
         context.execute();
+        assert!(!context.is_alive(person_id));
+        assert!(
+            !context
+                .get_setting_members(&SettingId::new(HomogeneousMixing, 0))
+                .unwrap()
+                .contains(&person_id)
+        );
     }
 
     #[test]
@@ -207,34 +185,26 @@ mod test {
         infection_propagation_loop::init(&mut context).unwrap();
         symptom_status_manager::init(&mut context).unwrap();
         init(&mut context).unwrap();
-        // We schedule the person to be set to dead at time 0.0,
-        // and then we check that their infection status does not change to recovered after the death event is processed.
-        context.add_plan_with_phase(
-            0.0,
-            move |context| {
-                assert!(context.is_alive(person_id));
-                context.infect_person(person_id, None, None, None);
-                context.set_property::<Person, SymptomStatus>(person_id, SymptomStatus::Dead);
-            },
-            ExecutionPhase::First,
-        );
-        context.subscribe_to_event::<PropertyChangeEvent<Person, InfectionStatus>>(
-            move |context, event| {
-                if event.current == InfectionStatus::Recovered {
-                    match context.get_property::<Person, InfectionData>(event.entity_id) {
-                        InfectionData::Recovered {
-                            infection_time,
-                            recovery_time,
-                        } => {
-                            assert_eq!(infection_time, recovery_time);
-                        }
-                        InfectionData::Susceptible => {}
-                        InfectionData::Infectious { .. } => {}
-                    }
-                }
-            },
-        );
+        // We set the person to be infectious and then immediately set them to dead
+        // and then we check that their infection status changes to recovered after the death event is processed.
+        assert!(context.is_alive(person_id));
+        context.infect_person(person_id, None, None, None);
+        context.set_property::<Person, SymptomStatus>(person_id, SymptomStatus::Dead);
         context.execute();
+        match context.get_property::<Person, InfectionData>(person_id) {
+            InfectionData::Recovered {
+                infection_time,
+                recovery_time,
+            } => {
+                assert_eq!(infection_time, recovery_time);
+            }
+            InfectionData::Susceptible => {
+                panic!("Person should not be susceptible after being infected and then dying")
+            }
+            InfectionData::Infectious { .. } => {
+                panic!("Person should not be infectious after being infected and then dying")
+            }
+        }
     }
 
     #[test]

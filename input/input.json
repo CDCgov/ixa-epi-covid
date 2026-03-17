@@ -10,7 +10,7 @@
         },
         "infectiousness_rate_fn": {"Constant": {
                 "rate": 1.0,
-                "duration": 10.0
+                "duration": 5.0
             }
         },
         "probability_mild_given_infect": 0.7,
