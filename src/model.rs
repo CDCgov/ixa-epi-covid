@@ -2,7 +2,7 @@ use ixa::{ExecutionPhase, prelude::*};
 
 use crate::{
     infection_importation, infection_propagation_loop, population_loader, reports, settings,
-    symptom_status_manager,
+    symptom_status_manager, death
 };
 
 pub fn initialize_model(context: &mut Context, seed: u64, max_time: f64) -> Result<(), IxaError> {
