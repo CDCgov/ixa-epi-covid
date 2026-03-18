@@ -26,11 +26,17 @@ pub fn initialize_model(
     );
     context.set_start_time(-1000.);
     settings::init(context);
+    info!("Settings initialized");
     population_loader::init(context, synth_population_override)?;
+    info!("Population loaded");
     symptom_status_manager::init(context)?;
+    info!("Symptom status manager initialized");
     infection_propagation_loop::init(context)?;
+    info!("Infection propagation loop initialized");
     infection_importation::init(context)?;
+    info!("Infection importation initialized");
     reports::init(context)?;
+    info!("Setup complete");
 
     Ok(())
 }

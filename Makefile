@@ -40,7 +40,7 @@ PROFILE_FEATURES ?=
 # Profile the model with samply (PROFILE_SIZE=1m or 10m, PROFILE_FEATURES=profiling to enable ixa spans)
 profile: input/synth_pop_people_WY_$(PROFILE_N_$(PROFILE_SIZE)).csv
 	cargo build --profile profiling $(if $(PROFILE_FEATURES),--features $(PROFILE_FEATURES))
-	samply record target/profiling/ixa-epi-covid -c input/input.json -o output --no-stats -f --synth-population input/synth_pop_people_WY_$(PROFILE_N_$(PROFILE_SIZE)).csv
+	samply record target/profiling/ixa-epi-covid -c input/input.json -o output --no-stats -f -v --synth-population input/synth_pop_people_WY_$(PROFILE_N_$(PROFILE_SIZE)).csv
 
 # Install required R packages for synthetic population generation
 setup-r:
