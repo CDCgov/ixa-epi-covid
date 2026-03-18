@@ -264,6 +264,7 @@ trait ContextSettingInternalExt: PluginContext + ContextRandomExt {
 }
 impl ContextSettingInternalExt for Context {}
 
+#[allow(dead_code)]
 fn validate_itinerary(itinerary: &[ItineraryEntry]) -> Result<(), IxaError> {
     let mut setting_counts: HashMap<TypeId, HashSet<usize>> = HashMap::new();
     let _span = open_span("validate_modified_itinerary");

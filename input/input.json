@@ -2,7 +2,7 @@
     "epimodel.GlobalParams": {
         "seed": 1234,
         "max_time": 100.0,
-        "synth_population_file": "input/people_test.csv",
+        "synth_population_file": "input/synth_pop_people_WY_10000000.csv",
         "initial_prevalence": 0.1,
         "imported_cases_timeseries": {
             "include": true,
@@ -50,6 +50,6 @@
             "write": true,
             "filename": "transmission_report.csv"
         },
-        "first_death_terminates_run": false
+        "first_death_terminates_run": true
     }
 }
