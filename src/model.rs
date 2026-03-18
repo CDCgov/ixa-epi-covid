@@ -1,6 +1,6 @@
 use ixa::{ExecutionPhase, prelude::*};
-
-use crate::{population_loader};
+#[allow(unused_imports)]
+use crate::{population_loader, setting_loader};
 
 pub fn initialize_model(context: &mut Context, seed: u64, max_time: f64) -> Result<(), IxaError> {
     // Initialize the random number generator with the provided seed
@@ -16,6 +16,8 @@ pub fn initialize_model(context: &mut Context, seed: u64, max_time: f64) -> Resu
     );
     // context.set_start_time(-1000.);
     // settings::init(context);
+    // population_loader::init(context)?;
+    // setting_loader::init(context)?;
     population_loader::init(context)?;
     // symptom_status_manager::init(context)?;
     // infection_propagation_loop::init(context)?;

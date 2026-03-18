@@ -9,6 +9,10 @@ pub mod rate_fns;
 pub mod reports;
 pub mod settings;
 pub mod symptom_status_manager;
+pub mod setting_entities;
+pub mod setting_loader;
+pub mod itinerary;
+
 
 pub use model::initialize_model;
 pub use parameters::ContextParametersExt;
