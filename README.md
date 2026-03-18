@@ -40,6 +40,7 @@ make synthetic-population STATE=NY N=50000  # custom state and size
 | `make run-1m` | Generate a 1M WY population and run the model with it |
 | `make run-10m` | Generate a 10M WY population and run the model with it |
 | `make synthetic-population` | Generate a synthetic population (configurable via `STATE` and `N`) |
+| `make profile` | Profile the model with [samply](https://github.com/mstange/samply) using the 1M WY population |
 | `make setup-r` | Install required R packages |
 
 You can also override the population file directly via CLI with `--synth-population`:
