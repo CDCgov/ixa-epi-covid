@@ -40,7 +40,7 @@ make synthetic-population STATE=NY N=50000  # custom state and size
 | `make run-1m` | Generate a 1M WY population and run the model with it |
 | `make run-10m` | Generate a 10M WY population and run the model with it |
 | `make synthetic-population` | Generate a synthetic population (configurable via `STATE` and `N`) |
-| `make profile` | Profile the model with [samply](https://github.com/mstange/samply) using the 1M WY population |
+| `make profile` | Profile the model with [samply](https://github.com/mstange/samply) (configurable, see below) |
 | `make setup-r` | Install required R packages |
 
 You can also override the population file directly via CLI with `--synth-population`:
@@ -48,6 +48,19 @@ You can also override the population file directly via CLI with `--synth-populat
 ```bash
 cargo run --release -- -c input/input.json -o output --synth-population path/to/population.csv
 ```
+
+### Profiling
+
+`make profile` runs the model under [samply](https://github.com/mstange/samply), which opens the Firefox Profiler with a call tree and flame graph. Press `Ctrl+C` to stop early — samply will still capture the profile. You can also `Ctrl+C` any `make run-*` target to kill the simulation early.
+
+```bash
+make profile                                          # 1M population, no ixa spans
+make profile PROFILE_SIZE=10m                         # 10M population
+make profile PROFILE_FEATURES=profiling               # with ixa span instrumentation
+make profile PROFILE_SIZE=10m PROFILE_FEATURES=profiling  # both
+```
+
+The `profiling` Cargo feature enables ixa's built-in span timing (`open_span`/`Span::drop`). This adds ~25% overhead, so it's off by default for samply runs. The `run`, `run-1m`, and `run-10m` targets enable it for ixa's own profiling output.
 
 ## General Disclaimer
 This repository was created for use by CDC programs to collaborate on public health related projects in support of the [CDC mission](https://www.cdc.gov/about/organization/mission.htm).  GitHub is not hosted by the CDC, but is a third party website used by CDC and its partners to share information and collaborate on software. CDC use of GitHub does not imply an endorsement of any one particular service, product, or enterprise.
