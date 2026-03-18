@@ -97,9 +97,8 @@ pub fn init(
     synth_population_override: Option<PathBuf>,
 ) -> Result<(), IxaError> {
     let _span = open_span("load_synth_population");
-    let file = synth_population_override.unwrap_or_else(|| {
-        context.get_params().synth_population_file.clone()
-    });
+    let file = synth_population_override
+        .unwrap_or_else(|| context.get_params().synth_population_file.clone());
     load_synth_population(context, file)?;
     Ok(())
 }
