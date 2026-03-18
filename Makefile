@@ -1,4 +1,4 @@
-STATE ?= US
+STATE ?=WY
 N ?= 1000
 
 .PHONY: all uv-sync synthetic-population
