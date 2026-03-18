@@ -11,9 +11,8 @@ library(data.table)
 set.seed(1234)
 
 args <- commandArgs(trailingOnly = TRUE)
-population_size <- if (length(args) >= 1) as.integer(args[1]) else 589000
-
-state_synth <- "WY"
+state_synth <- if (length(args) >= 1) args[1] else "US"
+population_size <- if (length(args) >= 2) as.integer(args[2]) else 1000
 year_synth <- 2023
 school_per_pop_ratio <- 0.0005
 work_per_pop_ratio <- 0.1
