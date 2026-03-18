@@ -1,6 +1,7 @@
 use ixa::{csv, prelude::*};
 
 use serde::{Deserialize, Serialize};
+use core::panic;
 use std::path::PathBuf;
 
 use crate::{itinerary::{BelongsTo, CensusTractItinerary, HomeItinerary, Itinerary, SchoolItinerary, WorkplaceItinerary}, parameters::{ContextParametersExt, Params}, setting_entities::{ContextSettingEntitiesExt, SettingCategory, SettingCode, SettingEntity, SettingEntityId}, settings::{CensusTract, ContextSettingExt, Home, School, SettingId, Workplace, append_itinerary_entry}};
@@ -262,26 +263,60 @@ fn create_person_from_record_with_setting_entities_and_itinerary(
     Ok(())
 }
 
-
-fn load_synth_population(context: &mut Context, synth_input_file: PathBuf) -> Result<(), IxaError> {
+fn load_synth_population(context: &mut Context, synth_input_file: PathBuf, population_loader_method:usize) -> Result<(), IxaError> {
     let mut reader = csv::Reader::from_path(synth_input_file)?;
     let mut raw_record = csv::ByteRecord::new();
     let headers = reader.byte_headers()?.clone();
 
     while reader.read_byte_record(&mut raw_record)? {
         let record: PeopleRecord = raw_record.deserialize(Some(&headers))?;
-        create_person_from_record(context, &record)?;
+        match population_loader_method {
+            0 => {
+                create_person_from_record(context, &record)?
+            },
+            1 => {
+                create_person_from_record_base(context, &record)?
+            },
+            2 => {
+                create_person_with_one_setting(context, &record)?
+            },
+            3 => {
+                create_person_with_two_setting(context, &record)?
+            },
+            4 => {
+                create_person_from_record_with_setting_entities_and_itinerary(context, &record)?
+            },
+            _ => panic!("Invalid population loader method specified. Must be an integer between 0 and 5 inclusive."),
+        };        
     }
     Ok(())
 }
 
-pub fn init(context: &mut Context) -> Result<(), IxaError> {
+pub fn init(context: &mut Context, population_loader_method: usize) -> Result<(), IxaError> {
     let _span = open_span("load_synth_population");
     let Params {
         synth_population_file,
         ..
     } = context.get_params();
-    load_synth_population(context, synth_population_file.clone())?;
+    match population_loader_method {
+        0 => {
+            println!("Create Person from record");
+        },
+        1 => {
+            println!("Create Person from record with base");
+        },
+        2 => {
+            println!("Create Person from record with one setting");
+        },
+        3 => {
+            println!("Create Person from record with two settings");
+        },
+        4 => {
+            print!("Create Person from record with setting entities and itineraries");
+        },
+        _ => panic!("Invalid population loader method specified. Must be an integer between 0 and 5 inclusive."),
+    }; 
+    load_synth_population(context, synth_population_file.clone(), population_loader_method)?;
     Ok(())
 }
 
@@ -346,7 +381,7 @@ mod test {
             "age,homeId,schoolId,workplaceId\n43,360930331020001,,\n42,360930331020002,,",
         );
         let synth_file = persist_tmp_csv(&input);
-        load_synth_population(&mut context, synth_file).unwrap();
+        load_synth_population(&mut context, synth_file,0).unwrap();
         let age = [43, 42];
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
         let census_tract_id = 36_093_033_102;
@@ -379,7 +414,7 @@ mod test {
         let input =
             String::from("age,homeId,schoolId,workplaceId\n43,360930331,,\n42,360930331020002,,");
         let synth_file = persist_tmp_csv(&input);
-        load_synth_population(&mut context, synth_file).unwrap();
+        load_synth_population(&mut context, synth_file, 0).unwrap();
     }
 
     #[test]
@@ -389,7 +424,7 @@ mod test {
             "age,homeId,schoolId,workplaceId\n43,360930331020001,1,\n42,360930331020002,2,",
         );
         let synth_file = persist_tmp_csv(&input);
-        load_synth_population(&mut context, synth_file).unwrap();
+        load_synth_population(&mut context, synth_file,0).unwrap();
         let age = [43, 42];
         let school_id = [1, 2];
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
@@ -430,7 +465,7 @@ mod test {
             "age,homeId,schoolId,workplaceId\n43,360930331020001,,1\n42,360930331020002,,2",
         );
         let synth_file = persist_tmp_csv(&input);
-        load_synth_population(&mut context, synth_file).unwrap();
+        load_synth_population(&mut context, synth_file,0).unwrap();
         let age = [43, 42];
         let workplace_id = [1, 2];
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
