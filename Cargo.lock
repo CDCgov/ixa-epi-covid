@@ -553,6 +553,7 @@ dependencies = [
 name = "ixa-epi-covid"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "dyn-clone",
  "dyn-eq",
  "dyn-hash",

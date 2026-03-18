@@ -13,7 +13,7 @@ This repo uses uv for dependency management, be sure that uv is [installed on yo
 
 ```bash
 make uv-sync
-```bash
+```
 
 To use this model, you need to have Rust and Cargo installed. You can find instructions for installing Rust [here](https://www.rust-lang.org/tools/install).
 To run the main example, use the following command:
@@ -22,7 +22,31 @@ To run the main example, use the following command:
 cargo run -- -c input/input.json -o output
 ```
 
-To use the `importation.geographies` tools, you will require a Census Bureau API key, and need to supply it in the `CENSUS_API_KEY` field of the `.env` file. You can request and authenticate an API key [here](https://api.census.gov/data/key_signup.html).
+### Synthetic Population
+
+The model requires a synthetic population CSV. A small test file is included at `input/people_test.csv`. To generate larger populations, first install R dependencies and set up a [Census Bureau API key](https://api.census.gov/data/key_signup.html) in `.env` as `CENSUS_API_KEY`:
+
+```bash
+make setup-r
+make synthetic-population             # default: WY, 1000 people
+make synthetic-population STATE=NY N=50000  # custom state and size
+```
+
+### Make Targets
+
+| Target | Description |
+|--------|-------------|
+| `make run` | Run the model with default config |
+| `make run-1m` | Generate a 1M WY population and run the model with it |
+| `make run-10m` | Generate a 10M WY population and run the model with it |
+| `make synthetic-population` | Generate a synthetic population (configurable via `STATE` and `N`) |
+| `make setup-r` | Install required R packages |
+
+You can also override the population file directly via CLI with `--synth-population`:
+
+```bash
+cargo run --release -- -c input/input.json -o output --synth-population path/to/population.csv
+```
 
 ## General Disclaimer
 This repository was created for use by CDC programs to collaborate on public health related projects in support of the [CDC mission](https://www.cdc.gov/about/organization/mission.htm).  GitHub is not hosted by the CDC, but is a third party website used by CDC and its partners to share information and collaborate on software. CDC use of GitHub does not imply an endorsement of any one particular service, product, or enterprise.
