@@ -3,6 +3,7 @@ use rand_distr::Exp;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    death::ContextDeathExt,
     population_loader::PersonId,
     rate_fns::{InfectiousnessRateExt, InfectiousnessRateFn, ScaledRateFn},
     settings::ContextSettingExt,
@@ -111,6 +112,10 @@ pub struct Forecast {
 /// Forecast of the next expected infection time, and the expected rate of
 /// infection at that time.
 pub fn get_forecast(context: &Context, person_id: PersonId) -> Option<Forecast> {
+    if !context.is_alive(person_id) {
+        trace!("Person {person_id} is dead. No forecast will be generated.");
+        return None;
+    }
     // Get the person's individual infectiousness
     let rate_fn = context.get_person_rate_fn(person_id);
     // This scales infectiousness by the maximum possible infectiousness across all settings
@@ -140,6 +145,10 @@ pub fn evaluate_forecast(
     person_id: PersonId,
     forecasted_total_infectiousness: f64,
 ) -> bool {
+    if !context.is_alive(person_id) {
+        trace!("Person {person_id} is dead. Forecast will be automatically rejected.");
+        return false;
+    }
     let rate_fn = context.get_person_rate_fn(person_id);
 
     let total_multiplier = calc_total_infectiousness_multiplier(context, person_id);
@@ -170,7 +179,7 @@ pub fn evaluate_forecast(
     true
 }
 
-pub trait InfectionContextExt: PluginContext + InfectiousnessRateExt {
+pub trait InfectionContextExt: PluginContext + InfectiousnessRateExt + ContextDeathExt {
     // This function should be called from the main loop whenever
     // someone is first infected. It assigns all their properties needed to
     // calculate intrinsic infectiousness
@@ -228,7 +237,7 @@ mod test {
         Age, define_setting_category,
         infectiousness_manager::{InfectionData, InfectionStatus},
         parameters::{GlobalParams, Params},
-        population_loader::{Person, PersonId},
+        population_loader::{Alive, Person, PersonId},
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
         settings::{ContextSettingExt, ItineraryEntry, SettingId, SettingProperties},
     };
@@ -359,6 +368,40 @@ mod test {
         let f = get_forecast(&context, p1).expect("Forecast should be returned");
         // The expected rate is 2.0, because intrinsic is 1.0 and there are 2 contacts.
         assert_almost_eq!(f.forecasted_total_infectiousness, 2.0, 0.0);
+    }
+
+    #[test]
+    fn test_get_forecast_returns_none_for_dead_person() {
+        let mut context = setup_context();
+        let p1: PersonId = context.add_entity((Age(30),)).unwrap();
+        set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
+        context.infect_person(p1, None, None, None);
+
+        // Mark person as dead
+        context.set_property::<Person, Alive>(p1, Alive(false));
+
+        // Forecast should return None for dead person
+        assert!(get_forecast(&context, p1).is_none());
+    }
+
+    #[test]
+    fn test_evaluate_forecast_returns_false_for_dead_person() {
+        let mut context = setup_context();
+        let p1: PersonId = context.add_entity((Age(30),)).unwrap();
+        set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
+        context.infect_person(p1, None, None, None);
+
+        let forecasted_infectiousness = 1.0;
+
+        // Mark person as dead
+        context.set_property::<Person, Alive>(p1, Alive(false));
+
+        // Evaluate should return false for dead person
+        assert!(!evaluate_forecast(
+            &mut context,
+            p1,
+            forecasted_infectiousness
+        ));
     }
 
     #[test]

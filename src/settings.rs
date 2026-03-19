@@ -208,6 +208,12 @@ impl SettingDataContainer {
             .or_default()
             .insert(person_id);
     }
+
+    fn remove_member(&mut self, person_id: PersonId, setting_identifier: (TypeId, usize)) {
+        if let Some(members) = self.all_members.get_mut(&setting_identifier) {
+            members.swap_remove(&person_id);
+        }
+    }
 }
 
 #[macro_export]
@@ -260,6 +266,25 @@ trait ContextSettingInternalExt: PluginContext + ContextRandomExt {
 
     fn get_itinerary_internal(&self, person_id: PersonId) -> Option<&Vec<ItineraryEntry>> {
         self.get_data(SettingDataPlugin).get_itinerary(person_id)
+    }
+
+    fn remove_person_from_settings_internal(&mut self, person_id: PersonId) {
+        // We remove the person from setting membership but don't remove their itinerary because
+        // we want to preserve the itinerary for future interventions and reporting.
+        let container = self.get_data_mut(SettingDataPlugin);
+        let setting_identifiers: Vec<_> = container
+            .get_itinerary(person_id)
+            .map(|itinerary| {
+                itinerary
+                    .iter()
+                    .map(|entry| entry.setting.get_tuple_id())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        for setting_identifier in setting_identifiers {
+            container.remove_member(person_id, setting_identifier);
+        }
     }
 }
 impl ContextSettingInternalExt for Context {}
@@ -369,7 +394,6 @@ pub trait ContextSettingExt:
         let container = self.get_data_mut(SettingDataPlugin);
 
         // Clean up settings that from previous itinerary, if there is one
-
         if container.itineraries.contains_key(&person_id) {
             return Err(IxaError::from("Person already has an itinerary."));
         }
@@ -471,6 +495,10 @@ pub trait ContextSettingExt:
 
     fn sample_setting_members(&self, setting: &dyn AnySettingId) -> Option<PersonId> {
         self.sample_setting_members_internal(setting)
+    }
+
+    fn remove_person_from_settings(&mut self, person_id: PersonId) {
+        self.remove_person_from_settings_internal(person_id);
     }
 }
 impl ContextSettingExt for Context {}
@@ -1049,6 +1077,28 @@ mod test {
             ),
             Ok(_) => panic!("Expected an error. Instead, validation passed with no errors."),
         }
+    }
+
+    #[test]
+    fn test_remove_person_from_settings() {
+        let mut context = Context::new();
+        context
+            .register_setting_category(&Home, SettingProperties { alpha: 0.1 }, 1.0)
+            .unwrap();
+        let person: PersonId = context.add_entity((Age(30),)).unwrap();
+        let itinerary = vec![ItineraryEntry::new(SettingId::new(Home, 1), 1.0)];
+        context.add_itinerary(person, itinerary).unwrap();
+
+        let members = context
+            .get_setting_members(&SettingId::new(Home, 1))
+            .unwrap();
+        assert_eq!(members.len(), 1);
+
+        context.remove_person_from_settings(person);
+        let members_after_removal = context
+            .get_setting_members(&SettingId::new(Home, 1))
+            .unwrap();
+        assert_eq!(members_after_removal.len(), 0);
     }
 
     #[test]
