@@ -1,12 +1,17 @@
-use indexmap::IndexSet;
-use ixa::{HashMap, prelude::*};
+use ixa::{prelude::*};
 use serde::{Deserialize, Serialize};
 
+use core::f64;
 use std::hash::Hash;
 
 define_rng!(SettingRng);
 define_entity!(Setting);
 define_entity!(Person);
+
+define_entity!(HomeEntity);
+define_entity!(SchoolEntity);
+define_entity!(WorkEntity);
+define_entity!(CommunityEntity);
 
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy, Hash, Eq)]
@@ -22,11 +27,29 @@ pub struct Alpha(pub f64);
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct SettingCode(pub usize);
 
+
 impl_property!(SettingCategory, Setting);
 impl_property!(SettingCode, Setting);
 impl_property!(Alpha, Setting);
 
 define_multi_property!((SettingCategory, SettingCode), Setting);
+
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
+pub struct AlphaE(pub f64);
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy, Hash)]
+pub struct SettingCodeE(pub usize);
+
+impl_property!(SettingCodeE, HomeEntity);
+impl_property!(SettingCodeE, SchoolEntity);
+impl_property!(SettingCodeE, WorkEntity);
+impl_property!(SettingCodeE, CommunityEntity);
+
+impl_property!(AlphaE, HomeEntity);
+impl_property!(AlphaE, SchoolEntity);
+impl_property!(AlphaE, WorkEntity);
+impl_property!(AlphaE, CommunityEntity);
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash)]
 pub struct HomeId(pub Option<SettingId>);
@@ -42,50 +65,98 @@ impl_property!(WorkId, Person, default_const = WorkId(None));
 impl_property!(SchoolId, Person, default_const = SchoolId(None));
 impl_property!(CommunityId, Person, default_const = CommunityId(None));
 
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash)]
+pub struct HomeSingleId(pub Option<HomeEntityId>);
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash)]
+pub struct WorkSingleId(pub Option<WorkEntityId>);
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash)]
+pub struct SchoolSingleId(pub Option<SchoolEntityId>);
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash)]
+pub struct CommunitySingleId(pub Option<CommunityEntityId>);
 
-#[derive(Default)]
-struct SettingsDataContainer {
-    settings_list: HashMap<SettingCategory, IndexSet<SettingCode>>,
+impl_property!(HomeSingleId, Person, default_const = HomeSingleId(None));
+impl_property!(WorkSingleId, Person, default_const = WorkSingleId(None));
+impl_property!(SchoolSingleId, Person, default_const = SchoolSingleId(None));
+impl_property!(CommunitySingleId, Person, default_const = CommunitySingleId(None));
+
+pub enum WrappedSettingId {
+    Home(HomeEntityId),
+    Work(WorkEntityId),
+    School(SchoolEntityId),
+    Community(CommunityEntityId)
 }
-
-impl SettingsDataContainer {
-    fn is_setting_in_registry(&mut self, setting_category: SettingCategory, setting_code: SettingCode) -> bool {
-        if let Some(s) = self.settings_list.get(&setting_category) {
-            if s.contains(&setting_code) {
-                return true
-            }
-        }
-        self.settings_list.entry(setting_category).or_default().insert(setting_code);
-        return false;
-    }
-}
-define_data_plugin!(
-    SettingsDataPlugin,
-    SettingsDataContainer,
-    SettingsDataContainer::default()
-);
-
 // Add settings from the synthetic population file
 // Setting properties:
 // alpha, setting code, setting category
 // Region?
 pub trait SettingsContextExt: PluginContext + ContextEntitiesExt {
+    fn add_person_to_single_setting(
+        &mut self,
+        person_id: PersonId,
+        setting_category: SettingCategory,
+        setting_code: SettingCodeE,
+        alpha: AlphaE,
+    ) -> Result<(), IxaError> {
+        let setting_entity_id = self.add_index_single_setting(setting_category, setting_code, alpha)?;
+        match setting_entity_id {
+            WrappedSettingId::Home(home_id) => self.set_property::<Person, HomeSingleId>(person_id, HomeSingleId(Some(home_id))),
+            WrappedSettingId::Work(work_id) => self.set_property::<Person, WorkSingleId>(person_id, WorkSingleId(Some(work_id))),
+            WrappedSettingId::School(school_id) => self.set_property::<Person, SchoolSingleId>(person_id, SchoolSingleId(Some(school_id))),
+            WrappedSettingId::Community(community_id) => self.set_property::<Person, CommunitySingleId>(person_id, CommunitySingleId(Some(community_id))),
+        }
+        Ok(())
+    }
+    fn add_index_single_setting(&mut self, setting_category: SettingCategory, setting_code: SettingCodeE, alpha: AlphaE) -> Result<WrappedSettingId, IxaError> {
+        match setting_category {
+            SettingCategory::Home => {
+                if let Some(setting_id) = self.query_result_iterator::<HomeEntity, _>( (setting_code,)).next() {
+                    return Ok(WrappedSettingId::Home(setting_id))
+                } else {
+                    let setting_id = self.add_entity::<HomeEntity, _>((setting_code, alpha,)).unwrap();
+                    return Ok(WrappedSettingId::Home(setting_id))
+                }
+            },
+            SettingCategory::School => {
+                if let Some(setting_id) = self.query_result_iterator::<SchoolEntity, _>( (setting_code,)).next() {
+                    return Ok(WrappedSettingId::School(setting_id))
+                } else {
+                    let setting_id = self.add_entity::<SchoolEntity, _>((setting_code, alpha,)).unwrap();
+                    return Ok(WrappedSettingId::School(setting_id))
+                }
+            },
+            SettingCategory::Work => {
+                if let Some(setting_id) = self.query_result_iterator::<WorkEntity, _>( (setting_code,)).next() {
+                    return Ok(WrappedSettingId::Work(setting_id))
+                } else {
+                    let setting_id = self.add_entity::<WorkEntity, _>((setting_code, alpha,)).unwrap();
+                    return Ok(WrappedSettingId::Work(setting_id))
+                }
+            },
+            SettingCategory::Community => {
+                if let Some(setting_id) = self.query_result_iterator::<CommunityEntity, _>( (setting_code, )).next() {
+                    return Ok(WrappedSettingId::Community(setting_id))
+                } else {
+                    let setting_id = self.add_entity::<CommunityEntity, _>((setting_code, alpha,)).unwrap();
+                    return Ok(WrappedSettingId::Community(setting_id))
+                }
+            },
+        }
+    }
     fn add_person_to_setting(
         &mut self,
         person_id: PersonId,
-        setting_code: SettingCode
-    ) {
-        // - Do we need to create the setting? 
-        // - record somewhere that person_id is part of setting_id
-        // - record that this setting has a membership including the person?
-        // -
-        // Population loader
-        //p1 = context.add_entity::<PersonId, _>((Age(0),)).unwrap();
-
-        // Population loader or settings? 
-        //let s1 = context.add_entity::<Setting, _>((SettingCategory::Home, Alpha(0.1),)).unwrap();
-        //context.add_person_to_setting(p1, settingId(string));
-        println!("{:?} - {:?}", person_id, setting_code);
+        setting_category: SettingCategory,
+        setting_code: SettingCode,
+        alpha: Alpha,
+    ) -> Result<(), IxaError> {
+        let setting_entity_id = self.add_index_setting(setting_category, setting_code, alpha)?;
+        match setting_category {
+            SettingCategory::Home => self.set_property::<Person, HomeId>(person_id, HomeId(Some(setting_entity_id))),
+            SettingCategory::Work => self.set_property::<Person, WorkId>(person_id, WorkId(Some(setting_entity_id))),
+            SettingCategory::School => self.set_property::<Person, SchoolId>(person_id, SchoolId(Some(setting_entity_id))),
+            SettingCategory::Community => self.set_property::<Person, CommunityId>(person_id, CommunityId(Some(setting_entity_id))),
+        }
+        Ok(())
     }
     fn add_index_setting(&mut self, setting_category: SettingCategory, setting_code: SettingCode, alpha: Alpha) -> Result<SettingId, IxaError> {
         if let Some(setting_id) = self.query_result_iterator::<Setting, _>((setting_category, setting_code)).next() {
@@ -94,25 +165,19 @@ pub trait SettingsContextExt: PluginContext + ContextEntitiesExt {
             let setting_id = self.add_entity::<Setting, _>((setting_category, setting_code, alpha,)).unwrap();
             return Ok(setting_id)
         }
-    }
-       
- fn add_setting(&mut self, setting_category: SettingCategory, setting_code: SettingCode, alpha: Alpha) -> Result<SettingId, IxaError> {
-        // If setting code has already been created, find setting id and return
-        // If setting code doesn´t exist, add a new setting and return setting id
-        let container = self.get_data_mut(SettingsDataPlugin);
-        if !container.is_setting_in_registry(setting_category, setting_code) {
-            let setting_id = self.add_entity::<Setting, _>((setting_category, setting_code, alpha,)).unwrap();
-            return Ok(setting_id);
-        }
-        let setting_id = self.query_result_iterator::<Setting, _>((setting_category, setting_code)).next().unwrap();
-        Ok(setting_id)
-    }
+    }       
 }
 
 impl SettingsContextExt for Context {}
 
 pub fn init(context: &mut Context) -> Result<(), IxaError> {
     context.index_property::<Setting, (SettingCategory, SettingCode)>();
+
+    context.index_property::<HomeEntity, SettingCodeE>();
+    context.index_property::<WorkEntity, SettingCodeE>();
+    context.index_property::<SchoolEntity, SettingCodeE>();
+    context.index_property::<CommunityEntity, SettingCodeE>();
+    
     let p1 = context.add_entity::<Person, _>(()).unwrap();
     println!("Person {:?} with home: {:?}, work: {:?}, school: {:?}, comm: {:?}",
         p1,
@@ -130,30 +195,32 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
     // Add Community
     let c1: usize = 432150001;
 
-    let eh1 = context.add_index_setting(SettingCategory::Home, SettingCode(h1), Alpha(0.1))?;
-    context.set_property::<Person, HomeId>(p1, HomeId(Some(eh1)));
-    let ew1 = context.add_index_setting(SettingCategory::Work, SettingCode(w1), Alpha(0.2))?;
-    context.set_property::<Person, WorkId>(p1, WorkId(Some(ew1)));
-    let es1 = context.add_index_setting(SettingCategory::School, SettingCode(s1), Alpha(0.3))?;
-    context.set_property::<Person, SchoolId>(p1, SchoolId(Some(es1)));
-    let ec1 = context.add_index_setting(SettingCategory::Community, SettingCode(c1), Alpha(0.4))?;
-    context.set_property::<Person, CommunityId>(p1, CommunityId(Some(ec1)));
-
-
+    context.add_person_to_single_setting(p1, SettingCategory::Home, SettingCodeE(h1), AlphaE(0.1))?;
+    context.add_person_to_single_setting(p1, SettingCategory::School, SettingCodeE(s1), AlphaE(0.1))?;
+    context.add_person_to_single_setting(p1, SettingCategory::Work, SettingCodeE(w1), AlphaE(0.1))?;
+    context.add_person_to_single_setting(p1, SettingCategory::Community, SettingCodeE(c1), AlphaE(0.1))?;
+    
     println!("Person {:?} with home: {:?}, work: {:?}, school: {:?}, comm: {:?}",
         p1,
-        context.get_property::<Setting, SettingCode>(context.get_property::<Person, HomeId>(p1).0.unwrap()),
-        context.get_property::<Setting, SettingCode>(context.get_property::<Person, WorkId>(p1).0.unwrap()),
-        context.get_property::<Setting, SettingCode>(context.get_property::<Person, SchoolId>(p1).0.unwrap()),
-        context.get_property::<Setting, SettingCode>(context.get_property::<Person, CommunityId>(p1).0.unwrap())        
+        context.get_property::<HomeEntity, SettingCodeE>(context.get_property::<Person, HomeSingleId>(p1).0.unwrap()),
+        context.get_property::<WorkEntity, SettingCodeE>(context.get_property::<Person, WorkSingleId>(p1).0.unwrap()),
+        context.get_property::<SchoolEntity, SettingCodeE>(context.get_property::<Person, SchoolSingleId>(p1).0.unwrap()),
+        context.get_property::<CommunityEntity, SettingCodeE>(context.get_property::<Person, CommunitySingleId>(p1).0.unwrap())        
     );    
 
-    for _ in 0..1_000_000 {
-        let id = context.sample_range(SettingRng, 0..2_000_000) as usize;
-        let _ = context.add_index_setting(SettingCategory::Home, SettingCode(id), Alpha(0.1))?;
-        let _ = context.add_index_setting(SettingCategory::Work, SettingCode(id), Alpha(0.2))?;
-        let _ = context.add_index_setting(SettingCategory::School, SettingCode(id), Alpha(0.3))?;
-        let _ = context.add_index_setting(SettingCategory::Community, SettingCode(id), Alpha(0.4))?;
+    for i in 0..1_000_000 {
+        let id = (i as f64 / 5.0).floor() as usize;
+        let p_id = context.add_entity::<Person, _>(()).unwrap();
+        //let id = context.sample_range(SettingRng, 0..2_000) as usize;
+        context.add_person_to_setting(p_id, SettingCategory::Home, SettingCode(id), Alpha(0.1))?;
+        context.add_person_to_setting(p_id, SettingCategory::School, SettingCode(id), Alpha(0.1))?;
+        context.add_person_to_setting(p_id, SettingCategory::Work, SettingCode(id), Alpha(0.1))?;
+        context.add_person_to_setting(p_id, SettingCategory::Community, SettingCode(id), Alpha(0.1))?;
+
+        // context.add_person_to_single_setting(p_id, SettingCategory::Home, SettingCodeE(id), AlphaE(0.1))?;
+        // context.add_person_to_single_setting(p_id, SettingCategory::School, SettingCodeE(id), AlphaE(0.1))?;
+        // context.add_person_to_single_setting(p_id, SettingCategory::Work, SettingCodeE(id), AlphaE(0.1))?;
+        // context.add_person_to_single_setting(p_id, SettingCategory::Community, SettingCodeE(id), AlphaE(0.1))?;   
     }
     Ok(())
 }
