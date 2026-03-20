@@ -44,4 +44,4 @@ profile: input/synth_pop_people_WY_$(PROFILE_N_$(PROFILE_SIZE)).csv
 
 # Install required R packages for synthetic population generation
 setup-r:
-	Rscript -e 'install.packages(c("tidyverse", "tigris", "sf", "tidycensus", "patchwork", "data.table"), repos="https://cloud.r-project.org")'
+	Rscript -e 'install.packages(c("tidyverse", "tigris", "sf", "tidycensus", "patchwork", "data.table", "Rcpp"), repos="https://cloud.r-project.org")'
