@@ -1,17 +1,16 @@
 use crate::infectiousness_manager::InfectionData;
 use crate::population_loader::{Person, PersonId};
+use crate::settings::WrappedSettingId;
 use ixa::prelude::*;
 use ixa::profiling::open_span;
 use serde::{Deserialize, Serialize};
-use std::string::ToString;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 struct TransmissionReport {
     time: f64,
     target_id: PersonId,
     infected_by: Option<PersonId>,
-    infection_setting_type: Option<String>,
-    infection_setting_id: Option<usize>,
+    infection_setting_id: Option<WrappedSettingId>,
 }
 
 define_report!(TransmissionReport);
@@ -20,15 +19,13 @@ fn record_transmission_event(
     context: &mut Context,
     target_id: PersonId,
     infected_by: Option<PersonId>,
-    infection_setting_type: Option<String>,
-    infection_setting_id: Option<usize>,
+    infection_setting_id: Option<WrappedSettingId>,
 ) {
     if infected_by.is_some() {
         context.send_report(TransmissionReport {
             time: context.get_current_time(),
             target_id,
             infected_by,
-            infection_setting_type,
             infection_setting_id,
         });
     }
@@ -43,7 +40,6 @@ pub fn init(context: &mut Context, file_name: &str) -> Result<(), IxaError> {
         let _span = open_span("transmission_report");
         if let InfectionData::Infectious {
             infected_by,
-            infection_setting_type,
             infection_setting_id,
             ..
         } = event.current
@@ -52,7 +48,6 @@ pub fn init(context: &mut Context, file_name: &str) -> Result<(), IxaError> {
                 context,
                 event.entity_id,
                 infected_by,
-                infection_setting_type.map(ToString::to_string),
                 infection_setting_id,
             );
         }

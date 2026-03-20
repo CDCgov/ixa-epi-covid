@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     population_loader::PersonId,
     rate_fns::{InfectiousnessRateExt, InfectiousnessRateFn, ScaledRateFn},
-    settings::ContextSettingExt,
+    settings::{ContextSettingExt, WrappedSettingId},
 };
 
 use crate::population_loader::Person;
@@ -18,8 +18,7 @@ pub enum InfectionData {
     Infectious {
         infection_time: f64,
         infected_by: Option<PersonId>,
-        infection_setting_type: Option<&'static str>,
-        infection_setting_id: Option<usize>,
+        infection_setting_id: Option<WrappedSettingId>,
     },
     Recovered {
         infection_time: f64,
@@ -74,32 +73,27 @@ define_rng!(ForecastRng);
 // Infection attempt function for a context and given `PersonId`
 pub fn infection_attempt(context: &mut Context, person_id: PersonId) -> Option<PersonId> {
     let _span = open_span("infection_attempt");
-    if let Some(setting) = context.sample_current_setting(person_id) {
-        let next_contact = context
-            .sample_from_setting_with_exclusion(person_id, setting)
-            .unwrap()?;
-        match context.get_property::<Person, InfectionStatus>(next_contact) {
-            InfectionStatus::Susceptible => {
-                increment_named_count("infection_success");
-                trace!(
-                    "Infection attempt successful. Person {}, setting type {} {}, infecting {}",
-                    person_id,
-                    setting.get_category_id(),
-                    setting.id(),
-                    next_contact
-                );
-                context.infect_person(
-                    next_contact,
-                    Some(person_id),
-                    Some(setting.get_category_id()),
-                    Some(setting.id()),
-                );
-                Some(next_contact)
-            }
-            _ => None,
+    let setting = context.sample_current_setting(person_id).unwrap();
+    let next_contact = context
+        .sample_person_from_setting(setting)
+        .unwrap();
+    match context.get_property::<Person, InfectionStatus>(next_contact) {
+        InfectionStatus::Susceptible => {
+            increment_named_count("infection_success");
+            trace!(
+                "Infection attempt successful. Person {}, setting id {:?}, infecting {}",
+                person_id,
+                setting,
+                next_contact
+            );
+            context.infect_person(
+                next_contact,
+                Some(person_id),
+                Some(setting),
+            );
+            Some(next_contact)
         }
-    } else {
-        None
+        _ => None,
     }
 }
 
@@ -174,12 +168,13 @@ pub trait InfectionContextExt: PluginContext + InfectiousnessRateExt {
     // This function should be called from the main loop whenever
     // someone is first infected. It assigns all their properties needed to
     // calculate intrinsic infectiousness
+
+    // TODO: Should we check that target_id != source_id? 
     fn infect_person(
         &mut self,
         target_id: PersonId,
         source_id: Option<PersonId>,
-        setting_type: Option<&'static str>,
-        setting_id: Option<usize>,
+        setting_id: Option<WrappedSettingId>,
     ) {
         let infection_time = self.get_current_time();
         trace!("Person {target_id}: Infected at {infection_time}");
@@ -188,7 +183,6 @@ pub trait InfectionContextExt: PluginContext + InfectiousnessRateExt {
             InfectionData::Infectious {
                 infection_time,
                 infected_by: source_id,
-                infection_setting_type: setting_type,
                 infection_setting_id: setting_id,
             },
         );
@@ -230,7 +224,7 @@ mod test {
         parameters::{GlobalParams, Params},
         population_loader::{Person, PersonId},
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
-        settings::{ContextSettingExt, ItineraryEntry, SettingId, SettingProperties},
+        settings::{Alpha, HomeEntity, ItineraryEntry, SettingCode, SettingId, SettingProperties},
     };
     use ixa::{assert_almost_eq, prelude::*};
 
@@ -273,7 +267,7 @@ mod test {
         let mut context = setup_context();
         let p1: PersonId = context.add_entity((Age(30),)).unwrap();
         context.add_plan(2.0, move |context| {
-            context.infect_person(p1, None, None, None);
+            context.infect_person(p1, None, None);
         });
         context.execute();
         let InfectionData::Infectious { infection_time, .. } =
@@ -290,7 +284,7 @@ mod test {
         let mut context = setup_context();
         let p1: PersonId = context.add_entity((Age(30),)).unwrap();
         context.add_plan(2.0, move |context| {
-            context.infect_person(p1, None, None, None);
+            context.infect_person(p1, None, None);
         });
         context.add_plan(3.0, move |context| {
             context.recover_person(p1);
@@ -312,7 +306,7 @@ mod test {
         let mut context = setup_context();
         let p1: PersonId = context.add_entity((Age(30),)).unwrap();
         context.add_plan(2.0, move |context| {
-            context.infect_person(p1, None, None, None);
+            context.infect_person(p1, None, None);
         });
         // Run the simulation until time 3.0 at which the point the individual should have been
         // infected for 1.0 time units.
@@ -354,7 +348,7 @@ mod test {
         let p3: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p3).unwrap();
 
-        context.infect_person(p1, None, None, None);
+        context.infect_person(p1, None, None);
 
         let f = get_forecast(&context, p1).expect("Forecast should be returned");
         // The expected rate is 2.0, because intrinsic is 1.0 and there are 2 contacts.
@@ -367,7 +361,7 @@ mod test {
         let mut context = setup_context();
         let p1: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
-        context.infect_person(p1, None, None, None);
+        context.infect_person(p1, None, None);
         // We need to add another person so that our total infectiousness is 1.
         let p2: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p2).unwrap();
@@ -381,7 +375,7 @@ mod test {
         let mut context = setup_context();
         let p1: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
-        context.infect_person(p1, None, None, None);
+        context.infect_person(p1, None, None);
         let p2: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p2).unwrap();
 
@@ -394,8 +388,9 @@ mod test {
         let mut context = setup_context();
         let index: PersonId = context.add_entity((Age(30),)).unwrap();
         let contact: PersonId = context.add_entity((Age(30),)).unwrap();
-
-        context.infect_person(contact, Some(index), Some("Home"), Some(0));
+        let home_id = context.add_entity::<HomeEntity, _>((SettingCode(0), Alpha(0.1),)).unwrap();
+        
+        context.infect_person(contact, Some(index), Some(crate::settings::WrappedSettingId::Home(home_id)));
         context.execute();
 
         assert_eq!(
