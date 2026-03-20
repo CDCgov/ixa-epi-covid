@@ -8,6 +8,11 @@ use crate::reports::ReportParams;
 use crate::settings::SettingProperties;
 use crate::symptom_status_manager::SymptomDelayDistLogNormParams;
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
+pub enum ItinerarySpecificationType {
+    Constant { ratio: f64 },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RateFnType {
     /// A constant rate of infectiousness (constant hazard -> exponential waiting times) for a given
@@ -15,6 +20,7 @@ pub enum RateFnType {
     Constant { rate: f64, duration: f64 },
 }
 
+// TODO: This should use the same structure as wrappedsettingid
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Hash, PartialEq, Eq)]
 pub enum CoreSettingsTypes {
     Home,
