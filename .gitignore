@@ -168,6 +168,12 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
+# Emacs
+*~
+\#*
+.\#*
+*.org
+
 # Environments
 .env
 .venv
