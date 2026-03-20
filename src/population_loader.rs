@@ -1,4 +1,4 @@
-use ixa::{csv, prelude::*};
+use ixa::{HashMap, csv, prelude::*};
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use crate::error::ModelError;
 use crate::parameters::ContextParametersExt;
 use crate::settings::{
-    CensusTract, ContextSettingExt, Home, School, SettingId, Workplace, append_itinerary_entry,
+    Alpha, CommunityEntityId, ContextSettingExt, HomeEntityId, SchoolEntityId, SettingCategory, SettingCode, SettingProperties, WorkEntityId
 };
 use ixa::profiling::open_span;
 
@@ -29,6 +29,20 @@ impl_property!(Age, Person);
 pub struct Alive(pub bool);
 impl_property!(Alive, Person, default_const = Alive(true));
 
+impl_property!(HomeId, Person, default_const = HomeId(None));
+impl_property!(WorkId, Person, default_const = WorkId(None));
+impl_property!(SchoolId, Person, default_const = SchoolId(None));
+impl_property!(CommunityId, Person, default_const = CommunityId(None));
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash)]
+pub struct HomeId(pub Option<HomeEntityId>);
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash)]
+pub struct WorkId(pub Option<WorkEntityId>);
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash)]
+pub struct SchoolId(pub Option<SchoolEntityId>);
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash)]
+pub struct CommunityId(pub Option<CommunityEntityId>);
+
 fn create_person_from_record(
     context: &mut Context,
     person_record: &PeopleRecord,
@@ -36,47 +50,38 @@ fn create_person_from_record(
     // Create itinerary entries for all setting memberships in input file
     let tract: String = String::from_utf8(person_record.homeId[..11].to_owned())?;
     let home_id: String = String::from_utf8(person_record.homeId.to_owned())?;
-    let school_string: String = String::from_utf8(person_record.schoolId.to_owned())?;
+    let school_string: String = String::from_utf8(person_record.schoolId.to_owned())?; 
     let workplace_string: String = String::from_utf8(person_record.workplaceId.to_owned())?;
 
     // Add person to context
     let person_id: PersonId = context.add_entity((Age(person_record.age),)).unwrap();
+    context.add_person_to_setting(
+        person_id,
+        SettingCategory::Home,
+        SettingCode(home_id.parse()?),
+        Alpha(settings_properties.get(&CoreSettingsTypes::Home).unwrap().alpha))?;
 
-    // Initialize a vector of home and census tract since everyone has these settings
-    let mut itinerary = vec![];
-    append_itinerary_entry(
-        &mut itinerary,
-        context,
-        SettingId::new(Home, home_id.parse()?),
-        None,
-    )?;
-    append_itinerary_entry(
-        &mut itinerary,
-        context,
-        SettingId::new(CensusTract, tract.parse()?),
-        None,
-    )?;
+    context.add_person_to_setting(
+        person_id,
+        SettingCategory::Community,
+        SettingCode(tract.parse()?),
+        Alpha(settings_properties.get(&CoreSettingsTypes::CensusTract).unwrap().alpha))?;
 
-    // Check for school and work memberships
     if !school_string.is_empty() {
-        append_itinerary_entry(
-            &mut itinerary,
-            context,
-            SettingId::new(School, school_string.parse()?),
-            None,
-        )?;
-    }
-    if !workplace_string.is_empty() {
-        append_itinerary_entry(
-            &mut itinerary,
-            context,
-            SettingId::new(Workplace, workplace_string.parse()?),
-            None,
-        )?;
+        context.add_person_to_setting(
+            person_id,
+            SettingCategory::School,
+            SettingCode(school_string.parse()?),
+            Alpha(settings_properties.get(&CoreSettingsTypes::School).unwrap().alpha))?;
     }
 
-    // Create the itinerary using write rules stored in Context
-    context.add_itinerary(person_id, itinerary)?;
+    if !workplace_string.is_empty() {
+        context.add_person_to_setting(
+            person_id,
+            SettingCategory::Work,
+            SettingCode(workplace_string.parse()?),
+            Alpha(settings_properties.get(&CoreSettingsTypes::Workplace).unwrap().alpha))?;
+    }
 
     Ok(())
 }
@@ -91,7 +96,7 @@ fn load_synth_population(
 
     while reader.read_byte_record(&mut raw_record)? {
         let record: PeopleRecord = raw_record.deserialize(Some(&headers))?;
-        create_person_from_record(context, &record)?;
+        create_person_from_record(context, &record, &settings_properties)?;
     }
     Ok(())
 }
@@ -100,7 +105,12 @@ pub fn init(
     context: &mut Context,
     synth_population_override: Option<PathBuf>,
 ) -> Result<(), ModelError> {
-    let _span = open_span("load_synth_population");
+    context.index_property::<Person, HomeId>();
+    context.index_property::<Person, SchoolId>();
+    context.index_property::<Person, WorkId>();
+    context.index_property::<Person, CommunityId>();
+    
+    let _span = open_span("load_synth_population");    
     let file = synth_population_override
         .unwrap_or_else(|| context.get_params().synth_population_file.clone());
     load_synth_population(context, file)?;
