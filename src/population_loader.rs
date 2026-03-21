@@ -3,7 +3,7 @@ use ixa::{csv, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::parameters::{ContextParametersExt, Params};
+use crate::parameters::ContextParametersExt;
 use crate::settings::{
     CensusTract, ContextSettingExt, Home, School, SettingId, Workplace, append_itinerary_entry,
 };
@@ -92,20 +92,21 @@ fn load_synth_population(context: &mut Context, synth_input_file: PathBuf) -> Re
     Ok(())
 }
 
-pub fn init(context: &mut Context) -> Result<(), IxaError> {
+pub fn init(
+    context: &mut Context,
+    synth_population_override: Option<PathBuf>,
+) -> Result<(), IxaError> {
     let _span = open_span("load_synth_population");
-    let Params {
-        synth_population_file,
-        ..
-    } = context.get_params();
-    load_synth_population(context, synth_population_file.clone())?;
+    let file = synth_population_override
+        .unwrap_or_else(|| context.get_params().synth_population_file.clone());
+    load_synth_population(context, file)?;
     Ok(())
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::parameters::{CoreSettingsTypes, GlobalParams};
+    use crate::parameters::{CoreSettingsTypes, GlobalParams, Params};
     use crate::settings::{CensusTract, Home, School, SettingId, SettingProperties, Workplace};
     use ixa::HashMap;
     use std::io::Write;
