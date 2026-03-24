@@ -113,45 +113,73 @@ pub trait ContextSettingExt: PluginContext + ContextEntitiesExt + ContextSetting
         }
     }
 
-    fn sample_current_setting(&self, person_id: PersonId) -> Result<WrappedSettingId, IxaError> {
-        let Params {
-            itinerary_ratios,
-            ..
-        } = self.get_params();
-        let mut weights_vec = vec!();
-        let mut ids_vec = vec!();
+    fn get_setting_size(&self, setting: WrappedSettingId) -> Result<usize, IxaError> {
+        match setting {
+            WrappedSettingId::Home(home_id) => Ok(self.query_entity_count::<Person,_ >((HomeId(Some(home_id)),))),
+            WrappedSettingId::School(school_id) => Ok(self.query_entity_count::<Person,_ >((SchoolId(Some(school_id)),))),
+            WrappedSettingId::Work(work_id) => Ok(self.query_entity_count::<Person,_ >((WorkId(Some(work_id)),))),
+            WrappedSettingId::Community(community_id) => Ok(self.query_entity_count::<Person,_ >((CommunityId(Some(community_id)),))),     
+        }
+    }
+
+    fn get_setting_alpha(&self, setting: WrappedSettingId) -> Result<f64, IxaError> {
+        match setting {
+            WrappedSettingId::Home(home_id) => Ok(self.get_property::<HomeEntity, Alpha>(home_id).0),
+            WrappedSettingId::School(school_id) => Ok(self.get_property::<SchoolEntity, Alpha>(school_id).0),
+            WrappedSettingId::Work(work_id) => Ok(self.get_property::<WorkEntity, Alpha>(work_id).0),
+            WrappedSettingId::Community(community_id) => Ok(self.get_property::<CommunityEntity, Alpha>(community_id).0),     
+        }
+    }
+
+    fn get_setting_ratio(&self, setting: WrappedSettingId) -> Result<f64, IxaError> {
+        let Params { itinerary_ratios, .. } = self.get_params();
+        match setting {
+            WrappedSettingId::Home(_) => Ok(*itinerary_ratios.get(&CoreSettingsTypes::Home).unwrap()),
+            WrappedSettingId::School(_) => Ok(*itinerary_ratios.get(&CoreSettingsTypes::School).unwrap()),
+            WrappedSettingId::Work(_) => Ok(*itinerary_ratios.get(&CoreSettingsTypes::Workplace).unwrap()),
+            WrappedSettingId::Community(_) => Ok(*itinerary_ratios.get(&CoreSettingsTypes::CensusTract).unwrap()),     
+        }
+    }
+
+    fn calculate_multipler(&self, setting: WrappedSettingId) -> Result<f64, IxaError> {
+        let size = self.get_setting_size(setting)?;
+        let alpha = self.get_setting_alpha(setting)?;
+        Ok(((size - 1) as f64).powf(alpha))
+    }
+
+    fn get_active_settings_for_person(&self, person_id: PersonId) -> Result<Vec<WrappedSettingId>, IxaError> {
+        let mut active_settings = Vec::new();
         if let Some(home_id) = self.get_property::<Person, HomeId>(person_id).0 {
-            let ratio = itinerary_ratios.get(&CoreSettingsTypes::Home).unwrap();
-            let members_size =self.query_entity_count::<Person,_ >((HomeId(Some(home_id)),));
-            let alpha = self.get_property::<HomeEntity, Alpha>(home_id).0;
-            weights_vec.push(((members_size - 1) as f64).powf(alpha) * ratio);
-            ids_vec.push(WrappedSettingId::Home(home_id));
+            active_settings.push(WrappedSettingId::Home(home_id));
         }
-
         if let Some(school_id) = self.get_property::<Person, SchoolId>(person_id).0 {
-            let ratio = itinerary_ratios.get(&CoreSettingsTypes::School).unwrap();
-            let members_size =self.query_entity_count::<Person,_ >((SchoolId(Some(school_id)),));
-            let alpha = self.get_property::<SchoolEntity, Alpha>(school_id).0;
-            weights_vec.push(((members_size - 1) as f64).powf(alpha) * ratio);
-            ids_vec.push(WrappedSettingId::School(school_id));
+            active_settings.push(WrappedSettingId::School(school_id));
         }
-
         if let Some(work_id) = self.get_property::<Person, WorkId>(person_id).0 {
-            let ratio = itinerary_ratios.get(&CoreSettingsTypes::Workplace).unwrap();
-            let members_size =self.query_entity_count::<Person,_ >((WorkId(Some(work_id)),));
-            let alpha = self.get_property::<WorkEntity, Alpha>(work_id).0;
-            weights_vec.push(((members_size - 1) as f64).powf(alpha) * ratio);
-            ids_vec.push(WrappedSettingId::Work(work_id));
+            active_settings.push(WrappedSettingId::Work(work_id));
         }
-
         if let Some(community_id) = self.get_property::<Person, CommunityId>(person_id).0 {
-            let ratio = itinerary_ratios.get(&CoreSettingsTypes::CensusTract).unwrap();
-            let members_size =self.query_entity_count::<Person,_ >((CommunityId(Some(community_id)),));
-            let alpha = self.get_property::<CommunityEntity, Alpha>(community_id).0;
-            weights_vec.push(((members_size - 1) as f64).powf(alpha) * ratio);
-            ids_vec.push(WrappedSettingId::Community(community_id));
+            active_settings.push(WrappedSettingId::Community(community_id));
+        }
+        Ok(active_settings)
+    }
+
+    fn sample_active_setting(&self, person_id: PersonId) -> Result<WrappedSettingId, IxaError> {
+        let mut weights_vec = vec!();
+        let ids_vec = self.get_active_settings_for_person(person_id)?;
+
+        for id in ids_vec.iter() {
+            let ratio = self.get_setting_ratio(*id)?;
+            let multiplier = self.calculate_multipler(*id)?;
+            println!("Setting {:?} has multiplier: {:?} with ratio: {:?}", id, multiplier, ratio);
+            weights_vec.push(multiplier * ratio);
         }
 
+        println!("Person {:?} has weights vec {:?} and ids vec {:?}",
+            person_id,
+            weights_vec,
+            ids_vec
+        );
         let setting_index = self.sample_weighted(SettingRng, &weights_vec);
         Ok(ids_vec[setting_index])
     }
@@ -219,6 +247,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
     context.index_property::<CommunityEntity, SettingCode>();
     
     let p1 = context.add_entity::<Person, _>((Age(0),)).unwrap();
+    let p2 = context.add_entity::<Person, _>((Age(0),)).unwrap();
     println!("Person {:?} with home: {:?}, work: {:?}, school: {:?}, comm: {:?}",
         p1,
         context.get_property::<Person, HomeId>(p1),
@@ -239,6 +268,11 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
     context.add_person_to_setting(p1, SettingCategory::School, SettingCode(s1), Alpha(0.1))?;
     context.add_person_to_setting(p1, SettingCategory::Work, SettingCode(w1), Alpha(0.1))?;
     context.add_person_to_setting(p1, SettingCategory::Community, SettingCode(c1), Alpha(0.1))?;
+
+    context.add_person_to_setting(p2, SettingCategory::Home, SettingCode(h1), Alpha(0.1))?;
+    context.add_person_to_setting(p2, SettingCategory::School, SettingCode(s1), Alpha(0.1))?;
+    context.add_person_to_setting(p2, SettingCategory::Work, SettingCode(w1), Alpha(0.1))?;
+    context.add_person_to_setting(p2, SettingCategory::Community, SettingCode(c1), Alpha(0.1))?;
     
     println!("Person {:?} with home: {:?}, work: {:?}, school: {:?}, comm: {:?}",
         p1,
@@ -248,8 +282,10 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
         context.get_property::<CommunityEntity, SettingCode>(context.get_property::<Person, CommunityId>(p1).0.unwrap())        
     );    
 
-    let setting_p1 = context.sample_current_setting(p1);
+    let setting_p1 = context.sample_active_setting(p1);
+    let setting_p2 = context.sample_active_setting(p2);
     println!("Person {:?} sampled setting: {:?}", p1, setting_p1);
+    println!("Person {:?} sampled setting: {:?}", p2, setting_p2);
     // for i in 0..10_000_000 {
     //     let id = (i as f64 / 5.0).floor() as usize;
     //     let p_id = context.add_entity::<Person, _>(()).unwrap();

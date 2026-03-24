@@ -73,7 +73,7 @@ define_rng!(ForecastRng);
 // Infection attempt function for a context and given `PersonId`
 pub fn infection_attempt(context: &mut Context, person_id: PersonId) -> Option<PersonId> {
     let _span = open_span("infection_attempt");
-    let setting = context.sample_current_setting(person_id).unwrap();
+    let setting = context.sample_active_setting(person_id).unwrap();
     let next_contact = context
         .sample_person_from_setting(setting)
         .unwrap();
