@@ -1,4 +1,7 @@
-use crate::parameters::{ContextParametersExt, Params};
+use crate::{
+    error::ModelError,
+    parameters::{ContextParametersExt, Params},
+};
 use ixa::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -13,13 +16,13 @@ pub struct ReportParams {
     pub period: Option<f64>,
 }
 
-fn get_report_name(params: &ReportParams) -> Result<Option<&str>, IxaError> {
+fn get_report_name(params: &ReportParams) -> Result<Option<&str>, ModelError> {
     if params.write {
         if let Some(name) = &params.filename {
             return Ok(Some(name));
         }
 
-        return Err(IxaError::IxaError(
+        return Err(ModelError::ModelError(
             "Reports must be provided with a name when write is set to true".to_string(),
         ));
     }
@@ -30,18 +33,18 @@ fn get_report_name(params: &ReportParams) -> Result<Option<&str>, IxaError> {
     Ok(None)
 }
 
-fn get_period_report_name(params: &ReportParams) -> Result<Option<(&str, f64)>, IxaError> {
+fn get_period_report_name(params: &ReportParams) -> Result<Option<(&str, f64)>, ModelError> {
     if let Some(name) = get_report_name(params)? {
         if let Some(period) = params.period {
             if period <= 0.0 {
-                return Err(IxaError::IxaError(format!(
+                return Err(ModelError::ModelError(format!(
                     "The report period must be greater than zero, found period {period} for {name} instead."
                 )));
             }
             return Ok(Some((name, period)));
         }
 
-        return Err(IxaError::IxaError(format!(
+        return Err(ModelError::ModelError(format!(
             "Report {name} requires a period but none provided."
         )));
     }
@@ -50,9 +53,9 @@ fn get_period_report_name(params: &ReportParams) -> Result<Option<(&str, f64)>, 
 
 /// # Errors
 ///
-/// Will return `IxaError` if any report within the reports list cannot be added
+/// Will return `ModelError` if any report within the reports list cannot be added
 /// or if the period for any periodic report is less than 0.0
-pub fn init(context: &mut Context) -> Result<(), IxaError> {
+pub fn init(context: &mut Context) -> Result<(), ModelError> {
     let Params {
         prevalence_report,
         incidence_report,
@@ -86,13 +89,14 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 mod test {
 
     use super::get_period_report_name;
+    use crate::error::ModelError;
     use crate::reports::ReportParams;
     use crate::{
         parameters::{ContextParametersExt, Params},
         rate_fns::load_rate_fns,
     };
     use ixa::assert_almost_eq;
-    use ixa::{Context, ContextGlobalPropertiesExt, ContextRandomExt, IxaError};
+    use ixa::{Context, ContextGlobalPropertiesExt, ContextRandomExt};
     use std::fs::File;
     use std::io::Write;
     use std::path::PathBuf;
@@ -226,7 +230,7 @@ mod test {
         };
 
         match get_period_report_name(&no_name_report).err() {
-            Some(IxaError::IxaError(msg)) => {
+            Some(ModelError::ModelError(msg)) => {
                 assert_eq!(
                     msg,
                     "Reports must be provided with a name when write is set to true".to_string()
@@ -252,7 +256,7 @@ mod test {
         };
 
         match get_period_report_name(&bad_period_report).err() {
-            Some(IxaError::IxaError(msg)) => {
+            Some(ModelError::ModelError(msg)) => {
                 assert_eq!(
                     msg,
                     "The report period must be greater than zero, found period 0 for output.csv instead.".to_string()

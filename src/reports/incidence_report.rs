@@ -1,4 +1,5 @@
 use crate::{
+    error::ModelError,
     infectiousness_manager::InfectionStatus,
     population_loader::{Age, Person},
     symptom_status_manager::SymptomStatus,
@@ -99,12 +100,12 @@ fn send_incidence_counts(context: &mut Context) {
 
 /// # Errors
 ///
-/// Will return `IxaError` if the report cannot be added
+/// Will return `ModelError` if the report cannot be added
 ///
 /// # Panics
 ///
 /// Will panic if an age group cannot be parsed from the tabulated string
-pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), IxaError> {
+pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), ModelError> {
     context.add_report::<PersonPropertyIncidenceReport>(file_name)?;
 
     // let tabulator = (Age,);

@@ -1,4 +1,5 @@
 use crate::{
+    error::ModelError,
     infectiousness_manager::InfectionStatus,
     population_loader::{Age, Alive, Person},
     symptom_status_manager::SymptomStatus,
@@ -68,12 +69,12 @@ fn send_property_counts(context: &mut Context) {
 /// Count initial number of people per property status and subscribe to changes
 /// # Errors
 ///
-/// Will return `IxaError` if the report cannot be added
+/// Will return `ModelError` if the report cannot be added
 ///
 /// # Panics
 ///
 /// Will panic if symptom value string is not listed in enum
-pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), IxaError> {
+pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), ModelError> {
     context.add_report::<PersonPropertyReport>(file_name)?;
 
     let mut map_counts = HashMap::default();

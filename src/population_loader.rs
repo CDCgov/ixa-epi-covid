@@ -3,6 +3,7 @@ use ixa::{csv, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::error::ModelError;
 use crate::parameters::ContextParametersExt;
 use crate::settings::{
     CensusTract, ContextSettingExt, Home, School, SettingId, Workplace, append_itinerary_entry,
@@ -31,7 +32,7 @@ impl_property!(Alive, Person, default_const = Alive(true));
 fn create_person_from_record(
     context: &mut Context,
     person_record: &PeopleRecord,
-) -> Result<(), IxaError> {
+) -> Result<(), ModelError> {
     // Create itinerary entries for all setting memberships in input file
     let tract: String = String::from_utf8(person_record.homeId[..11].to_owned())?;
     let home_id: String = String::from_utf8(person_record.homeId.to_owned())?;
@@ -80,7 +81,10 @@ fn create_person_from_record(
     Ok(())
 }
 
-fn load_synth_population(context: &mut Context, synth_input_file: PathBuf) -> Result<(), IxaError> {
+fn load_synth_population(
+    context: &mut Context,
+    synth_input_file: PathBuf,
+) -> Result<(), ModelError> {
     let mut reader = csv::Reader::from_path(synth_input_file)?;
     let mut raw_record = csv::ByteRecord::new();
     let headers = reader.byte_headers()?.clone();
@@ -95,7 +99,7 @@ fn load_synth_population(context: &mut Context, synth_input_file: PathBuf) -> Re
 pub fn init(
     context: &mut Context,
     synth_population_override: Option<PathBuf>,
-) -> Result<(), IxaError> {
+) -> Result<(), ModelError> {
     let _span = open_span("load_synth_population");
     let file = synth_population_override
         .unwrap_or_else(|| context.get_params().synth_population_file.clone());

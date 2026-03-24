@@ -4,11 +4,12 @@ use rand_distr::{Binomial, Uniform};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::error::ModelError;
 use crate::infectiousness_manager::{InfectionContextExt, InfectionStatus};
 use crate::parameters::{ContextParametersExt, Params};
 use crate::population_loader::{Person, PersonId};
 use crate::rate_fns::InfectiousnessRateExt;
-use ixa::{Context, ContextRandomExt, IxaError, define_rng, trace};
+use ixa::{Context, ContextRandomExt, define_rng, trace};
 
 define_rng!(ImportationRng);
 
@@ -92,7 +93,7 @@ fn plan_importations(context: &mut Context, imported_infections: usize, time: f6
 fn read_importation_schedule(
     context: &mut Context,
     importations_file: PathBuf,
-) -> Result<(), IxaError> {
+) -> Result<(), ModelError> {
     let mut reader = csv::Reader::from_path(importations_file)?;
     let mut raw_record = csv::ByteRecord::new();
     let headers = reader.byte_headers()?.clone();
@@ -104,7 +105,7 @@ fn read_importation_schedule(
     Ok(())
 }
 
-fn load_importation_timeseries(context: &mut Context) -> Result<(), IxaError> {
+fn load_importation_timeseries(context: &mut Context) -> Result<(), ModelError> {
     let Params {
         imported_cases_timeseries,
         ..
@@ -113,7 +114,7 @@ fn load_importation_timeseries(context: &mut Context) -> Result<(), IxaError> {
         if let Some(filename) = &imported_cases_timeseries.filename {
             read_importation_schedule(context, filename.clone())?;
         } else {
-            return Err(IxaError::IxaError(
+            return Err(ModelError::ModelError(
                 "Importation from file is turned on but no filename was provided.".to_string(),
             ));
         }
@@ -123,7 +124,7 @@ fn load_importation_timeseries(context: &mut Context) -> Result<(), IxaError> {
 
 /// Initializes the infection importation module by loading the initial prevalence and importation timeseries according to the provided parameters.
 /// Infectiousness rate functions must be loaded in the model prior to initializng the initial prevalence because of dependency on infection duration
-pub fn init(context: &mut Context) -> Result<(), IxaError> {
+pub fn init(context: &mut Context) -> Result<(), ModelError> {
     load_initial_prevalence(context);
     load_importation_timeseries(context)?;
     Ok(())
@@ -141,6 +142,7 @@ mod test {
     use ixa::assert_almost_eq;
 
     use crate::Age;
+    use crate::error::ModelError;
     use crate::population_loader::PersonId;
     use crate::{
         infection_importation::{
@@ -355,15 +357,15 @@ mod test {
 
         let result = load_importation_timeseries(&mut context).err();
         match result {
-            Some(IxaError::IxaError(message)) => {
+            Some(ModelError::ModelError(message)) => {
                 assert_eq!(
                     message,
                     "Importation from file is turned on but no filename was provided.".to_string()
                 );
             }
-            None => panic!("Expected an IxaError but got no error at all."),
+            None => panic!("Expected a ModelError but got no error at all."),
             Some(_) => panic!(
-                "Expected an IxaError with a specific message, but got a different error or no error at all."
+                "Expected an ModelError with a specific message, but got a different error or no error at all."
             ),
         }
     }
