@@ -19,6 +19,7 @@ pub enum RateFnType {
     Constant { rate: f64, duration: f64 },
 }
 
+// TODO: This should use the same structure as wrappedsettingid
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Hash, PartialEq, Eq)]
 pub enum CoreSettingsTypes {
     Home,

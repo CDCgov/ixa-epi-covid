@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use core::f64;
 use std::hash::Hash;
 
-use crate::{Age, population_loader::{CommunityId, HomeId, Person, PersonId, SchoolId, WorkId}};
+use crate::{Age, ContextParametersExt, Params, parameters::CoreSettingsTypes, population_loader::{CommunityId, HomeId, Person, PersonId, SchoolId, WorkId}};
 
 define_rng!(SettingRng);
 
@@ -92,7 +92,7 @@ trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt {
 impl ContextSettingExtPrivate for Context {}
 
 #[allow(private_bounds)]
-pub trait ContextSettingExt: PluginContext + ContextEntitiesExt + ContextSettingExtPrivate {
+pub trait ContextSettingExt: PluginContext + ContextEntitiesExt + ContextSettingExtPrivate + ContextParametersExt {
     fn calculate_current_infectiousness_multiplier_for_person(&self, _person_id: PersonId) -> f64 {
         return 0.1;
     }
@@ -114,17 +114,46 @@ pub trait ContextSettingExt: PluginContext + ContextEntitiesExt + ContextSetting
     }
 
     fn sample_current_setting(&self, person_id: PersonId) -> Result<WrappedSettingId, IxaError> {
-        let home_id = self.get_property::<Person, HomeId>(person_id).0.unwrap();
-        // let alpha = get_alpha(home_id);
-        // let ratio = GlobalParams(ratio::home_id);
-        // let members = get_setting_members();
-        // let multiplier = ((members - 1) as f64).powf(alpha);
-        let _school_id = self.get_property::<Person, SchoolId>(person_id).0.unwrap();
-        let _work_id = self.get_property::<Person, WorkId>(person_id).0.unwrap();
-        let _community_id = self.get_property::<Person, CommunityId>(person_id).0.unwrap();
+        let Params {
+            itinerary_ratios,
+            ..
+        } = self.get_params();
+        let mut weights_vec = vec!();
+        let mut ids_vec = vec!();
+        if let Some(home_id) = self.get_property::<Person, HomeId>(person_id).0 {
+            let ratio = itinerary_ratios.get(&CoreSettingsTypes::Home).unwrap();
+            let members_size =self.query_entity_count::<Person,_ >((HomeId(Some(home_id)),));
+            let alpha = self.get_property::<HomeEntity, Alpha>(home_id).0;
+            weights_vec.push(((members_size - 1) as f64).powf(alpha) * ratio);
+            ids_vec.push(WrappedSettingId::Home(home_id));
+        }
 
-        
-        Ok(WrappedSettingId::Home(home_id))
+        if let Some(school_id) = self.get_property::<Person, SchoolId>(person_id).0 {
+            let ratio = itinerary_ratios.get(&CoreSettingsTypes::School).unwrap();
+            let members_size =self.query_entity_count::<Person,_ >((SchoolId(Some(school_id)),));
+            let alpha = self.get_property::<SchoolEntity, Alpha>(school_id).0;
+            weights_vec.push(((members_size - 1) as f64).powf(alpha) * ratio);
+            ids_vec.push(WrappedSettingId::School(school_id));
+        }
+
+        if let Some(work_id) = self.get_property::<Person, WorkId>(person_id).0 {
+            let ratio = itinerary_ratios.get(&CoreSettingsTypes::Workplace).unwrap();
+            let members_size =self.query_entity_count::<Person,_ >((WorkId(Some(work_id)),));
+            let alpha = self.get_property::<WorkEntity, Alpha>(work_id).0;
+            weights_vec.push(((members_size - 1) as f64).powf(alpha) * ratio);
+            ids_vec.push(WrappedSettingId::Work(work_id));
+        }
+
+        if let Some(community_id) = self.get_property::<Person, CommunityId>(person_id).0 {
+            let ratio = itinerary_ratios.get(&CoreSettingsTypes::CensusTract).unwrap();
+            let members_size =self.query_entity_count::<Person,_ >((CommunityId(Some(community_id)),));
+            let alpha = self.get_property::<CommunityEntity, Alpha>(community_id).0;
+            weights_vec.push(((members_size - 1) as f64).powf(alpha) * ratio);
+            ids_vec.push(WrappedSettingId::Community(community_id));
+        }
+
+        let setting_index = self.sample_weighted(SettingRng, &weights_vec);
+        Ok(ids_vec[setting_index])
     }
     
     fn add_person_to_setting(
@@ -219,6 +248,8 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
         context.get_property::<CommunityEntity, SettingCode>(context.get_property::<Person, CommunityId>(p1).0.unwrap())        
     );    
 
+    let setting_p1 = context.sample_current_setting(p1);
+    println!("Person {:?} sampled setting: {:?}", p1, setting_p1);
     // for i in 0..10_000_000 {
     //     let id = (i as f64 / 5.0).floor() as usize;
     //     let p_id = context.add_entity::<Person, _>(()).unwrap();

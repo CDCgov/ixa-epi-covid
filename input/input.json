@@ -1,8 +1,8 @@
 {
     "epimodel.GlobalParams": {
         "seed": 1234,
-        "max_time": 100.0,
-        "synth_population_file": "input/synth_pop_people_WY_10000000.csv",
+        "max_time": 0.0,
+        "synth_population_file": "input/synth_pop_people_WY_1000000.csv",
         "initial_prevalence": 0.0,
         "imported_cases_timeseries": {
             "include": true,
