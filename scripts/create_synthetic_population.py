@@ -9,6 +9,9 @@ import numpy as np
 import pandas as pd
 import requests
 import us
+from dotenv import load_dotenv
+
+load_dotenv()
 
 CENSUS_API_KEY = os.environ.get("CENSUS_API_KEY", "")
 
