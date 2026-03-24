@@ -4,10 +4,10 @@ use ixa::{ExecutionPhase, prelude::*};
 
 use crate::{
     error::ModelError, infection_importation, infection_propagation_loop, population_loader,
-    reports, settings,
+    reports, settings, symptom_status_manager,
 };
 
-pub fn initialize_model(context: &mut Context, seed: u64, max_time: f64) -> Result<(), ModelError> {
+pub fn initialize_model(context: &mut Context, seed: u64, max_time: f64, synth_population_override: Option<PathBuf>) -> Result<(), ModelError> {
     // Initialize the random number generator with the provided seed
     context.init_random(seed);
 
