@@ -6,9 +6,7 @@ use rand_distr::LogNormal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ContextParametersExt, Params,
-    infectiousness_manager::InfectionStatus,
-    population_loader::{Person, PersonId},
+    ContextParametersExt, Params, error::ModelError, infectiousness_manager::InfectionStatus, population_loader::{Person, PersonId}
 };
 
 define_rng!(SymptomsRng);
@@ -36,9 +34,9 @@ pub struct SymptomDelayDistLogNormParams {
 }
 
 impl SymptomDelayDistLogNormParams {
-    pub fn validate(&self, param_name: &str) -> Result<(), IxaError> {
+    pub fn validate(&self, param_name: &str) -> Result<(), ModelError> {
         if self.sigma < 0.0 {
-            Err(IxaError::IxaError(format!(
+            Err(ModelError::ModelError(format!(
                 "sigma value for {} is {}; log normal distribution sigmas must be non-negative.",
                 param_name, self.sigma
             )))

@@ -82,7 +82,7 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), M
     context.with_query_results::<Person, _>((Alive(true),), &mut |current_people| {
         //current_people = results.to_owned_vec();
         for person in current_people {
-            let value: (Age, InfectionStatus, SymptomStatus) = context.get_property(*person);
+            let value: (Age, InfectionStatus, SymptomStatus) = context.get_property(person);
             map_counts
                 .entry(value)
                 .and_modify(|count| *count += 1)

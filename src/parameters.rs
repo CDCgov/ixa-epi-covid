@@ -73,30 +73,30 @@ pub struct Params {
 }
 
 #[allow(clippy::too_many_lines)]
-fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error>> {
+fn validate_inputs(parameters: &Params) -> Result<(), ModelError> {
     if parameters.max_time < 0.0 {
-        return Err(Box::new(ModelError::ModelError(
+        return Err(ModelError::ModelError(
             "The max simulation running time must be non-negative.".to_string(),
-        )));
+        ));
     }
     // Initial conditions
     if !(0.0..=1.0).contains(&parameters.initial_prevalence) {
-        return Err(Box::new(ModelError::ModelError(
+        return Err(ModelError::ModelError(
             "The initial incidence must be between 0 and 1, inclusive.".to_string(),
-        )));
+        ));
     }
     // Check the infectiousness rate function
     match parameters.infectiousness_rate_fn {
         RateFnType::Constant { rate, duration } => {
             if rate < 0.0 {
-                return Err(Box::new(ModelError::ModelError(
+                return Err(ModelError::ModelError(
                     "The infectiousness rate must be non-negative.".to_string(),
-                )));
+                ));
             }
             if duration < 0.0 {
-                return Err(Box::new(ModelError::ModelError(
+                return Err(ModelError::ModelError(
                     "The infectiousness duration must be non-negative.".to_string(),
-                )));
+                ));
             }
         }
     }
@@ -124,7 +124,7 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error>
 
     for (param_name, param_value) in symptom_probability_params {
         if !(0.0..=1.0).contains(param_value) {
-            return Err(IxaError::IxaError(format!(
+            return Err(ModelError::ModelError(format!(
                 "{} = {} is not a valid transition probability; probabilities must be between 0 and 1, inclusive.",
                 param_name, param_value
             )));
@@ -160,19 +160,19 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error>
 
     for setting_type in parameters.settings_properties.keys() {
         if !parameters.itinerary_ratios.contains_key(setting_type) {
-            return Err(Box::new(ModelError::ModelError(format!(
+            return Err(ModelError::ModelError(format!(
                 "Itinerary ratios must contain all setting types defined in settings properties. Missing setting type: {:?}.",
                 setting_type
-            ))));
+            )));
         }
     }
 
     for setting_type in parameters.itinerary_ratios.keys() {
         if !parameters.settings_properties.contains_key(setting_type) {
-            return Err(Box::new(ModelError::ModelError(format!(
+            return Err(ModelError::ModelError(format!(
                 "Settings properties must contain all setting types defined in itinerary ratios. Missing setting type: {:?}.",
                 setting_type
-            ))));
+            )));
         }
     }
 
@@ -182,18 +182,18 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error>
         let alpha = setting.alpha;
         // Check alpha
         if !(0.0..=1.0).contains(&alpha) {
-            return Err(Box::new(ModelError::ModelError(
+            return Err(ModelError::ModelError(
                 "The alpha values for each setting must be between 0 and 1, inclusive.".to_string(),
-            )));
+            ));
         }
     }
 
     for &itinerary_ratio in parameters.itinerary_ratios.values() {
         // Check itinerary ratio
         if itinerary_ratio < 0.0 {
-            return Err(Box::new(ModelError::ModelError(
+            return Err(ModelError::ModelError(
                 "The itinerary ratio for each setting must be non-negative.".to_string(),
-            )));
+            ));
         }
         if let Some(sum) = itinerary_ratio_sum {
             itinerary_ratio_sum = Some(sum + itinerary_ratio);
@@ -204,9 +204,9 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error>
     if let Some(itinerary_ratio_sum) = itinerary_ratio_sum
         && itinerary_ratio_sum == 0.0
     {
-        return Err(Box::new(ModelError::ModelError(
+        return Err(ModelError::ModelError(
             "At least one itinerary ratio must be greater than zero.".to_string(),
-        )));
+        ));
     }
 
     Ok(())
@@ -348,7 +348,7 @@ mod tests {
         };
         let e = validate_inputs(&parameters).err();
         match e {
-            Some(err) => match *err.downcast::<ModelError>().unwrap() {
+            Some(err) => match {
                 ModelError::ModelError(msg) => {
                     assert_eq!(
                         msg,
@@ -385,20 +385,18 @@ mod tests {
             ),
             ..Default::default()
         };
-        let e = validate_inputs(&parameters).err();
+        let e = validate_inputs(&parameters).err();        
         match e {
-            Some(err) => match *err.downcast::<ModelError>().unwrap() {
-                ModelError::ModelError(msg) => {
-                    assert_eq!(
-                        msg,
-                        "At least one itinerary ratio must be greater than zero.".to_string()
-                    );
-                }
-                ue => panic!(
-                    "Expected an error that at least one itinerary ratio must be greater than zero. Instead got {:?}",
-                    ue.to_string()
-                ),
-            },
+            Some(ModelError::ModelError(msg)) => {
+                assert_eq!(
+                    msg,
+                    "At least one itinerary ratio must be greater than zero.".to_string()
+                );
+            }
+            Some(ue) => panic!(
+                "Expected an error that at least one itinerary ratio must be greater than zero. Instead got {:?}",
+                ue.to_string()
+            ),
             None => panic!("Expected an error. Instead, validation passed with no errors."),
         }
     }
