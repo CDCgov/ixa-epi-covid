@@ -55,7 +55,7 @@ pub enum WrappedSettingId {
 // Setting properties:
 // alpha, setting code, setting category
 // Region?
-trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt {
+trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextParametersExt {
     fn sample_person_from_home(&self, home_id: HomeEntityId) -> Result<PersonId, IxaError> {
         let mut members: Vec<PersonId> = Vec::new();
         self.with_query_results::<Person, _>((HomeId(Some(home_id)),), &mut |results| {
@@ -88,31 +88,6 @@ trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt {
         let ind = self.sample_range(SettingRng, 0..members.len());
         Ok(members[ind])
     }
-}
-impl ContextSettingExtPrivate for Context {}
-
-#[allow(private_bounds)]
-pub trait ContextSettingExt: PluginContext + ContextEntitiesExt + ContextSettingExtPrivate + ContextParametersExt {
-    fn calculate_current_infectiousness_multiplier_for_person(&self, _person_id: PersonId) -> f64 {
-        return 0.1;
-    }
-    fn calculate_max_infectiousness_multiplier_for_person(&self, _person_id: PersonId) -> f64 {
-        return 0.1;
-    }
-
-    // TODO: This needs to sample until not person_id
-    fn sample_person_from_setting(
-        &self,
-        setting: WrappedSettingId,
-    ) -> Result<PersonId, IxaError> {
-        match setting {
-            WrappedSettingId::Home(home_id) => self.sample_person_from_home(home_id),
-            WrappedSettingId::School(school_id) => self.sample_person_from_school(school_id),
-            WrappedSettingId::Work(work_id) => self.sample_person_from_work(work_id),
-            WrappedSettingId::Community(community_id) => self.sample_person_from_community(community_id),     
-        }
-    }
-
     fn get_setting_size(&self, setting: WrappedSettingId) -> Result<usize, IxaError> {
         match setting {
             WrappedSettingId::Home(home_id) => Ok(self.query_entity_count::<Person,_ >((HomeId(Some(home_id)),))),
@@ -140,13 +115,6 @@ pub trait ContextSettingExt: PluginContext + ContextEntitiesExt + ContextSetting
             WrappedSettingId::Community(_) => Ok(*itinerary_ratios.get(&CoreSettingsTypes::CensusTract).unwrap()),     
         }
     }
-
-    fn calculate_multipler(&self, setting: WrappedSettingId) -> Result<f64, IxaError> {
-        let size = self.get_setting_size(setting)?;
-        let alpha = self.get_setting_alpha(setting)?;
-        Ok(((size - 1) as f64).powf(alpha))
-    }
-
     fn get_active_settings_for_person(&self, person_id: PersonId) -> Result<Vec<WrappedSettingId>, IxaError> {
         let mut active_settings = Vec::new();
         if let Some(home_id) = self.get_property::<Person, HomeId>(person_id).0 {
@@ -164,24 +132,91 @@ pub trait ContextSettingExt: PluginContext + ContextEntitiesExt + ContextSetting
         Ok(active_settings)
     }
 
+
+}
+impl ContextSettingExtPrivate for Context {}
+
+#[allow(private_bounds)]
+pub trait ContextSettingExt: PluginContext + ContextEntitiesExt + ContextSettingExtPrivate + ContextParametersExt {
+    fn calculate_current_infectiousness_multiplier_for_person(&self, person_id: PersonId) -> f64 {
+        let active_settings = self.get_active_settings_for_person(person_id).unwrap();
+        let mut current_inf = 0.0;
+        for setting_id in active_settings.iter() {
+            let multiplier = self.calculate_multipler(*setting_id).unwrap();
+            let ratio = self.get_setting_ratio(*setting_id).unwrap();
+            current_inf +=  ratio * multiplier;
+        }
+        return current_inf;
+    }
+    fn calculate_max_infectiousness_multiplier_for_person(&self, person_id: PersonId) -> f64 {
+        let active_settings = self.get_active_settings_for_person(person_id).unwrap();
+        let mut max_inf = 0.0;
+        for setting_id in active_settings.iter() {
+            let multiplier = self.calculate_multipler(*setting_id).unwrap();
+            max_inf = f64::max(max_inf, multiplier);
+        }
+        return max_inf;
+    }
+
+    fn sample_person_from_setting(
+        &self,
+        setting: WrappedSettingId,
+    ) -> Result<PersonId, IxaError> {
+        match setting {
+            WrappedSettingId::Home(home_id) => self.sample_person_from_home(home_id),
+            WrappedSettingId::School(school_id) => self.sample_person_from_school(school_id),
+            WrappedSettingId::Work(work_id) => self.sample_person_from_work(work_id),
+            WrappedSettingId::Community(community_id) => self.sample_person_from_community(community_id),     
+        }
+    }
+
+    fn sample_from_setting_with_exclusion(
+        &self,
+        person_id: PersonId,
+        setting: WrappedSettingId,
+    ) -> Result<Option<PersonId>, IxaError> {
+        if self.get_setting_size(setting)? == 1 {
+            return Ok(None)
+        }
+        loop {
+            let sampled_person = self.sample_person_from_setting(setting)?;
+            if sampled_person != person_id {
+                return Ok(Some(sampled_person))
+            }
+        }
+    }
+    
+    fn calculate_multipler(&self, setting: WrappedSettingId) -> Result<f64, IxaError> {
+        let size = self.get_setting_size(setting)?;
+        let alpha = self.get_setting_alpha(setting)?;
+        Ok(((size - 1) as f64).powf(alpha))
+    }
+
+    
     fn sample_active_setting(&self, person_id: PersonId) -> Result<WrappedSettingId, IxaError> {
         let mut weights_vec = vec!();
         let ids_vec = self.get_active_settings_for_person(person_id)?;
-
+        let mut sum_weights = 0.0;
         for id in ids_vec.iter() {
             let ratio = self.get_setting_ratio(*id)?;
             let multiplier = self.calculate_multipler(*id)?;
-            println!("Setting {:?} has multiplier: {:?} with ratio: {:?}", id, multiplier, ratio);
+            //println!("Setting {:?} has multiplier: {:?} with ratio: {:?}", id, multiplier, ratio);
             weights_vec.push(multiplier * ratio);
+            sum_weights += multiplier * ratio;
         }
 
-        println!("Person {:?} has weights vec {:?} and ids vec {:?}",
-            person_id,
-            weights_vec,
-            ids_vec
-        );
-        let setting_index = self.sample_weighted(SettingRng, &weights_vec);
-        Ok(ids_vec[setting_index])
+        // println!("Person {:?} has weights vec {:?} and ids vec {:?}",
+        //     person_id,
+        //     weights_vec,
+        //     ids_vec
+        // );
+        if sum_weights > 0.0 {
+            let setting_index = self.sample_weighted(SettingRng, &weights_vec);
+            Ok(ids_vec[setting_index])
+        } else {
+            let setting_index = self.sample_range(SettingRng, 0..ids_vec.len());
+            Ok(ids_vec[setting_index])
+        }
     }
     
     fn add_person_to_setting(
@@ -270,9 +305,9 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
     context.add_person_to_setting(p1, SettingCategory::Community, SettingCode(c1), Alpha(0.1))?;
 
     context.add_person_to_setting(p2, SettingCategory::Home, SettingCode(h1), Alpha(0.1))?;
-    context.add_person_to_setting(p2, SettingCategory::School, SettingCode(s1), Alpha(0.1))?;
-    context.add_person_to_setting(p2, SettingCategory::Work, SettingCode(w1), Alpha(0.1))?;
-    context.add_person_to_setting(p2, SettingCategory::Community, SettingCode(c1), Alpha(0.1))?;
+    //context.add_person_to_setting(p2, SettingCategory::School, SettingCode(s1), Alpha(0.1))?;
+    //context.add_person_to_setting(p2, SettingCategory::Work, SettingCode(w1), Alpha(0.1))?;
+    //context.add_person_to_setting(p2, SettingCategory::Community, SettingCode(c1), Alpha(0.1))?;
     
     println!("Person {:?} with home: {:?}, work: {:?}, school: {:?}, comm: {:?}",
         p1,
@@ -282,10 +317,17 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
         context.get_property::<CommunityEntity, SettingCode>(context.get_property::<Person, CommunityId>(p1).0.unwrap())        
     );    
 
-    let setting_p1 = context.sample_active_setting(p1);
-    let setting_p2 = context.sample_active_setting(p2);
-    println!("Person {:?} sampled setting: {:?}", p1, setting_p1);
-    println!("Person {:?} sampled setting: {:?}", p2, setting_p2);
+    let setting_p1 = context.sample_active_setting(p1).unwrap();
+    let setting_p2 = context.sample_active_setting(p2).unwrap();
+    let settings_p1 = context.get_active_settings_for_person(p1).unwrap();
+    let sampled_p = context.sample_from_setting_with_exclusion(p1, setting_p1);
+
+    let sampled_p2 = context.sample_from_setting_with_exclusion(p2, setting_p2);
+    println!("Person {:?} active settings: {:?} - sampled: {:?}", p1, settings_p1, setting_p1);
+    println!("Setting {:?} - person sampled: {:?}", setting_p1, sampled_p);    
+    println!("Person {:?} - setting sampled: {:?}", p2, setting_p2);
+    println!("Setting {:?} - person sampled: {:?}", setting_p2, sampled_p2);
+    //println!("Person {:?} sampled setting: {:?}", p2, setting_p2);
     // for i in 0..10_000_000 {
     //     let id = (i as f64 / 5.0).floor() as usize;
     //     let p_id = context.add_entity::<Person, _>(()).unwrap();

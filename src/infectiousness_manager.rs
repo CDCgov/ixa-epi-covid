@@ -74,27 +74,29 @@ define_rng!(ForecastRng);
 pub fn infection_attempt(context: &mut Context, person_id: PersonId) -> Option<PersonId> {
     let _span = open_span("infection_attempt");
     let setting = context.sample_active_setting(person_id).unwrap();
-    let next_contact = context
-        .sample_person_from_setting(setting)
-        .unwrap();
-    match context.get_property::<Person, InfectionStatus>(next_contact) {
-        InfectionStatus::Susceptible => {
-            increment_named_count("infection_success");
-            trace!(
-                "Infection attempt successful. Person {}, setting id {:?}, infecting {}",
-                person_id,
-                setting,
-                next_contact
-            );
-            context.infect_person(
-                next_contact,
-                Some(person_id),
-                Some(setting),
-            );
-            Some(next_contact)
+    if let Some(next_contact) = context
+        .sample_from_setting_with_exclusion(person_id, setting)
+        .unwrap() {
+            match context.get_property::<Person, InfectionStatus>(next_contact) {
+                InfectionStatus::Susceptible => {
+                    increment_named_count("infection_success");
+                    trace!(
+                        "Infection attempt successful. Person {}, setting id {:?}, infecting {}",
+                        person_id,
+                        setting,
+                        next_contact
+                    );
+                    context.infect_person(
+                        next_contact,
+                        Some(person_id),
+                        Some(setting),
+                    );
+                    return Some(next_contact)
+                }
+                _ => return None,
+            }
         }
-        _ => None,
-    }
+    return None;
 }
 
 pub struct Forecast {

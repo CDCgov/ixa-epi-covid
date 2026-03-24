@@ -1,11 +1,11 @@
-use ixa::{csv, prelude::*};
+use ixa::{HashMap, csv, prelude::*};
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::parameters::{ContextParametersExt, Params};
+use crate::parameters::{ContextParametersExt, CoreSettingsTypes, Params};
 use crate::settings::{
-    Alpha, CommunityEntityId, ContextSettingExt, HomeEntityId, SchoolEntityId, SettingCategory, SettingCode, WorkEntityId
+    Alpha, CommunityEntityId, ContextSettingExt, HomeEntityId, SchoolEntityId, SettingCategory, SettingCode, SettingProperties, WorkEntityId
 };
 use ixa::profiling::open_span;
 
@@ -45,6 +45,7 @@ pub struct CommunityId(pub Option<CommunityEntityId>);
 fn create_person_from_record(
     context: &mut Context,
     person_record: &PeopleRecord,
+    settings_properties: &HashMap<CoreSettingsTypes, SettingProperties>
 ) -> Result<(), IxaError> {
     // Create itinerary entries for all setting memberships in input file
     let tract: String = String::from_utf8(person_record.homeId[..11].to_owned())?;
@@ -58,20 +59,20 @@ fn create_person_from_record(
         person_id,
         SettingCategory::Home,
         SettingCode(home_id.parse()?),
-        Alpha(0.1))?;
+        Alpha(settings_properties.get(&CoreSettingsTypes::Home).unwrap().alpha))?;
 
     context.add_person_to_setting(
         person_id,
         SettingCategory::Community,
         SettingCode(tract.parse()?),
-        Alpha(0.1))?;
+        Alpha(settings_properties.get(&CoreSettingsTypes::CensusTract).unwrap().alpha))?;
 
     if !school_string.is_empty() {
         context.add_person_to_setting(
             person_id,
             SettingCategory::School,
             SettingCode(school_string.parse()?),
-            Alpha(0.1))?;
+            Alpha(settings_properties.get(&CoreSettingsTypes::School).unwrap().alpha))?;
     }
 
     if !workplace_string.is_empty() {
@@ -79,26 +80,35 @@ fn create_person_from_record(
             person_id,
             SettingCategory::Work,
             SettingCode(workplace_string.parse()?),
-            Alpha(0.1))?;
+            Alpha(settings_properties.get(&CoreSettingsTypes::Workplace).unwrap().alpha))?;
     }
 
     Ok(())
 }
 
 fn load_synth_population(context: &mut Context, synth_input_file: PathBuf) -> Result<(), IxaError> {
+    let Params {
+        settings_properties,
+        ..
+    } = context.get_params().clone();
     let mut reader = csv::Reader::from_path(synth_input_file)?;
     let mut raw_record = csv::ByteRecord::new();
     let headers = reader.byte_headers()?.clone();
 
     while reader.read_byte_record(&mut raw_record)? {
         let record: PeopleRecord = raw_record.deserialize(Some(&headers))?;
-        create_person_from_record(context, &record)?;
+        create_person_from_record(context, &record, &settings_properties)?;
     }
     Ok(())
 }
 
 pub fn init(context: &mut Context) -> Result<(), IxaError> {
-    let _span = open_span("load_synth_population");
+    context.index_property::<Person, HomeId>();
+    context.index_property::<Person, SchoolId>();
+    context.index_property::<Person, WorkId>();
+    context.index_property::<Person, CommunityId>();
+    
+    let _span = open_span("load_synth_population");    
     let Params {
         synth_population_file,
         ..
