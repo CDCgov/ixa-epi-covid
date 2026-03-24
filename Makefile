@@ -46,3 +46,14 @@ profile-large:
 
 profile-xl:
 	make profile SIZE=10_000_000
+
+# Run benchmarks (requires input/synth_pop_people_WY_1_000.csv and input/synth_pop_people_WY_10_000.csv)
+bench:
+	cargo bench --bench infection_loop
+
+# Compare benchmarks against a base ref (default: HEAD, i.e. uncommitted changes)
+# Usage: make bench-compare              # uncommitted changes vs last commit
+#        make bench-compare BASE=main    # working tree vs main
+BASE ?= HEAD
+bench-compare:
+	uv run scripts/bench_compare.py $(BASE)
