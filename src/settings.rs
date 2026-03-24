@@ -1,4 +1,4 @@
-use ixa::{HashSetExt, prelude::*};
+use ixa::{prelude::*};
 use serde::{Deserialize, Serialize};
 
 use core::f64;
@@ -57,36 +57,32 @@ pub enum WrappedSettingId {
 // Region?
 trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextParametersExt {
     fn sample_person_from_home(&self, home_id: HomeEntityId) -> Result<PersonId, IxaError> {
-        let mut members: Vec<PersonId> = Vec::new();
-        self.with_query_results::<Person, _>((HomeId(Some(home_id)),), &mut |results| {
-            members = results.to_owned_vec();
-        });
-        let ind = self.sample_range(SettingRng, 0..members.len());
-        Ok(members[ind])
+        if let Some(sample) = self.sample_entity::<Person, _, _>(SettingRng, (HomeId(Some(home_id)),)) {
+            return Ok(sample);
+        } else {
+            return Err(IxaError::IxaError(format!("No members found for home id: {:?}", home_id)));
+        }
     }
     fn sample_person_from_work(&self, work_id: WorkEntityId) -> Result<PersonId, IxaError> {
-        let mut members: Vec<PersonId> = Vec::new();
-        self.with_query_results::<Person, _>((WorkId(Some(work_id)),), &mut |results| {
-            members = results.to_owned_vec();
-        });
-        let ind = self.sample_range(SettingRng, 0..members.len());
-        Ok(members[ind])
+        if let Some(sample) = self.sample_entity::<Person, _, _>(SettingRng, (WorkId(Some(work_id)),)) {
+            return Ok(sample);
+        } else {
+            return Err(IxaError::IxaError(format!("No members found for work id: {:?}", work_id)));
+        }
     }
     fn sample_person_from_school(&self, school_id: SchoolEntityId) -> Result<PersonId, IxaError> {
-        let mut members: Vec<PersonId> = Vec::new();
-        self.with_query_results::<Person, _>((SchoolId(Some(school_id)),), &mut |results| {
-            members = results.to_owned_vec();
-        });
-        let ind = self.sample_range(SettingRng, 0..members.len());
-        Ok(members[ind])
+        if let Some(sample) = self.sample_entity::<Person, _, _>(SettingRng, (SchoolId(Some(school_id)),)) {
+            return Ok(sample);
+        } else {
+            return Err(IxaError::IxaError(format!("No members found for school id: {:?}", school_id)));
+        }
     }
     fn sample_person_from_community(&self, community_id: CommunityEntityId) -> Result<PersonId, IxaError> {
-        let mut members: Vec<PersonId> = Vec::new();
-        self.with_query_results::<Person, _>((CommunityId(Some(community_id)),), &mut |results| {
-            members = results.to_owned_vec();
-        });
-        let ind = self.sample_range(SettingRng, 0..members.len());
-        Ok(members[ind])
+        if let Some(sample) = self.sample_entity::<Person, _, _>(SettingRng, (CommunityId(Some(community_id)),)) {
+            return Ok(sample);
+        } else {
+            return Err(IxaError::IxaError(format!("No members found for community id: {:?}", community_id)));
+        }
     }
     fn get_setting_size(&self, setting: WrappedSettingId) -> Result<usize, IxaError> {
         match setting {
