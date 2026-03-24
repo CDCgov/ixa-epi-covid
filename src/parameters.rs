@@ -385,7 +385,7 @@ mod tests {
             ),
             ..Default::default()
         };
-        let e = validate_inputs(&parameters).err();        
+        let e = validate_inputs(&parameters).err();
         match e {
             Some(err) => match *err.downcast::<ModelError>().unwrap() {
                 ModelError::ModelError(msg) => {

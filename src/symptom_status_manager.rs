@@ -6,7 +6,10 @@ use rand_distr::LogNormal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ContextParametersExt, Params, error::ModelError, infectiousness_manager::InfectionStatus, population_loader::{Person, PersonId}
+    ContextParametersExt, Params,
+    error::ModelError,
+    infectiousness_manager::InfectionStatus,
+    population_loader::{Person, PersonId},
 };
 
 define_rng!(SymptomsRng);
