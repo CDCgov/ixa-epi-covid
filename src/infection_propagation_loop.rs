@@ -83,27 +83,32 @@ mod test {
         parameters::{ContextParametersExt, CoreSettingsTypes, GlobalParams, Params, RateFnType},
         population_loader::Person,
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
-        settings::{
-            SettingProperties
-        },
+        settings::SettingProperties,
     };
 
     fn set_homogeneous_mixing_itinerary(
         context: &mut Context,
-        person_id: PersonId
+        person_id: PersonId,
     ) -> Result<(), IxaError> {
-        let community_id= context.query_result_iterator::<CommunityEntity, _> ((SettingCode(0),)).next();
+        let community_id = context
+            .query_result_iterator::<CommunityEntity, _>((SettingCode(0),))
+            .next();
         if community_id.is_some() {
-            context.set_property::<Person,CommunityId>(person_id, CommunityId(community_id));
+            context.set_property::<Person, CommunityId>(person_id, CommunityId(community_id));
         } else {
-            context.add_entity::<CommunityEntity, _>((SettingCode(0), Alpha(0.0),)).map(|community_id| {
-                context.set_property::<Person,CommunityId>(person_id, CommunityId(Some(community_id)));
-            })?;
+            context
+                .add_entity::<CommunityEntity, _>((SettingCode(0), Alpha(0.0)))
+                .map(|community_id| {
+                    context.set_property::<Person, CommunityId>(
+                        person_id,
+                        CommunityId(Some(community_id)),
+                    );
+                })?;
         }
         Ok(())
     }
 
-    fn setup_context(seed: u64, rate: f64, alpha: f64, duration: f64,) -> Context {
+    fn setup_context(seed: u64, rate: f64, alpha: f64, duration: f64) -> Context {
         let mut context = Context::new();
 
         let parameters = Params {
@@ -112,15 +117,12 @@ mod test {
             infectiousness_rate_fn: RateFnType::Constant { rate, duration },
             settings_properties: HashMap::from_iter(
                 [
-                    (CoreSettingsTypes::Home, SettingProperties { alpha: alpha }),
-                    (
-                        CoreSettingsTypes::Workplace,
-                        SettingProperties { alpha: alpha },
-                    ),
+                    (CoreSettingsTypes::Home, SettingProperties { alpha }),
+                    (CoreSettingsTypes::Workplace, SettingProperties { alpha }),
                     (
                         CoreSettingsTypes::CensusTract,
                         SettingProperties {
-                            alpha: alpha,
+                            alpha,
                             // Itinerary is specified in the `set_homogeneous_mixing_itinerary` function
                             // so we do not need to set it here.
                         },
@@ -415,18 +417,31 @@ mod test {
                 let person_home: PersonId = context.add_entity((Age(30),)).unwrap();
                 let person_censustract: PersonId = context.add_entity((Age(30),)).unwrap();
                 let person_workplace: PersonId = context.add_entity((Age(30),)).unwrap();
-                
-                let home_id = context.add_entity::<HomeEntity, _>((SettingCode(0), Alpha(0.0),)).unwrap();
-                let workplace_id = context.add_entity::<WorkEntity, _>((SettingCode(0), Alpha(0.0),)).unwrap();
-                let census_tract_id = context.add_entity::<CommunityEntity, _>((SettingCode(0), Alpha(0.0),)).unwrap();
+
+                let home_id = context
+                    .add_entity::<HomeEntity, _>((SettingCode(0), Alpha(0.0)))
+                    .unwrap();
+                let workplace_id = context
+                    .add_entity::<WorkEntity, _>((SettingCode(0), Alpha(0.0)))
+                    .unwrap();
+                let census_tract_id = context
+                    .add_entity::<CommunityEntity, _>((SettingCode(0), Alpha(0.0)))
+                    .unwrap();
                 context.set_property::<Person, HomeId>(person_home, HomeId(Some(home_id)));
-                context.set_property::<Person, WorkId>(person_workplace, WorkId(Some(workplace_id)));
-                context.set_property::<Person, CommunityId>(person_censustract, CommunityId(Some(census_tract_id)));
+                context
+                    .set_property::<Person, WorkId>(person_workplace, WorkId(Some(workplace_id)));
+                context.set_property::<Person, CommunityId>(
+                    person_censustract,
+                    CommunityId(Some(census_tract_id)),
+                );
 
                 context.set_property::<Person, HomeId>(infectious_person, HomeId(Some(home_id)));
-                context.set_property::<Person, WorkId>(infectious_person, WorkId(Some(workplace_id)));
-                context.set_property::<Person, CommunityId>(infectious_person, CommunityId(Some(census_tract_id)));
-                
+                context
+                    .set_property::<Person, WorkId>(infectious_person, WorkId(Some(workplace_id)));
+                context.set_property::<Person, CommunityId>(
+                    infectious_person,
+                    CommunityId(Some(census_tract_id)),
+                );
 
                 // We don't want infectious people beyond our index case to be able to transmit, so we
                 // have to do setup on our own since just calling `init` will trigger a watcher for
@@ -461,11 +476,14 @@ mod test {
                 schedule_next_forecasted_infection(&mut context, infectious_person);
                 context.execute();
             }
-            println!("For ratio {:?}, average number of infections in home: {:?}, census tract: {:?}, workplace: {:?}", 
-            ratio, *num_infected_home.borrow() as f64 / num_sims as f64, 
-            *num_infected_censustract.borrow() as f64 / num_sims as f64, 
-            *num_infected_workplace.borrow() as f64 / num_sims as f64);
-            
+            println!(
+                "For ratio {:?}, average number of infections in home: {:?}, census tract: {:?}, workplace: {:?}",
+                ratio,
+                *num_infected_home.borrow() as f64 / num_sims as f64,
+                *num_infected_censustract.borrow() as f64 / num_sims as f64,
+                *num_infected_workplace.borrow() as f64 / num_sims as f64
+            );
+
             #[allow(clippy::cast_precision_loss)]
             let avg_number_infections_home = *num_infected_home.borrow() as f64 / num_sims as f64;
             assert_almost_eq!(avg_number_infections_home, ratio[0] / sum_of_ratio, 0.05);

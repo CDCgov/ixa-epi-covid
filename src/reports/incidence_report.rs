@@ -173,7 +173,8 @@ mod test {
         parameters::{ContextParametersExt, GlobalParams, Params},
         population_loader::{Age, Person, PersonId},
         rate_fns::load_rate_fns,
-        reports::ReportParams, settings::{Alpha, HomeEntityId, SettingCode, WrappedSettingId},
+        reports::ReportParams,
+        settings::{Alpha, HomeEntityId, SettingCode, WrappedSettingId},
     };
     use ixa::{csv, prelude::*};
     use std::path::PathBuf;
@@ -212,7 +213,7 @@ mod test {
 
         let source: PersonId = context.add_entity((Age(42),)).unwrap();
         let target: PersonId = context.add_entity((Age(43),)).unwrap();
-        let home: HomeEntityId = context.add_entity((SettingCode(0), Alpha(0.0),)).unwrap();
+        let home: HomeEntityId = context.add_entity((SettingCode(0), Alpha(0.0))).unwrap();
         let setting = Some(WrappedSettingId::Home(home));
         let infection_time = 1.0;
 
@@ -271,7 +272,7 @@ mod test {
 
         let source: PersonId = context.add_entity((Age(42),)).unwrap();
         let target: PersonId = context.add_entity((Age(43),)).unwrap();
-        let home: HomeEntityId = context.add_entity((SettingCode(0), Alpha(0.0),)).unwrap();
+        let home: HomeEntityId = context.add_entity((SettingCode(0), Alpha(0.0))).unwrap();
         let setting = Some(WrappedSettingId::Home(home));
         let infection_time = 1.0;
 

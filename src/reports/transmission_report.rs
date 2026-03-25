@@ -44,12 +44,7 @@ pub fn init(context: &mut Context, file_name: &str) -> Result<(), IxaError> {
             ..
         } = event.current
         {
-            record_transmission_event(
-                context,
-                event.entity_id,
-                infected_by,
-                infection_setting_id,
-            );
+            record_transmission_event(context, event.entity_id, infected_by, infection_setting_id);
         }
     });
     Ok(())
@@ -63,7 +58,8 @@ mod test {
         parameters::{ContextParametersExt, GlobalParams, Params},
         population_loader::PersonId,
         rate_fns::load_rate_fns,
-        reports::ReportParams, settings::{Alpha, HomeEntityId, SettingCode, WrappedSettingId},
+        reports::ReportParams,
+        settings::{Alpha, HomeEntityId, SettingCode, WrappedSettingId},
     };
     use ixa::{
         Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt, ContextReportExt,
@@ -103,7 +99,7 @@ mod test {
 
         let source: PersonId = context.add_entity((Age(30),)).unwrap();
         let target: PersonId = context.add_entity((Age(30),)).unwrap();
-        let home: HomeEntityId = context.add_entity((SettingCode(0), Alpha(0.0),)).unwrap();
+        let home: HomeEntityId = context.add_entity((SettingCode(0), Alpha(0.0))).unwrap();
         let setting = Some(WrappedSettingId::Home(home));
         let infection_time = 1.0;
 
@@ -131,8 +127,8 @@ mod test {
         assert!(file_path.exists());
         // let mut reader = csv::Reader::from_path(file_path).unwrap();
         // let mut line_count = 0;
-        // Something weird is going on where the transmission report prints out the entity id and not 
-        // the wrapped setting id 
+        // Something weird is going on where the transmission report prints out the entity id and not
+        // the wrapped setting id
         // commenting for now but will need to investigate further
         // for result in reader.deserialize() {
         //     println!("Deserializing record: {:?}", result);
