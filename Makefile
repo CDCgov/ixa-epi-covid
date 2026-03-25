@@ -1,47 +1,48 @@
 STATE ?=WY
-N ?= 1000
-PROFILE_SIZE ?= 1m
+SIZE ?= 1000
 
-.PHONY: all uv-sync synthetic-population run run-1m run-10m profile setup-r
+# Normalize SIZE to use underscores (e.g., 1000 -> 1_000, 1000000 -> 1_000_000)
+NORMALIZED_SIZE := $(shell python3 -c "print(f'{int(\"$(SIZE)\".replace(\"_\",\"\")):_}')")
+
+.PHONY: all uv-sync synthetic-population run profile
 all: uv-sync
 
 # Initialize the uv environment for Python scripts
 uv-sync:
 	uv sync --all-packages --all-extras --dev --locked
 
-# Generate a synthetic population (configure with STATE and N)
+# Generate a synthetic population (configure with STATE and SIZE)
 synthetic-population:
-	Rscript scripts/create_synthetic_population.R $(STATE) $(N)
+	uv run scripts/create_synthetic_population.py --state $(STATE) --size $(NORMALIZED_SIZE)
 
-# Run the model with the default config
-run:
-	cargo run --release --features profiling -- -c input/input.json -o output --no-stats -f
+input/synth_pop_people_$(STATE)_$(NORMALIZED_SIZE).csv:
+	make synthetic-population STATE=$(STATE) SIZE=$(NORMALIZED_SIZE)
 
-# Generate a 1M WY population (if needed) and run the model with it
-run-1m: input/synth_pop_people_WY_1000000.csv
-	cargo run --release --features profiling -- -c input/input.json -o output --no-stats -f --synth-population input/synth_pop_people_WY_1000000.csv
+# Run the model with a synthetic population (e.g., make run SIZE=1_000_000)
+# Generates the population file if it doesn't exist.
+run: input/synth_pop_people_$(STATE)_$(NORMALIZED_SIZE).csv
+	cargo run --release --features profiling -- -c input/input.json -o output --no-stats -f --synth-population input/synth_pop_people_$(STATE)_$(NORMALIZED_SIZE).csv
 
-# Only runs if the file doesn't already exist
-input/synth_pop_people_WY_1000000.csv:
-	Rscript scripts/create_synthetic_population.R WY 1000000
+run-small:
+	make run SIZE=10_000
 
-# Generate a 10M WY population (if needed) and run the model with it
-run-10m: input/synth_pop_people_WY_10000000.csv
-	cargo run --release --features profiling -- -c input/input.json -o output --no-stats -f --synth-population input/synth_pop_people_WY_10000000.csv
+run-large:
+	make run SIZE=1_000_000
 
-# Only runs if the file doesn't already exist
-input/synth_pop_people_WY_10000000.csv:
-	Rscript scripts/create_synthetic_population.R WY 10000000
+run-xl:
+	make run SIZE=10_000_000
 
-PROFILE_N_1m = 1000000
-PROFILE_N_10m = 10000000
-PROFILE_FEATURES ?=
 
-# Profile the model with samply (PROFILE_SIZE=1m or 10m, PROFILE_FEATURES=profiling to enable ixa spans)
-profile: input/synth_pop_people_WY_$(PROFILE_N_$(PROFILE_SIZE)).csv
-	cargo build --profile profiling $(if $(PROFILE_FEATURES),--features $(PROFILE_FEATURES))
-	samply record target/profiling/ixa-epi-covid -c input/input.json -o output --no-stats -f -v --synth-population input/synth_pop_people_WY_$(PROFILE_N_$(PROFILE_SIZE)).csv
+# Profile the model with samply (e.g., make profile SIZE=1_000_000)
+profile: input/synth_pop_people_$(STATE)_$(NORMALIZED_SIZE).csv
+	cargo build --profile profiling
+	samply record target/profiling/ixa-epi-covid -c input/input.json -o output --no-stats -f -v --synth-population input/synth_pop_people_$(STATE)_$(NORMALIZED_SIZE).csv
 
-# Install required R packages for synthetic population generation
-setup-r:
-	Rscript -e 'install.packages(c("tidyverse", "tigris", "sf", "tidycensus", "patchwork", "data.table", "Rcpp"), repos="https://cloud.r-project.org")'
+profile-small:
+	make profile SIZE=10_000
+
+profile-large:
+	make profile SIZE=1_000_000
+
+profile-xl:
+	make profile SIZE=10_000_000
