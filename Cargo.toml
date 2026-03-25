@@ -32,6 +32,7 @@ codegen-units = 1
 # Release optimizations with debug info for profiling (e.g. samply)
 [profile.profiling]
 inherits = "release"
+lto = false # LTO clobbers debug symbols on some platforms.
 debug = true
 
 [lints.rust]
