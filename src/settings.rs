@@ -84,15 +84,6 @@ trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextPara
             return Err(IxaError::IxaError(format!("No members found for community id: {:?}", community_id)));
         }
     }
-    fn get_setting_size(&self, setting: WrappedSettingId) -> Result<usize, IxaError> {
-        match setting {
-            WrappedSettingId::Home(home_id) => Ok(self.query_entity_count::<Person,_ >((HomeId(Some(home_id)),))),
-            WrappedSettingId::School(school_id) => Ok(self.query_entity_count::<Person,_ >((SchoolId(Some(school_id)),))),
-            WrappedSettingId::Work(work_id) => Ok(self.query_entity_count::<Person,_ >((WorkId(Some(work_id)),))),
-            WrappedSettingId::Community(community_id) => Ok(self.query_entity_count::<Person,_ >((CommunityId(Some(community_id)),))),     
-        }
-    }
-
     fn get_setting_alpha(&self, setting: WrappedSettingId) -> Result<f64, IxaError> {
         match setting {
             WrappedSettingId::Home(home_id) => Ok(self.get_property::<HomeEntity, Alpha>(home_id).0),
@@ -111,6 +102,21 @@ trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextPara
             WrappedSettingId::Community(_) => Ok(*itinerary_ratios.get(&CoreSettingsTypes::CensusTract).unwrap()),     
         }
     }
+
+}
+impl ContextSettingExtPrivate for Context {}
+
+#[allow(private_bounds)]
+pub trait ContextSettingExt: PluginContext + ContextEntitiesExt + ContextSettingExtPrivate + ContextParametersExt {
+    fn get_setting_size(&self, setting: WrappedSettingId) -> Result<usize, IxaError> {
+        match setting {
+            WrappedSettingId::Home(home_id) => Ok(self.query_entity_count::<Person,_ >((HomeId(Some(home_id)),))),
+            WrappedSettingId::School(school_id) => Ok(self.query_entity_count::<Person,_ >((SchoolId(Some(school_id)),))),
+            WrappedSettingId::Work(work_id) => Ok(self.query_entity_count::<Person,_ >((WorkId(Some(work_id)),))),
+            WrappedSettingId::Community(community_id) => Ok(self.query_entity_count::<Person,_ >((CommunityId(Some(community_id)),))),     
+        }
+    }
+
     fn get_active_settings_for_person(&self, person_id: PersonId) -> Result<Vec<WrappedSettingId>, IxaError> {
         let mut active_settings = Vec::new();
         if let Some(home_id) = self.get_property::<Person, HomeId>(person_id).0 {
@@ -128,12 +134,6 @@ trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextPara
         Ok(active_settings)
     }
 
-
-}
-impl ContextSettingExtPrivate for Context {}
-
-#[allow(private_bounds)]
-pub trait ContextSettingExt: PluginContext + ContextEntitiesExt + ContextSettingExtPrivate + ContextParametersExt {
     fn calculate_current_infectiousness_multiplier_for_person(&self, person_id: PersonId) -> f64 {
         let active_settings = self.get_active_settings_for_person(person_id).unwrap();
         let mut current_inf = 0.0;
@@ -334,4 +334,216 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
     // }
     Ok(())
 }
+// To do: Write tests for each method like the one above in the init
+// Write a description with diagram 
+// Try to convey the issue that we don't have a generic type of entities (trait/generic/hieracrchy)
 
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::parameters::{CoreSettingsTypes, GlobalParams};
+    use ixa::HashMap;
+
+    fn setup() -> Context {
+        let mut context = Context::new();
+        let parameters = Params {
+            // We need to specify an itinerary split here even though we don't draw people from
+            // itineraries because `load_synth_population` calls `create_itinerary` for each person,
+            // and that function requires an itinerary write function to be set.
+            settings_properties: HashMap::from_iter(
+                [
+                    (CoreSettingsTypes::Home, SettingProperties { alpha: 0.0 }),
+                    (CoreSettingsTypes::School, SettingProperties { alpha: 0.0 }),
+                    (
+                        CoreSettingsTypes::Workplace,
+                        SettingProperties { alpha: 0.0 },
+                    ),
+                    (
+                        CoreSettingsTypes::CensusTract,
+                        SettingProperties { alpha: 0.0 },
+                    ),
+                ]
+                .into_iter()
+                .collect::<HashMap<_, _>>(),
+            ),
+            itinerary_ratios: HashMap::from_iter([
+                (CoreSettingsTypes::Home, 0.25),
+                (CoreSettingsTypes::School, 0.25),
+                (CoreSettingsTypes::Workplace, 0.25),
+                (CoreSettingsTypes::CensusTract, 0.25),
+            ]),
+            ..Default::default()
+        };
+        context
+            .set_global_property_value(GlobalParams, parameters)
+            .unwrap();
+        context
+    }
+
+    #[test]
+    fn test_sample_person_from_home() {
+        let mut context = setup();
+        let home_id = context.add_entity::<HomeEntity, _>((SettingCode(1), Alpha(0.5))).unwrap();
+        let person_id = context.add_entity::<Person, _>((Age(20),)).unwrap();
+        let sampled_none = context.sample_person_from_home(home_id);
+        assert!(sampled_none.is_err());
+        context.set_property::<Person, HomeId>(person_id, HomeId(Some(home_id)));
+        let sampled = context.sample_person_from_home(home_id).unwrap();
+        assert_eq!(sampled, person_id);
+    }
+
+    #[test]
+    fn test_sample_person_from_work() {
+        let mut context = setup();
+        let work_id = context.add_entity::<WorkEntity, _>((SettingCode(2), Alpha(0.5))).unwrap();
+        let person_id = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        context.set_property::<Person, WorkId>(person_id, WorkId(Some(work_id)));
+        let sampled = context.sample_person_from_work(work_id).unwrap();
+        assert_eq!(sampled, person_id);
+    }
+
+    #[test]
+    fn test_sample_person_from_school() {
+        let mut context = setup();
+        let school_id = context.add_entity::<SchoolEntity, _>((SettingCode(3), Alpha(0.5))).unwrap();
+        let person_id = context.add_entity::<Person, _>((Age(10),)).unwrap();
+        context.set_property::<Person, SchoolId>(person_id, SchoolId(Some(school_id)));
+        let sampled = context.sample_person_from_school(school_id).unwrap();
+        assert_eq!(sampled, person_id);
+    }
+
+    #[test]
+    fn test_sample_person_from_community() {
+        let mut context = setup();
+        let community_id = context.add_entity::<CommunityEntity, _>((SettingCode(4), Alpha(0.5))).unwrap();
+        let person_id = context.add_entity::<Person, _>((Age(40),)).unwrap();
+        context.set_property::<Person, CommunityId>(person_id, CommunityId(Some(community_id)));
+        let sampled = context.sample_person_from_community(community_id).unwrap();
+        assert_eq!(sampled, person_id);
+    }
+
+    #[test]
+    fn test_get_setting_size() {
+        let mut context = setup();
+        let home_id = context.add_entity::<HomeEntity, _>((SettingCode(5), Alpha(0.5))).unwrap();
+        let person1 = context.add_entity::<Person, _>((Age(20),)).unwrap();
+        let person2 = context.add_entity::<Person, _>((Age(21),)).unwrap();
+        context.set_property::<Person, HomeId>(person1, HomeId(Some(home_id)));
+        context.set_property::<Person, HomeId>(person2, HomeId(Some(home_id)));
+        let wrapped = WrappedSettingId::Home(home_id);
+        let size = context.get_setting_size(wrapped).unwrap();
+        assert_eq!(size, 2);
+    }
+
+    #[test]
+    fn test_get_setting_alpha() {
+        let mut context = setup();
+        let alpha = Alpha(0.7);
+        let work_id = context.add_entity::<WorkEntity, _>((SettingCode(6), alpha)).unwrap();
+        let wrapped = WrappedSettingId::Work(work_id);
+        let a = context.get_setting_alpha(wrapped).unwrap();
+        assert_eq!(a, 0.7);
+    }
+
+    #[test]
+    fn test_get_setting_ratio() {
+        let mut context = setup();
+        let school_id = context.add_entity::<SchoolEntity, _>((SettingCode(7), Alpha(0.5))).unwrap();
+        let wrapped = WrappedSettingId::School(school_id);
+        let ratio = context.get_setting_ratio(wrapped).unwrap();
+        assert!((ratio - 0.25).abs() < 1e-8);
+    }
+
+    #[test]
+    fn test_get_active_settings_for_person() {
+        let mut context = setup();
+        let home_id = context.add_entity::<HomeEntity, _>((SettingCode(7), Alpha(0.5))).unwrap();
+        let person_id = context.add_entity::<Person, _>((Age(22),)).unwrap();
+        context.set_property::<Person, HomeId>(person_id, HomeId(Some(home_id)));
+        let active = context.get_active_settings_for_person(person_id).unwrap();
+        assert!(active.contains(&WrappedSettingId::Home(home_id)));
+    }
+
+    #[test]
+    fn test_calculate_current_infectiousness_multiplier_for_person() {
+        let mut context = setup();
+        let home_id = context.add_entity::<HomeEntity, _>((SettingCode(8), Alpha(1.0))).unwrap();
+        let person_id = context.add_entity::<Person, _>((Age(23),)).unwrap();
+        context.set_property::<Person, HomeId>(person_id, HomeId(Some(home_id)));
+        let val = context.calculate_current_infectiousness_multiplier_for_person(person_id);
+        // size = 1, alpha = 1.0, ratio = 0.25, so multiplier = (1-1)^1 = 0
+        assert_eq!(val, 0.0);
+    }
+
+    #[test]
+    fn test_calculate_max_infectiousness_multiplier_for_person() {
+        let mut context = setup();
+        let home_id = context.add_entity::<HomeEntity, _>((SettingCode(9), Alpha(2.0))).unwrap();
+        let person_id = context.add_entity::<Person, _>((Age(24),)).unwrap();
+        context.set_property::<Person, HomeId>(person_id, HomeId(Some(home_id)));
+        let val = context.calculate_max_infectiousness_multiplier_for_person(person_id);
+        // size = 1, alpha = 2.0, so multiplier = (1-1)^2 = 0
+        assert_eq!(val, 0.0);
+    }
+
+    #[test]
+    fn test_sample_person_from_setting() {
+        let mut context = setup();
+        let comm_id = context.add_entity::<CommunityEntity, _>((SettingCode(10), Alpha(0.5))).unwrap();
+        let person_id = context.add_entity::<Person, _>((Age(25),)).unwrap();
+        context.set_property::<Person, CommunityId>(person_id, CommunityId(Some(comm_id)));
+        let wrapped = WrappedSettingId::Community(comm_id);
+        let sampled = context.sample_person_from_setting(wrapped).unwrap();
+        assert_eq!(sampled, person_id);
+    }
+
+    #[test]
+    fn test_sample_from_setting_with_exclusion() {
+        let mut context = setup();
+        let work_id = context.add_entity::<WorkEntity, _>((SettingCode(11), Alpha(0.5))).unwrap();
+        let p1 = context.add_entity::<Person, _>((Age(26),)).unwrap();
+        let p2 = context.add_entity::<Person, _>((Age(27),)).unwrap();
+        context.set_property::<Person, WorkId>(p1, WorkId(Some(work_id)));
+        context.set_property::<Person, WorkId>(p2, WorkId(Some(work_id)));
+        let wrapped = WrappedSettingId::Work(work_id);
+        let sampled = context.sample_from_setting_with_exclusion(p1, wrapped).unwrap();
+        assert_eq!(sampled, Some(p2));
+    }
+
+    #[test]
+    fn test_calculate_multipler() {
+        let mut context = setup();
+        let alpha = Alpha(2.0);
+        let home_id = context.add_entity::<HomeEntity, _>((SettingCode(12), alpha)).unwrap();
+        let p1 = context.add_entity::<Person, _>((Age(28),)).unwrap();
+        let p2 = context.add_entity::<Person, _>((Age(29),)).unwrap();
+        context.set_property::<Person, HomeId>(p1, HomeId(Some(home_id)));
+        context.set_property::<Person, HomeId>(p2, HomeId(Some(home_id)));
+        let wrapped = WrappedSettingId::Home(home_id);
+        let multiplier = context.calculate_multipler(wrapped).unwrap();
+        // size = 2, alpha = 2.0, so (2-1)^2 = 1
+        assert_eq!(multiplier, 1.0);
+    }
+
+    #[test]
+    fn test_sample_active_setting() {
+        let mut context = setup();
+        let home_id = context.add_entity::<HomeEntity, _>((SettingCode(13), Alpha(0.5))).unwrap();
+        let person_id = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        context.set_property::<Person, HomeId>(person_id, HomeId(Some(home_id)));
+        let sampled = context.sample_active_setting(person_id).unwrap();
+        assert_eq!(sampled, WrappedSettingId::Home(home_id));
+    }
+
+    #[test]
+    fn test_add_person_to_setting_and_add_index_setting() {
+        let mut context = setup();
+        let person_id = context.add_entity::<Person, _>((Age(31),)).unwrap();
+        let setting_code = SettingCode(14);
+        let alpha = Alpha(0.3);
+        context.add_person_to_setting(person_id, SettingCategory::Home, setting_code, alpha).unwrap();
+        let home_id = context.get_property::<Person, HomeId>(person_id).0.unwrap();
+        let code = context.get_property::<HomeEntity, SettingCode>(home_id);
+        assert_eq!(code, setting_code);
+    }
+}

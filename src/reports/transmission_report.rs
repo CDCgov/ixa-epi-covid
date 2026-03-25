@@ -63,7 +63,7 @@ mod test {
         parameters::{ContextParametersExt, GlobalParams, Params},
         population_loader::PersonId,
         rate_fns::load_rate_fns,
-        reports::ReportParams,
+        reports::ReportParams, settings::{Alpha, HomeEntityId, SettingCode, WrappedSettingId},
     };
     use ixa::{
         Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt, ContextReportExt,
@@ -104,15 +104,15 @@ mod test {
 
         let source: PersonId = context.add_entity((Age(30),)).unwrap();
         let target: PersonId = context.add_entity((Age(30),)).unwrap();
-        let setting_type = Some("test_setting");
-        let setting_id: Option<usize> = Some(1);
+        let home: HomeEntityId = context.add_entity((SettingCode(0), Alpha(0.0),)).unwrap();
+        let setting = Some(WrappedSettingId::Home(home));
         let infection_time = 1.0;
 
-        context.infect_person(source, None, None, None);
+        context.infect_person(source, None, None);
         crate::reports::init(&mut context).unwrap();
 
         context.add_plan(infection_time, move |context| {
-            context.infect_person(target, Some(source), setting_type, setting_id);
+            context.infect_person(target, Some(source), setting);
         });
         context.execute();
 
@@ -133,15 +133,12 @@ mod test {
         let mut reader = csv::Reader::from_path(file_path).unwrap();
         let mut line_count = 0;
         for result in reader.deserialize() {
+            println!("Deserializing record: {:?}", result);
             let record: crate::reports::transmission_report::TransmissionReport = result.unwrap();
             assert_almost_eq!(record.time, infection_time, 0.0);
             assert_eq!(record.target_id, target);
             assert_eq!(record.infected_by.unwrap(), source);
-            assert_eq!(
-                record.infection_setting_type,
-                Some("test_setting".to_string())
-            );
-            assert_eq!(record.infection_setting_id, setting_id);
+            assert_eq!(record.infection_setting_id, setting);
             line_count += 1;
         }
         assert_eq!(line_count, 1);

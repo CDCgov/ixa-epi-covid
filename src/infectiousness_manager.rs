@@ -221,26 +221,28 @@ mod test {
         InfectionContextExt, evaluate_forecast, get_forecast, max_total_infectiousness_multiplier,
     };
     use crate::{
-        Age, define_setting_category,
+        Age,
         infectiousness_manager::{InfectionData, InfectionStatus},
-        parameters::{GlobalParams, Params},
-        population_loader::{Person, PersonId},
+        parameters::{CoreSettingsTypes, GlobalParams, Params},
+        population_loader::{CommunityId, Person, PersonId},
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
-        settings::{Alpha, HomeEntity, ItineraryEntry, SettingCode, SettingId, SettingProperties},
+        settings::{Alpha, CommunityEntity, HomeEntity, SettingCode, SettingProperties, WrappedSettingId},
     };
-    use ixa::{assert_almost_eq, prelude::*};
-
-    define_setting_category!(HomogeneousMixing);
+    use ixa::{HashMap, assert_almost_eq, prelude::*};
 
     fn set_homogeneous_mixing_itinerary(
         context: &mut Context,
-        person_id: PersonId,
+        person_id: PersonId
     ) -> Result<(), IxaError> {
-        let itinerary = vec![ItineraryEntry::new(
-            SettingId::new(HomogeneousMixing, 0),
-            1.0,
-        )];
-        context.add_itinerary(person_id, itinerary)
+        let community_id= context.query_result_iterator::<CommunityEntity, _> ((SettingCode(0),)).next();
+        if community_id.is_some() {
+            context.set_property::<Person,CommunityId>(person_id, CommunityId(community_id));
+        } else {
+            context.add_entity::<CommunityEntity, _>((SettingCode(0), Alpha(1.0),)).map(|community_id| {
+                context.set_property::<Person,CommunityId>(person_id, CommunityId(Some(community_id)));
+            })?;
+        }
+        Ok(())
     }
 
     fn setup_context() -> Context {
@@ -252,15 +254,33 @@ mod test {
                 Params {
                     // For those tests that need infectious people, we add them manually.
                     max_time: 10.0,
+                    settings_properties: HashMap::from_iter(
+                    [
+                        (CoreSettingsTypes::Home, SettingProperties { alpha: 1.0 }),
+                        (CoreSettingsTypes::School, SettingProperties { alpha: 1.0 }),
+                        (
+                            CoreSettingsTypes::Workplace,
+                            SettingProperties { alpha: 1.0 },
+                        ),
+                        (
+                            CoreSettingsTypes::CensusTract,
+                            SettingProperties { alpha: 1.0 },
+                        ),
+                    ]
+                    .into_iter()
+                    .collect::<HashMap<_, _>>(),
+                ),
+                    itinerary_ratios: HashMap::from_iter([
+                        (CoreSettingsTypes::Home, 0.25),
+                        (CoreSettingsTypes::School, 0.25),
+                        (CoreSettingsTypes::Workplace, 0.25),
+                        (CoreSettingsTypes::CensusTract, 0.25),
+                    ]),
                     ..Default::default()
                 },
             )
             .unwrap();
         load_rate_fns(&mut context).unwrap();
-        context
-            .register_setting_category(&HomogeneousMixing, SettingProperties { alpha: 1.0 }, 1.0)
-            .unwrap();
-
         context
     }
 
@@ -391,8 +411,8 @@ mod test {
         let index: PersonId = context.add_entity((Age(30),)).unwrap();
         let contact: PersonId = context.add_entity((Age(30),)).unwrap();
         let home_id = context.add_entity::<HomeEntity, _>((SettingCode(0), Alpha(0.1),)).unwrap();
-        
-        context.infect_person(contact, Some(index), Some(crate::settings::WrappedSettingId::Home(home_id)));
+        let infection_setting_id = Some(WrappedSettingId::Home(home_id));
+        context.infect_person(contact, Some(index), infection_setting_id);
         context.execute();
 
         assert_eq!(
@@ -402,7 +422,6 @@ mod test {
 
         let InfectionData::Infectious {
             infected_by,
-            infection_setting_type,
             infection_setting_id,
             ..
         } = context.get_property::<Person, InfectionData>(contact)
@@ -411,7 +430,6 @@ mod test {
         };
 
         assert_eq!(infected_by.unwrap(), index);
-        assert_eq!(infection_setting_type.unwrap(), "Home");
-        assert_eq!(infection_setting_id.unwrap(), 0);
+        assert_eq!(infection_setting_id.unwrap(), WrappedSettingId::Home(home_id));
     }
 }
