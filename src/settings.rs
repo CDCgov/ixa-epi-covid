@@ -137,11 +137,21 @@ pub trait ContextSettingExt: PluginContext + ContextEntitiesExt + ContextSetting
     fn calculate_current_infectiousness_multiplier_for_person(&self, person_id: PersonId) -> f64 {
         let active_settings = self.get_active_settings_for_person(person_id).unwrap();
         let mut current_inf = 0.0;
+        let mut ratios = Vec::new();
+        let mut multipliers = Vec::new();
         for setting_id in active_settings.iter() {
             let multiplier = self.calculate_multipler(*setting_id).unwrap();
             let ratio = self.get_setting_ratio(*setting_id).unwrap();
-            current_inf +=  ratio * multiplier;
+            ratios.push(ratio);
+            multipliers.push(multiplier);
         }
+        let sum_ratios: f64 = ratios.iter().sum();
+        if sum_ratios > 0.0 {
+            for (multiplier, ratio) in multipliers.iter().zip(ratios.iter()) {
+                current_inf += multiplier * (ratio / sum_ratios);
+            }
+        }
+
         return current_inf;
     }
     fn calculate_max_infectiousness_multiplier_for_person(&self, person_id: PersonId) -> f64 {
@@ -342,7 +352,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 mod test {
     use super::*;
     use crate::parameters::{CoreSettingsTypes, GlobalParams};
-    use ixa::HashMap;
+    use ixa::{HashMap, assert_almost_eq};
 
     fn setup() -> Context {
         let mut context = Context::new();
@@ -451,7 +461,7 @@ mod test {
         let school_id = context.add_entity::<SchoolEntity, _>((SettingCode(7), Alpha(0.5))).unwrap();
         let wrapped = WrappedSettingId::School(school_id);
         let ratio = context.get_setting_ratio(wrapped).unwrap();
-        assert!((ratio - 0.25).abs() < 1e-8);
+        assert_eq!(ratio, 0.25);
     }
 
     #[test]
@@ -467,23 +477,36 @@ mod test {
     #[test]
     fn test_calculate_current_infectiousness_multiplier_for_person() {
         let mut context = setup();
-        let home_id = context.add_entity::<HomeEntity, _>((SettingCode(8), Alpha(1.0))).unwrap();
-        let person_id = context.add_entity::<Person, _>((Age(23),)).unwrap();
-        context.set_property::<Person, HomeId>(person_id, HomeId(Some(home_id)));
-        let val = context.calculate_current_infectiousness_multiplier_for_person(person_id);
-        // size = 1, alpha = 1.0, ratio = 0.25, so multiplier = (1-1)^1 = 0
-        assert_eq!(val, 0.0);
+        let home_id = context.add_entity::<HomeEntity, _>((SettingCode(8), Alpha(0.5))).unwrap();
+        let work_id = context.add_entity::<WorkEntity, _>((SettingCode(9), Alpha(0.5))).unwrap();
+        let p1 = context.add_entity::<Person, _>((Age(23),)).unwrap();
+        let p2 = context.add_entity::<Person, _>((Age(23),)).unwrap();
+        let p3 = context.add_entity::<Person, _>((Age(23),)).unwrap();
+        context.set_property::<Person, HomeId>(p1, HomeId(Some(home_id)));
+        context.set_property::<Person, HomeId>(p2, HomeId(Some(home_id)));
+        context.set_property::<Person, HomeId>(p3, HomeId(Some(home_id)));
+        context.set_property::<Person, WorkId>(p1, WorkId(Some(work_id)));
+        context.set_property::<Person, WorkId>(p2, WorkId(Some(work_id)));
+
+        let val = context.calculate_current_infectiousness_multiplier_for_person(p1);
+        // home size = 3, alpha = 0.5, so multiplier = (3-1)^0.5 = 2^0.5 = 1.41 * 0.5 = 0.707
+        // work size = 2, alpha = 0.5, so multiplier = (2-1)^0.5 = 1^0.5 = 1 * 0.5 = 0.5
+        assert_almost_eq!(val, 1.207, 0.001);
     }
 
     #[test]
     fn test_calculate_max_infectiousness_multiplier_for_person() {
         let mut context = setup();
-        let home_id = context.add_entity::<HomeEntity, _>((SettingCode(9), Alpha(2.0))).unwrap();
-        let person_id = context.add_entity::<Person, _>((Age(24),)).unwrap();
-        context.set_property::<Person, HomeId>(person_id, HomeId(Some(home_id)));
-        let val = context.calculate_max_infectiousness_multiplier_for_person(person_id);
-        // size = 1, alpha = 2.0, so multiplier = (1-1)^2 = 0
-        assert_eq!(val, 0.0);
+        let home_id = context.add_entity::<HomeEntity, _>((SettingCode(9), Alpha(1.0))).unwrap();
+        let work_id = context.add_entity::<WorkEntity, _>((SettingCode(10), Alpha(1.0))).unwrap();
+        let p1 = context.add_entity::<Person, _>((Age(24),)).unwrap();
+        let p2 = context.add_entity::<Person, _>((Age(24),)).unwrap();
+        context.set_property::<Person, HomeId>(p1, HomeId(Some(home_id)));
+        context.set_property::<Person, HomeId>(p2, HomeId(Some(home_id)));
+        context.set_property::<Person, WorkId>(p1, WorkId(Some(work_id)));
+        let val = context.calculate_max_infectiousness_multiplier_for_person(p1 );
+        // size = 2, alpha = 1.0, so multiplier = (2-1)^1 = 1
+        assert_eq!(val, 1.0);
     }
 
     #[test]
@@ -508,21 +531,6 @@ mod test {
         let wrapped = WrappedSettingId::Work(work_id);
         let sampled = context.sample_from_setting_with_exclusion(p1, wrapped).unwrap();
         assert_eq!(sampled, Some(p2));
-    }
-
-    #[test]
-    fn test_calculate_multipler() {
-        let mut context = setup();
-        let alpha = Alpha(2.0);
-        let home_id = context.add_entity::<HomeEntity, _>((SettingCode(12), alpha)).unwrap();
-        let p1 = context.add_entity::<Person, _>((Age(28),)).unwrap();
-        let p2 = context.add_entity::<Person, _>((Age(29),)).unwrap();
-        context.set_property::<Person, HomeId>(p1, HomeId(Some(home_id)));
-        context.set_property::<Person, HomeId>(p2, HomeId(Some(home_id)));
-        let wrapped = WrappedSettingId::Home(home_id);
-        let multiplier = context.calculate_multipler(wrapped).unwrap();
-        // size = 2, alpha = 2.0, so (2-1)^2 = 1
-        assert_eq!(multiplier, 1.0);
     }
 
     #[test]

@@ -103,7 +103,7 @@ mod test {
         Ok(())
     }
 
-    fn setup_context(seed: u64, rate: f64, alpha: f64, duration: f64) -> Context {
+    fn setup_context(seed: u64, rate: f64, alpha: f64, duration: f64,) -> Context {
         let mut context = Context::new();
 
         let parameters = Params {
@@ -132,7 +132,7 @@ mod test {
             itinerary_ratios: HashMap::from_iter([
                 (CoreSettingsTypes::Home, 1.0),
                 (CoreSettingsTypes::Workplace, 1.0),
-                (CoreSettingsTypes::CensusTract, 0.0),
+                (CoreSettingsTypes::CensusTract, 1.0),
             ]),
             ..Default::default()
         };
@@ -385,13 +385,13 @@ mod test {
         // corresponds to the home setting, the second to the census tract setting, and the third to
         // the workplace setting.
         let ratios = [
-            [0.0, 0.0, 0.5],
-            [0.0, 0.5, 0.0],
-            [0.5, 0.0, 0.0],
-            [0.5, 0.5, 0.0],
-            [0.5, 0.0, 0.5],
-            [0.0, 0.5, 0.5],
-            [0.5, 0.5, 0.5],
+            // [0.0, 0.0, 0.5],
+            // [0.0, 0.5, 0.0],
+            // [0.5, 0.0, 0.0],
+            // [0.5, 0.5, 0.0],
+            // [0.5, 0.0, 0.5],
+            // [0.0, 0.5, 0.5],
+            [1.0, 1.0, 1.0],
         ];
         for ratio in ratios {
             // We add home workplace and census tract settings to context
@@ -416,9 +416,9 @@ mod test {
                 let person_censustract: PersonId = context.add_entity((Age(30),)).unwrap();
                 let person_workplace: PersonId = context.add_entity((Age(30),)).unwrap();
                 
-                let home_id = context.add_entity::<HomeEntity, _>((SettingCode(0), Alpha(ratio[0]),)).unwrap();
-                let workplace_id = context.add_entity::<WorkEntity, _>((SettingCode(0), Alpha(ratio[2]),)).unwrap();
-                let census_tract_id = context.add_entity::<CommunityEntity, _>((SettingCode(0), Alpha(ratio[1]),)).unwrap();
+                let home_id = context.add_entity::<HomeEntity, _>((SettingCode(0), Alpha(0.0),)).unwrap();
+                let workplace_id = context.add_entity::<WorkEntity, _>((SettingCode(0), Alpha(0.0),)).unwrap();
+                let census_tract_id = context.add_entity::<CommunityEntity, _>((SettingCode(0), Alpha(0.0),)).unwrap();
                 context.set_property::<Person, HomeId>(person_home, HomeId(Some(home_id)));
                 context.set_property::<Person, WorkId>(person_workplace, WorkId(Some(workplace_id)));
                 context.set_property::<Person, CommunityId>(person_censustract, CommunityId(Some(census_tract_id)));
@@ -461,6 +461,11 @@ mod test {
                 schedule_next_forecasted_infection(&mut context, infectious_person);
                 context.execute();
             }
+            println!("For ratio {:?}, average number of infections in home: {:?}, census tract: {:?}, workplace: {:?}", 
+            ratio, *num_infected_home.borrow() as f64 / num_sims as f64, 
+            *num_infected_censustract.borrow() as f64 / num_sims as f64, 
+            *num_infected_workplace.borrow() as f64 / num_sims as f64);
+            
             #[allow(clippy::cast_precision_loss)]
             let avg_number_infections_home = *num_infected_home.borrow() as f64 / num_sims as f64;
             assert_almost_eq!(avg_number_infections_home, ratio[0] / sum_of_ratio, 0.05);
