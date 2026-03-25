@@ -85,12 +85,13 @@ trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextPara
         }
     }
     fn get_setting_alpha(&self, setting: WrappedSettingId) -> Result<f64, IxaError> {
-        match setting {
-            WrappedSettingId::Home(home_id) => Ok(self.get_property::<HomeEntity, Alpha>(home_id).0),
-            WrappedSettingId::School(school_id) => Ok(self.get_property::<SchoolEntity, Alpha>(school_id).0),
-            WrappedSettingId::Work(work_id) => Ok(self.get_property::<WorkEntity, Alpha>(work_id).0),
-            WrappedSettingId::Community(community_id) => Ok(self.get_property::<CommunityEntity, Alpha>(community_id).0),     
-        }
+        let Params { settings_properties, .. } = self.get_params();
+        match setting {          
+            WrappedSettingId::Home(_) => Ok(settings_properties.get(&CoreSettingsTypes::Home).unwrap().alpha),
+            WrappedSettingId::School(_) => Ok(settings_properties.get(&CoreSettingsTypes::School).unwrap().alpha),
+            WrappedSettingId::Work(_) => Ok(settings_properties.get(&CoreSettingsTypes::Workplace).unwrap().alpha),
+            WrappedSettingId::Community(_) => Ok(settings_properties.get(&CoreSettingsTypes::CensusTract).unwrap().alpha),     
+        }    
     }
 
     fn get_setting_ratio(&self, setting: WrappedSettingId) -> Result<f64, IxaError> {
@@ -183,9 +184,13 @@ pub trait ContextSettingExt: PluginContext + ContextEntitiesExt + ContextSetting
     }
     
     fn calculate_multipler(&self, setting: WrappedSettingId) -> Result<f64, IxaError> {
-        let size = self.get_setting_size(setting)?;
         let alpha = self.get_setting_alpha(setting)?;
-        Ok(((size - 1) as f64).powf(alpha))
+        if alpha > 0.0 {
+            let size = self.get_setting_size(setting)?;
+            return Ok(((size - 1) as f64).powf(alpha));
+        }else {
+            return Ok(1.0);
+        }
     }
 
     
