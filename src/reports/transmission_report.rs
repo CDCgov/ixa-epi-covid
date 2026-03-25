@@ -1,3 +1,4 @@
+use crate::error::ModelError;
 use crate::infectiousness_manager::InfectionData;
 use crate::population_loader::{Person, PersonId};
 use ixa::prelude::*;
@@ -36,8 +37,8 @@ fn record_transmission_event(
 
 /// # Errors
 ///
-/// Will return `IxaError` if the report cannot be added
-pub fn init(context: &mut Context, file_name: &str) -> Result<(), IxaError> {
+/// Will return `ModelError` if the report cannot be added
+pub fn init(context: &mut Context, file_name: &str) -> Result<(), ModelError> {
     context.add_report::<TransmissionReport>(file_name)?;
     context.subscribe_to_event::<PropertyChangeEvent<Person, InfectionData>>(|context, event| {
         let _span = open_span("transmission_report");

@@ -226,6 +226,7 @@ mod test {
     };
     use crate::{
         Age, define_setting_category,
+        error::ModelError,
         infectiousness_manager::{InfectionData, InfectionStatus},
         parameters::{GlobalParams, Params},
         population_loader::{Person, PersonId},
@@ -239,7 +240,7 @@ mod test {
     fn set_homogeneous_mixing_itinerary(
         context: &mut Context,
         person_id: PersonId,
-    ) -> Result<(), IxaError> {
+    ) -> Result<(), ModelError> {
         let itinerary = vec![ItineraryEntry::new(
             SettingId::new(HomogeneousMixing, 0),
             1.0,

@@ -6,7 +6,7 @@ use std::{
 
 use ixa::prelude::*;
 
-use crate::population_loader::PersonId;
+use crate::{error::ModelError, population_loader::PersonId};
 
 define_rng!(NaturalHistoryParameterRng);
 
@@ -45,7 +45,7 @@ pub trait ContextNaturalHistoryParameterExt: PluginContext + ContextRandomExt {
         &mut self,
         _parameter: T,
         assignment_fn: S,
-    ) -> Result<(), IxaError>
+    ) -> Result<(), ModelError>
     where
         T: NaturalHistoryParameterLibrary + 'static,
         S: Fn(&Context, PersonId) -> usize + 'static,
@@ -56,7 +56,7 @@ pub trait ContextNaturalHistoryParameterExt: PluginContext + ContextRandomExt {
         // asked to provide an id and defaulted to random assignment. In this case, the assignment
         // function would not apply to all ids, so the id assignment is ambiguous.
         if container.ids.borrow().contains_key(&TypeId::of::<T>()) {
-            return Err(IxaError::IxaError(
+            return Err(ModelError::ModelError(
                 "An id for this parameter has been previously queried, so a new assignment function cannot be specified.".to_string() +
                 " If this is desired behavior, register an assignment function that changes from random to the specified" +
                 " behavior at the time at which this assignment is registered."
@@ -71,7 +71,7 @@ pub trait ContextNaturalHistoryParameterExt: PluginContext + ContextRandomExt {
                 Ok(())
             }
 
-            Entry::Occupied(_) => Err(IxaError::IxaError(
+            Entry::Occupied(_) => Err(ModelError::ModelError(
                 "An assignment function for this parameter has already been registered."
                     .to_string(),
             )),
@@ -143,7 +143,7 @@ mod test {
 
     use ixa::prelude::*;
 
-    use crate::{Age, population_loader::PersonId};
+    use crate::{Age, error::ModelError, population_loader::PersonId};
 
     use super::{
         ContextNaturalHistoryParameterExt, NaturalHistoryParameterLibrary, NaturalHistoryParameters,
@@ -189,7 +189,7 @@ mod test {
         let result = context.register_parameter_id_assigner(ViralLoad, |_context, _person_id| 1);
         let e = result.err();
         match e {
-            Some(IxaError::IxaError(msg)) => {
+            Some(ModelError::ModelError(msg)) => {
                 assert_eq!(
                     msg,
                     "An assignment function for this parameter has already been registered."
@@ -230,7 +230,7 @@ mod test {
             context.register_parameter_id_assigner(AntigenPositivity, |_context, _person_id| 1);
         let e = result.err();
         match e {
-            Some(IxaError::IxaError(msg)) => {
+            Some(ModelError::ModelError(msg)) => {
                 assert_eq!(msg, "An id for this parameter has been previously queried, so a new assignment function cannot be specified.".to_string() +
                 " If this is desired behavior, register an assignment function that changes from random to the specified" +
                 " behavior at the time at which this assignment is registered.");

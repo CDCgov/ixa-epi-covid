@@ -1,5 +1,6 @@
 use ixa::prelude::*;
 
+use crate::error::ModelError;
 use crate::infectiousness_manager::{
     Forecast, InfectionContextExt, InfectionStatus, evaluate_forecast, get_forecast,
     infection_attempt,
@@ -7,7 +8,7 @@ use crate::infectiousness_manager::{
 use crate::population_loader::{Person, PersonId};
 use crate::rate_fns::{InfectiousnessRateExt, load_rate_fns};
 use ixa::profiling::{increment_named_count, open_span};
-use ixa::{Context, IxaError, define_rng, trace};
+use ixa::{Context, define_rng, trace};
 
 define_rng!(InfectionRng);
 
@@ -38,7 +39,7 @@ fn schedule_recovery(context: &mut Context, person: PersonId) {
     });
 }
 
-pub fn init(context: &mut Context) -> Result<(), IxaError> {
+pub fn init(context: &mut Context) -> Result<(), ModelError> {
     load_rate_fns(context)?;
     // Subscribe to the person becoming infectious to trigger the infection propagation loop
     context.subscribe_to_event(
@@ -71,6 +72,7 @@ mod test {
     use ixa::{HashMap, assert_almost_eq};
 
     use crate::Age;
+    use crate::error::ModelError;
     use crate::infection_propagation_loop::InfectionRng;
     use crate::infectiousness_manager::InfectionData;
     use crate::population_loader::PersonId;
@@ -94,7 +96,7 @@ mod test {
     fn set_homogeneous_mixing_itinerary(
         context: &mut Context,
         person_id: PersonId,
-    ) -> Result<(), IxaError> {
+    ) -> Result<(), ModelError> {
         let itinerary = vec![ItineraryEntry::new(
             SettingId::new(HomogeneousMixing, 0),
             1.0,

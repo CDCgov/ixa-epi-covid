@@ -1,4 +1,5 @@
 use crate::{
+    error::ModelError,
     natural_history_parameter_manager::{
         ContextNaturalHistoryParameterExt, NaturalHistoryParameterLibrary,
     },
@@ -47,7 +48,7 @@ impl InfectiousnessRateExt for Context {}
 /// infectiousness rate functions for the simulation.
 /// # Errors
 /// - If the parameters used to specify the rate functions are invalid
-pub fn load_rate_fns(context: &mut Context) -> Result<(), IxaError> {
+pub fn load_rate_fns(context: &mut Context) -> Result<(), ModelError> {
     let rate_of_infection = context.get_params().infectiousness_rate_fn.clone();
 
     match rate_of_infection {

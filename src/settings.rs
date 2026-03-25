@@ -1,4 +1,5 @@
 use crate::{
+    error::ModelError,
     parameters::{ContextParametersExt, CoreSettingsTypes, Params},
     population_loader::PersonId,
 };
@@ -104,7 +105,7 @@ pub fn append_itinerary_entry(
     context: &Context,
     setting: impl AnySettingId,
     nondefault_ratio: Option<f64>,
-) -> Result<(), IxaError> {
+) -> Result<(), ModelError> {
     // Is this setting type registered? Our population loader is hard coded to always try to put
     // people in the core setting types, but sometimes we don't want all the core setting types
     // (we didn't specify them). So, first check that the setting in question exists.
@@ -124,7 +125,7 @@ pub fn append_itinerary_entry(
 
 // In the future, this method could take the person id as an argument for making individual-level
 // itineraries.
-fn get_itinerary_ratio(context: &Context, setting: &dyn AnySettingId) -> Result<f64, IxaError> {
+fn get_itinerary_ratio(context: &Context, setting: &dyn AnySettingId) -> Result<f64, ModelError> {
     let itinerary_ratio = context
         .get_data(SettingDataPlugin)
         .default_itinerary_ratios
@@ -132,7 +133,9 @@ fn get_itinerary_ratio(context: &Context, setting: &dyn AnySettingId) -> Result<
 
     match itinerary_ratio {
         Some(ratio) => Ok(*ratio),
-        None => Err(IxaError::from("Itinerary ratio not specified")),
+        None => Err(ModelError::ModelError(
+            "Itinerary ratio not specified".to_string(),
+        )),
     }
 }
 
@@ -175,7 +178,7 @@ impl SettingDataContainer {
         &mut self,
         person_id: PersonId,
         itinerary: &Vec<ItineraryEntry>,
-    ) -> Result<(), IxaError> {
+    ) -> Result<(), ModelError> {
         let _span = open_span("activate itinerary");
         for itinerary_entry in itinerary {
             // TODO: If we are changing a person's itinerary, the person_id should be removed from vector
@@ -184,8 +187,8 @@ impl SettingDataContainer {
                 .setting_categories
                 .contains(&itinerary_entry.setting.get_type_id())
             {
-                return Err(IxaError::from(
-                    "Itinerary entry setting type not registered",
+                return Err(ModelError::ModelError(
+                    "Itinerary entry setting type not registered".to_string(),
                 ));
             }
             self.set_member(
@@ -264,7 +267,7 @@ trait ContextSettingInternalExt: PluginContext + ContextRandomExt {
 }
 impl ContextSettingInternalExt for Context {}
 
-fn validate_itinerary(itinerary: &[ItineraryEntry]) -> Result<(), IxaError> {
+fn validate_itinerary(itinerary: &[ItineraryEntry]) -> Result<(), ModelError> {
     let mut setting_counts: HashMap<TypeId, HashSet<usize>> = HashMap::new();
     let _span = open_span("validate_modified_itinerary");
     for itinerary_entry in itinerary {
@@ -274,7 +277,7 @@ fn validate_itinerary(itinerary: &[ItineraryEntry]) -> Result<(), IxaError> {
             .get(&setting_type)
             .is_some_and(|set| set.contains(&setting_id))
         {
-            return Err(IxaError::from("Duplicated setting".to_string()));
+            return Err(ModelError::ModelError("Duplicated setting".to_string()));
         }
         setting_counts
             .entry(setting_type)
@@ -282,7 +285,7 @@ fn validate_itinerary(itinerary: &[ItineraryEntry]) -> Result<(), IxaError> {
             .insert(setting_id);
 
         if itinerary_entry.ratio < 0.0 {
-            return Err(IxaError::from(
+            return Err(ModelError::ModelError(
                 "Setting ratio must be greater than or equal to 0".to_string(),
             ));
         }
@@ -298,29 +301,32 @@ pub trait ContextSettingExt:
     fn get_setting_properties(
         &self,
         setting: &dyn SettingCategory,
-    ) -> Result<SettingProperties, IxaError> {
+    ) -> Result<SettingProperties, ModelError> {
         let data_container = self.get_data(SettingDataPlugin);
 
         match data_container
             .setting_properties
             .get(&setting.get_type_id())
         {
-            None => Err(IxaError::from(
-                "Attempting to get properties of unregistered setting type",
+            None => Err(ModelError::ModelError(
+                "Attempting to get properties of unregistered setting type".to_string(),
             )),
             Some(properties) => Ok(*properties),
         }
     }
 
-    fn get_setting_itinerary_ratio(&self, setting: &dyn SettingCategory) -> Result<f64, IxaError> {
+    fn get_setting_itinerary_ratio(
+        &self,
+        setting: &dyn SettingCategory,
+    ) -> Result<f64, ModelError> {
         let data_container = self.get_data(SettingDataPlugin);
 
         match data_container
             .default_itinerary_ratios
             .get(&setting.get_type_id())
         {
-            None => Err(IxaError::from(
-                "Attempting to get itinerary ratio of unregistered setting type",
+            None => Err(ModelError::ModelError(
+                "Attempting to get itinerary ratio of unregistered setting type".to_string(),
             )),
             Some(ratio) => Ok(*ratio),
         }
@@ -331,11 +337,13 @@ pub trait ContextSettingExt:
         setting: &dyn SettingCategory,
         setting_props: SettingProperties,
         default_itinerary_ratio: f64,
-    ) -> Result<(), IxaError> {
+    ) -> Result<(), ModelError> {
         let container = self.get_data_mut(SettingDataPlugin);
 
         if !container.setting_categories.insert(setting.get_type_id()) {
-            return Err(IxaError::from("Setting type is already registered"));
+            return Err(ModelError::ModelError(
+                "Setting type is already registered".to_string(),
+            ));
         }
 
         // Add properties
@@ -354,7 +362,7 @@ pub trait ContextSettingExt:
         &mut self,
         person_id: PersonId,
         itinerary: Vec<ItineraryEntry>,
-    ) -> Result<(), IxaError> {
+    ) -> Result<(), ModelError> {
         let _span = open_span("add_itinerary");
         // Normalize itinerary ratios
         validate_itinerary(&itinerary)?;
@@ -371,7 +379,9 @@ pub trait ContextSettingExt:
         // Clean up settings that from previous itinerary, if there is one
 
         if container.itineraries.contains_key(&person_id) {
-            return Err(IxaError::from("Person already has an itinerary."));
+            return Err(ModelError::ModelError(
+                "Person already has an itinerary.".to_string(),
+            ));
         }
 
         container.activate_itinerary(person_id, &itinerary)?;
@@ -427,7 +437,7 @@ pub trait ContextSettingExt:
         &self,
         person_id: PersonId,
         setting: &dyn AnySettingId,
-    ) -> Result<Option<PersonId>, IxaError> {
+    ) -> Result<Option<PersonId>, ModelError> {
         let _span = open_span("get_contact");
         if let Some(members) = self.get_setting_members_internal(setting) {
             if members.get(&person_id).is_some() && members.len() == 1 {
@@ -443,7 +453,9 @@ pub trait ContextSettingExt:
             }
             return Ok(contact_id);
         }
-        Err(IxaError::from("Group membership is None"))
+        Err(ModelError::ModelError(
+            "Group membership is None".to_string(),
+        ))
     }
 
     fn sample_current_setting(&self, person_id: PersonId) -> Option<&dyn AnySettingId> {
@@ -589,7 +601,7 @@ mod test {
         let mut context = Context::new();
         let e = context.get_setting_properties(&Home).err();
         match e {
-            Some(IxaError::IxaError(msg)) => {
+            Some(ModelError::ModelError(msg)) => {
                 assert_eq!(
                     msg,
                     "Attempting to get properties of unregistered setting type"
@@ -608,7 +620,7 @@ mod test {
         context.get_setting_properties(&Home).unwrap();
         let e = context.get_setting_properties(&CensusTract).err();
         match e {
-            Some(IxaError::IxaError(msg)) => {
+            Some(ModelError::ModelError(msg)) => {
                 assert_eq!(
                     msg,
                     "Attempting to get properties of unregistered setting type"
@@ -624,7 +636,7 @@ mod test {
         context.get_setting_itinerary_ratio(&Home).unwrap();
         let e = context.get_setting_itinerary_ratio(&CensusTract).err();
         match e {
-            Some(IxaError::IxaError(msg)) => {
+            Some(ModelError::ModelError(msg)) => {
                 assert_eq!(
                     msg,
                     "Attempting to get itinerary ratio of unregistered setting type"
@@ -648,7 +660,7 @@ mod test {
             .register_setting_category(&Home, SettingProperties { alpha: 0.001 }, 1.0)
             .err();
         match e {
-            Some(IxaError::IxaError(msg)) => {
+            Some(ModelError::ModelError(msg)) => {
                 assert_eq!(msg, "Setting type is already registered");
             }
             Some(ue) => panic!(
@@ -671,7 +683,7 @@ mod test {
         ];
         let e = context.add_itinerary(person, itinerary).err();
         match e {
-            Some(IxaError::IxaError(msg)) => {
+            Some(ModelError::ModelError(msg)) => {
                 assert_eq!(msg, "Duplicated setting");
             }
             Some(ue) => panic!(
@@ -691,7 +703,7 @@ mod test {
 
         let e = context.add_itinerary(person, itinerary).err();
         match e {
-            Some(IxaError::IxaError(msg)) => {
+            Some(ModelError::ModelError(msg)) => {
                 assert_eq!(msg, "Setting ratio must be greater than or equal to 0");
             }
             Some(ue) => panic!(
@@ -713,7 +725,7 @@ mod test {
 
         let e = context.add_itinerary(person, itinerary).err();
         match e {
-            Some(IxaError::IxaError(msg)) => {
+            Some(ModelError::ModelError(msg)) => {
                 assert_eq!(msg, "Itinerary entry setting type not registered");
             }
             Some(ue) => panic!(
@@ -774,7 +786,7 @@ mod test {
 
         let e = context.add_itinerary(person, itinerary3).err();
         match e {
-            Some(IxaError::IxaError(msg)) => {
+            Some(ModelError::ModelError(msg)) => {
                 assert_eq!(msg, "Person already has an itinerary.");
             }
             Some(ue) => panic!(
@@ -1040,7 +1052,7 @@ mod test {
         let e =
             context.sample_from_setting_with_exclusion(person_a, &SettingId::new(CensusTract, 10));
         match e {
-            Err(IxaError::IxaError(msg)) => {
+            Err(ModelError::ModelError(msg)) => {
                 assert_eq!(msg, "Group membership is None");
             }
             Err(ue) => panic!(
@@ -1059,7 +1071,7 @@ mod test {
             .unwrap();
         let e = get_itinerary_ratio(&context, &SettingId::new(CensusTract, 0)).err();
         match e {
-            Some(IxaError::IxaError(msg)) => {
+            Some(ModelError::ModelError(msg)) => {
                 assert_eq!(msg, "Itinerary ratio not specified");
             }
             Some(ue) => panic!(

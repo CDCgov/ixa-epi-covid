@@ -75,9 +75,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.100"
+version = "1.0.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
+checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "approx"
@@ -500,9 +500,9 @@ checksum = "92ecc6618181def0457392ccd0ee51198e065e016d1d527a7ac1b6dc7c1f09d2"
 
 [[package]]
 name = "ixa"
-version = "2.0.0-beta1"
+version = "2.0.0-beta2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9ab356efbea1cc89fb814322267a527161fabfdb7584b2ba2e032859cfcfdc2"
+checksum = "13b1a44faf128a2d85abcd24a8d8f530b04cbcda6b60dfdca9adb36134fabb4f"
 dependencies = [
  "anyhow",
  "approx",
@@ -532,6 +532,7 @@ dependencies = [
  "serde_json",
  "shlex",
  "sysinfo",
+ "thiserror",
  "wasm-bindgen",
  "web-sys",
  "xxhash-rust",
@@ -539,9 +540,9 @@ dependencies = [
 
 [[package]]
 name = "ixa-derive"
-version = "2.0.0-beta"
+version = "2.0.0-beta.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84a51f6f16cf553103252094322cdf617be53a707b3b657eea621038f92b2b8d"
+checksum = "d2377d465cd9978c98d2b6e51722ed70d2da5aef31d0e97a83bbaf638ad75497"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -553,6 +554,7 @@ dependencies = [
 name = "ixa-epi-covid"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "clap",
  "dyn-clone",
  "dyn-eq",
@@ -564,6 +566,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror",
 ]
 
 [[package]]
@@ -671,9 +674,9 @@ dependencies = [
 
 [[package]]
 name = "ntapi"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c70f219e21142367c70c0b30c6a9e3a14d55b4d12a204d897fbec83a0363f081"
+checksum = "c3b335231dfd352ffb0f8017f3b6027a4917f7df785ea2143d8af2adc66980ae"
 dependencies = [
  "winapi",
 ]

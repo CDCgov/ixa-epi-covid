@@ -1,4 +1,4 @@
-use ixa::prelude::*;
+use crate::error::ModelError;
 
 use super::InfectiousnessRateFn;
 
@@ -13,14 +13,14 @@ impl ConstantRate {
     /// # Errors
     /// - The rate of infection must be non-negative.
     /// - The duration of infection must be non-negative.
-    pub fn new(r: f64, infection_duration: f64) -> Result<Self, IxaError> {
+    pub fn new(r: f64, infection_duration: f64) -> Result<Self, ModelError> {
         if r < 0.0 {
-            return Err(IxaError::IxaError(
+            return Err(ModelError::ModelError(
                 "The rate of infection must be non-negative.".to_string(),
             ));
         }
         if infection_duration < 0.0 {
-            return Err(IxaError::IxaError(
+            return Err(ModelError::ModelError(
                 "The duration of infection must be non-negative.".to_string(),
             ));
         }
@@ -57,7 +57,8 @@ impl InfectiousnessRateFn for ConstantRate {
 #[cfg(test)]
 mod test {
     use ixa::assert_almost_eq;
-    use ixa::prelude::*;
+
+    use crate::error::ModelError;
 
     use super::ConstantRate;
     use super::InfectiousnessRateFn;
@@ -66,7 +67,7 @@ mod test {
     fn test_constant_rate_errors_r_negative() {
         let e = ConstantRate::new(-1.0, 1.0).err();
         match e {
-            Some(IxaError::IxaError(msg)) => {
+            Some(ModelError::ModelError(msg)) => {
                 assert_eq!(
                     msg,
                     "The rate of infection must be non-negative.".to_string()
@@ -86,7 +87,7 @@ mod test {
     fn test_constant_rate_errors_infection_duration_negative() {
         let e = ConstantRate::new(1.0, -1.0).err();
         match e {
-            Some(IxaError::IxaError(msg)) => {
+            Some(ModelError::ModelError(msg)) => {
                 assert_eq!(
                     msg,
                     "The duration of infection must be non-negative.".to_string()
