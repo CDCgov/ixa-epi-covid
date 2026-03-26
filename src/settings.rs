@@ -2,7 +2,7 @@ use ixa::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use core::f64;
-use std::hash::Hash;
+use std::{hash::Hash, fmt::Debug};
 
 use crate::{
     Age, ContextParametersExt, Params,
@@ -57,54 +57,17 @@ pub enum WrappedSettingId {
 // alpha, setting code, setting category
 // Region?
 trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextParametersExt {
-    fn sample_person_from_home(&self, home_id: HomeEntityId) -> Result<PersonId, IxaError> {
-        if let Some(sample) =
-            self.sample_entity::<Person, _, _>(SettingRng, (HomeId(Some(home_id)),))
-        {
+    fn sample_person_by_membership_property<T>(&self, wrapped_id: T) -> Result<PersonId, IxaError>
+    where
+        T: Property<Person> + Debug,
+    {
+        let wrapped_id_debug = format!("{:?}", wrapped_id);
+        if let Some(sample) = self.sample_entity::<Person, _, _>(SettingRng, (wrapped_id,)) {
             Ok(sample)
         } else {
             Err(IxaError::IxaError(format!(
-                "No members found for home id: {:?}",
-                home_id
-            )))
-        }
-    }
-    fn sample_person_from_work(&self, work_id: WorkEntityId) -> Result<PersonId, IxaError> {
-        if let Some(sample) =
-            self.sample_entity::<Person, _, _>(SettingRng, (WorkId(Some(work_id)),))
-        {
-            Ok(sample)
-        } else {
-            Err(IxaError::IxaError(format!(
-                "No members found for work id: {:?}",
-                work_id
-            )))
-        }
-    }
-    fn sample_person_from_school(&self, school_id: SchoolEntityId) -> Result<PersonId, IxaError> {
-        if let Some(sample) =
-            self.sample_entity::<Person, _, _>(SettingRng, (SchoolId(Some(school_id)),))
-        {
-            Ok(sample)
-        } else {
-            Err(IxaError::IxaError(format!(
-                "No members found for school id: {:?}",
-                school_id
-            )))
-        }
-    }
-    fn sample_person_from_community(
-        &self,
-        community_id: CommunityEntityId,
-    ) -> Result<PersonId, IxaError> {
-        if let Some(sample) =
-            self.sample_entity::<Person, _, _>(SettingRng, (CommunityId(Some(community_id)),))
-        {
-            Ok(sample)
-        } else {
-            Err(IxaError::IxaError(format!(
-                "No members found for community id: {:?}",
-                community_id
+                "No members found for id: {}",
+                wrapped_id_debug
             )))
         }
     }
@@ -218,13 +181,22 @@ pub trait ContextSettingExt:
         max_inf
     }
 
-    fn sample_person_from_setting(&self, setting: WrappedSettingId) -> Result<PersonId, IxaError> {
+    fn sample_person_from_wrapped_setting(
+        &self,
+        setting: WrappedSettingId,
+    ) -> Result<PersonId, IxaError> {
         match setting {
-            WrappedSettingId::Home(home_id) => self.sample_person_from_home(home_id),
-            WrappedSettingId::School(school_id) => self.sample_person_from_school(school_id),
-            WrappedSettingId::Work(work_id) => self.sample_person_from_work(work_id),
+            WrappedSettingId::Home(home_id) => {
+                self.sample_person_by_membership_property(HomeId(Some(home_id)))
+            }
+            WrappedSettingId::School(school_id) => {
+                self.sample_person_by_membership_property(SchoolId(Some(school_id)))
+            }
+            WrappedSettingId::Work(work_id) => {
+                self.sample_person_by_membership_property(WorkId(Some(work_id)))
+            }
             WrappedSettingId::Community(community_id) => {
-                self.sample_person_from_community(community_id)
+                self.sample_person_by_membership_property(CommunityId(Some(community_id)))
             }
         }
     }
@@ -238,7 +210,7 @@ pub trait ContextSettingExt:
             return Ok(None);
         }
         loop {
-            let sampled_person = self.sample_person_from_setting(setting)?;
+            let sampled_person = self.sample_person_from_wrapped_setting(setting)?;
             if sampled_person != person_id {
                 return Ok(Some(sampled_person));
             }
@@ -498,10 +470,12 @@ mod test {
             .add_entity::<HomeEntity, _>((SettingCode(1), Alpha(0.5)))
             .unwrap();
         let person_id = context.add_entity::<Person, _>((Age(20),)).unwrap();
-        let sampled_none = context.sample_person_from_home(home_id);
+        let sampled_none = context.sample_person_by_membership_property(HomeId(Some(home_id)));
         assert!(sampled_none.is_err());
         context.set_property::<Person, HomeId>(person_id, HomeId(Some(home_id)));
-        let sampled = context.sample_person_from_home(home_id).unwrap();
+        let sampled = context
+            .sample_person_by_membership_property(HomeId(Some(home_id)))
+            .unwrap();
         assert_eq!(sampled, person_id);
     }
 
@@ -513,7 +487,9 @@ mod test {
             .unwrap();
         let person_id = context.add_entity::<Person, _>((Age(30),)).unwrap();
         context.set_property::<Person, WorkId>(person_id, WorkId(Some(work_id)));
-        let sampled = context.sample_person_from_work(work_id).unwrap();
+        let sampled = context
+            .sample_person_by_membership_property(WorkId(Some(work_id)))
+            .unwrap();
         assert_eq!(sampled, person_id);
     }
 
@@ -525,7 +501,9 @@ mod test {
             .unwrap();
         let person_id = context.add_entity::<Person, _>((Age(10),)).unwrap();
         context.set_property::<Person, SchoolId>(person_id, SchoolId(Some(school_id)));
-        let sampled = context.sample_person_from_school(school_id).unwrap();
+        let sampled = context
+            .sample_person_by_membership_property(SchoolId(Some(school_id)))
+            .unwrap();
         assert_eq!(sampled, person_id);
     }
 
@@ -537,7 +515,9 @@ mod test {
             .unwrap();
         let person_id = context.add_entity::<Person, _>((Age(40),)).unwrap();
         context.set_property::<Person, CommunityId>(person_id, CommunityId(Some(community_id)));
-        let sampled = context.sample_person_from_community(community_id).unwrap();
+        let sampled = context
+            .sample_person_by_membership_property(CommunityId(Some(community_id)))
+            .unwrap();
         assert_eq!(sampled, person_id);
     }
 
@@ -635,7 +615,7 @@ mod test {
     }
 
     #[test]
-    fn test_sample_person_from_setting() {
+    fn test_sample_person_from_wrapped_setting() {
         let mut context = setup();
         let comm_id = context
             .add_entity::<CommunityEntity, _>((SettingCode(10), Alpha(0.5)))
@@ -643,7 +623,7 @@ mod test {
         let person_id = context.add_entity::<Person, _>((Age(25),)).unwrap();
         context.set_property::<Person, CommunityId>(person_id, CommunityId(Some(comm_id)));
         let wrapped = WrappedSettingId::Community(comm_id);
-        let sampled = context.sample_person_from_setting(wrapped).unwrap();
+        let sampled = context.sample_person_from_wrapped_setting(wrapped).unwrap();
         assert_eq!(sampled, person_id);
     }
 
