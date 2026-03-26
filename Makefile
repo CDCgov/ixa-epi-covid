@@ -55,5 +55,5 @@ bench:
 # Usage: make bench-compare              # uncommitted changes vs last commit
 #        make bench-compare BASE=main    # working tree vs main
 BASE ?= HEAD
-bench-compare:
+bench-compare: input/synth_pop_people_WY_1_000.csv input/synth_pop_people_WY_10_000.csv
 	uv run scripts/bench_compare.py $(BASE)
