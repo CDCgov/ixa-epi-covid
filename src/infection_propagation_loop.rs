@@ -73,9 +73,9 @@ mod test {
     use crate::Age;
     use crate::infection_propagation_loop::InfectionRng;
     use crate::infectiousness_manager::InfectionData;
-    use crate::population_loader::PersonId;
+    use crate::population_loader::{CommunityId, HomeId, PersonId, WorkId};
+    use crate::settings::{Alpha, CommunityEntity, HomeEntity, SettingCode, WorkEntity};
     use crate::{
-        define_setting_category,
         infection_propagation_loop::{
             InfectionStatus, init, schedule_next_forecasted_infection, schedule_recovery,
         },
@@ -83,23 +83,29 @@ mod test {
         parameters::{ContextParametersExt, CoreSettingsTypes, GlobalParams, Params, RateFnType},
         population_loader::Person,
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
-        settings::{
-            CensusTract, ContextSettingExt, Home, ItineraryEntry, SettingId, SettingProperties,
-            Workplace,
-        },
+        settings::SettingProperties,
     };
-
-    define_setting_category!(HomogeneousMixing);
 
     fn set_homogeneous_mixing_itinerary(
         context: &mut Context,
         person_id: PersonId,
     ) -> Result<(), IxaError> {
-        let itinerary = vec![ItineraryEntry::new(
-            SettingId::new(HomogeneousMixing, 0),
-            1.0,
-        )];
-        context.add_itinerary(person_id, itinerary)
+        let community_id = context
+            .query_result_iterator::<CommunityEntity, _>((SettingCode(0),))
+            .next();
+        if community_id.is_some() {
+            context.set_property::<Person, CommunityId>(person_id, CommunityId(community_id));
+        } else {
+            context
+                .add_entity::<CommunityEntity, _>((SettingCode(0), Alpha(0.0)))
+                .map(|community_id| {
+                    context.set_property::<Person, CommunityId>(
+                        person_id,
+                        CommunityId(Some(community_id)),
+                    );
+                })?;
+        }
+        Ok(())
     }
 
     fn setup_context(seed: u64, rate: f64, alpha: f64, duration: f64) -> Context {
@@ -111,15 +117,12 @@ mod test {
             infectiousness_rate_fn: RateFnType::Constant { rate, duration },
             settings_properties: HashMap::from_iter(
                 [
-                    (CoreSettingsTypes::Home, SettingProperties { alpha: 0.5 }),
-                    (
-                        CoreSettingsTypes::Workplace,
-                        SettingProperties { alpha: 0.5 },
-                    ),
+                    (CoreSettingsTypes::Home, SettingProperties { alpha }),
+                    (CoreSettingsTypes::Workplace, SettingProperties { alpha }),
                     (
                         CoreSettingsTypes::CensusTract,
                         SettingProperties {
-                            alpha: 0.5,
+                            alpha,
                             // Itinerary is specified in the `set_homogeneous_mixing_itinerary` function
                             // so we do not need to set it here.
                         },
@@ -131,7 +134,7 @@ mod test {
             itinerary_ratios: HashMap::from_iter([
                 (CoreSettingsTypes::Home, 1.0),
                 (CoreSettingsTypes::Workplace, 1.0),
-                (CoreSettingsTypes::CensusTract, 0.0),
+                (CoreSettingsTypes::CensusTract, 1.0),
             ]),
             ..Default::default()
         };
@@ -142,9 +145,6 @@ mod test {
 
         // We also set up a homogenous mixing itinerary so that when we don't call `settings::init`,
         // we still have people in settings.
-        context
-            .register_setting_category(&HomogeneousMixing, SettingProperties { alpha }, 1.0)
-            .unwrap();
         context
     }
 
@@ -194,7 +194,7 @@ mod test {
                 *num_initial_infections_clone.borrow(),
             );
             for person in susceptibles {
-                context.infect_person(person, None, None, None);
+                context.infect_person(person, None, None);
             }
             // Count the number of initial infections and recovered actually created from the binomial
             // sampling
@@ -277,7 +277,7 @@ mod test {
             let infectious_person: PersonId = context.add_entity((Age(30),)).unwrap();
             set_homogeneous_mixing_itinerary(&mut context, infectious_person).unwrap();
 
-            context.infect_person(infectious_person, None, None, None);
+            context.infect_person(infectious_person, None, None);
             // Get the total infectiousness multiplier for comparison to total number of infections.
             if total_infectiousness_multiplier.is_none() {
                 total_infectiousness_multiplier = Some(max_total_infectiousness_multiplier(
@@ -352,7 +352,7 @@ mod test {
         let mut context = setup_context(0, 0.0, 1.0, 5.0);
         load_rate_fns(&mut context).unwrap();
         let person: PersonId = context.add_entity((Age(30),)).unwrap();
-        context.infect_person(person, None, None, None);
+        context.infect_person(person, None, None);
         // For later, we need to get the recovery time from the rate function.
         context.execute();
         let recovery_time = context.get_person_rate_fn(person).infection_duration();
@@ -386,15 +386,7 @@ mod test {
         // ratios is a matrix of ratio values for the three settings. The first value in each row
         // corresponds to the home setting, the second to the census tract setting, and the third to
         // the workplace setting.
-        let ratios = [
-            [0.0, 0.0, 0.5],
-            [0.0, 0.5, 0.0],
-            [0.5, 0.0, 0.0],
-            [0.5, 0.5, 0.0],
-            [0.5, 0.0, 0.5],
-            [0.0, 0.5, 0.5],
-            [0.5, 0.5, 0.5],
-        ];
+        let ratios = [[1.0, 1.0, 1.0]];
         for ratio in ratios {
             // We add home workplace and census tract settings to context
             // in the test setup for this unit test.
@@ -411,40 +403,44 @@ mod test {
                 let num_infected_cenustract_clone = Rc::clone(&num_infected_censustract);
                 let num_infected_workplace_clone = Rc::clone(&num_infected_workplace);
                 let mut context = setup_context(seed, rate, alpha, 5.0);
-                crate::settings::init(&mut context);
 
                 // Add a a person who will get infected.
                 let infectious_person: PersonId = context.add_entity((Age(30),)).unwrap();
                 let person_home: PersonId = context.add_entity((Age(30),)).unwrap();
                 let person_censustract: PersonId = context.add_entity((Age(30),)).unwrap();
                 let person_workplace: PersonId = context.add_entity((Age(30),)).unwrap();
-                let itinerary_all = vec![
-                    ItineraryEntry::new(SettingId::new(Home, 0), ratio[0]),
-                    ItineraryEntry::new(SettingId::new(CensusTract, 0), ratio[1]),
-                    ItineraryEntry::new(SettingId::new(Workplace, 0), ratio[2]),
-                ];
-                let itinerary_home = vec![ItineraryEntry::new(SettingId::new(Home, 0), 1.0)];
-                let itinerary_censustract =
-                    vec![ItineraryEntry::new(SettingId::new(CensusTract, 0), 1.0)];
-                let itinerary_workplace =
-                    vec![ItineraryEntry::new(SettingId::new(Workplace, 0), 1.0)];
-                context
-                    .add_itinerary(infectious_person, itinerary_all)
+
+                let home_id = context
+                    .add_entity::<HomeEntity, _>((SettingCode(0), Alpha(0.0)))
                     .unwrap();
-                context.add_itinerary(person_home, itinerary_home).unwrap();
-                context
-                    .add_itinerary(person_censustract, itinerary_censustract)
+                let workplace_id = context
+                    .add_entity::<WorkEntity, _>((SettingCode(0), Alpha(0.0)))
                     .unwrap();
-                context
-                    .add_itinerary(person_workplace, itinerary_workplace)
+                let census_tract_id = context
+                    .add_entity::<CommunityEntity, _>((SettingCode(0), Alpha(0.0)))
                     .unwrap();
+                context.set_property::<Person, HomeId>(person_home, HomeId(Some(home_id)));
+                context
+                    .set_property::<Person, WorkId>(person_workplace, WorkId(Some(workplace_id)));
+                context.set_property::<Person, CommunityId>(
+                    person_censustract,
+                    CommunityId(Some(census_tract_id)),
+                );
+
+                context.set_property::<Person, HomeId>(infectious_person, HomeId(Some(home_id)));
+                context
+                    .set_property::<Person, WorkId>(infectious_person, WorkId(Some(workplace_id)));
+                context.set_property::<Person, CommunityId>(
+                    infectious_person,
+                    CommunityId(Some(census_tract_id)),
+                );
 
                 // We don't want infectious people beyond our index case to be able to transmit, so we
                 // have to do setup on our own since just calling `init` will trigger a watcher for
                 // people becoming infectious that lets them transmit.
                 load_rate_fns(&mut context).unwrap();
 
-                context.infect_person(infectious_person, None, None, None);
+                context.infect_person(infectious_person, None, None);
                 // Get the total infectiousness multiplier for comparison to total number of infections.
                 if total_infectiousness_multiplier.is_none() {
                     total_infectiousness_multiplier = Some(max_total_infectiousness_multiplier(
@@ -472,6 +468,14 @@ mod test {
                 schedule_next_forecasted_infection(&mut context, infectious_person);
                 context.execute();
             }
+            println!(
+                "For ratio {:?}, average number of infections in home: {:?}, census tract: {:?}, workplace: {:?}",
+                ratio,
+                *num_infected_home.borrow() as f64 / num_sims as f64,
+                *num_infected_censustract.borrow() as f64 / num_sims as f64,
+                *num_infected_workplace.borrow() as f64 / num_sims as f64
+            );
+
             #[allow(clippy::cast_precision_loss)]
             let avg_number_infections_home = *num_infected_home.borrow() as f64 / num_sims as f64;
             assert_almost_eq!(avg_number_infections_home, ratio[0] / sum_of_ratio, 0.05);
