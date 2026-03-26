@@ -386,15 +386,7 @@ mod test {
         // ratios is a matrix of ratio values for the three settings. The first value in each row
         // corresponds to the home setting, the second to the census tract setting, and the third to
         // the workplace setting.
-        let ratios = [
-            // [0.0, 0.0, 0.5],
-            // [0.0, 0.5, 0.0],
-            // [0.5, 0.0, 0.0],
-            // [0.5, 0.5, 0.0],
-            // [0.5, 0.0, 0.5],
-            // [0.0, 0.5, 0.5],
-            [1.0, 1.0, 1.0],
-        ];
+        let ratios = [[1.0, 1.0, 1.0]];
         for ratio in ratios {
             // We add home workplace and census tract settings to context
             // in the test setup for this unit test.
