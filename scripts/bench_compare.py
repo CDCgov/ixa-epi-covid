@@ -219,7 +219,7 @@ def main():
         print(base_output, file=sys.stderr)
         sys.exit(1)
 
-    title = f"{current_branch} vs {base_ref} ({base_sha})"
+    title = f"{base_ref} ({base_sha}) vs {current_branch}"
     print_summary(title, base_results, current_results)
 
 
