@@ -116,6 +116,7 @@ mod test {
         population_loader::PersonId,
         rate_fns::load_rate_fns,
         reports::ReportParams,
+        settings::{Alpha, SettingCategory, SettingCode, SettingId},
     };
     use ixa::{csv, prelude::*};
     use std::path::PathBuf;
@@ -153,15 +154,17 @@ mod test {
 
         let source: PersonId = context.add_entity((Age(42),)).unwrap();
         let target: PersonId = context.add_entity((Age(43),)).unwrap();
-        let setting_type = Some("test_setting");
-        let setting_id: Option<usize> = Some(1);
+        let home: SettingId = context
+            .add_entity((SettingCode(0), Alpha(0.0), SettingCategory::Home))
+            .unwrap();
+        let setting = Some(home);
         let infection_time = 1.0;
 
-        context.infect_person(source, None, None, None);
+        context.infect_person(source, None, None);
         crate::reports::init(&mut context).unwrap();
 
         context.add_plan(infection_time, move |context| {
-            context.infect_person(target, Some(source), setting_type, setting_id);
+            context.infect_person(target, Some(source), setting);
         });
         context.execute();
 
