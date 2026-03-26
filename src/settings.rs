@@ -12,15 +12,16 @@ use crate::{
 
 define_rng!(SettingRng);
 
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy, Hash)]
+pub struct SettingCode(pub usize);
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
+pub struct Alpha(pub f64);
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct SettingProperties {
     pub alpha: f64,
 }
-
-define_entity!(HomeEntity);
-define_entity!(SchoolEntity);
-define_entity!(WorkEntity);
-define_entity!(CommunityEntity);
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy, Hash, Eq)]
 pub enum SettingCategory {
@@ -29,21 +30,19 @@ pub enum SettingCategory {
     School,
     Community,
 }
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
-pub struct Alpha(pub f64);
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy, Hash)]
-pub struct SettingCode(pub usize);
+macro_rules! define_setting_entity {
+    ($entity:ident) => {
+        define_entity!($entity);
+        impl_property!(SettingCode, $entity);
+        impl_property!(Alpha, $entity);
+    };
+}
 
-impl_property!(SettingCode, HomeEntity);
-impl_property!(SettingCode, SchoolEntity);
-impl_property!(SettingCode, WorkEntity);
-impl_property!(SettingCode, CommunityEntity);
-
-impl_property!(Alpha, HomeEntity);
-impl_property!(Alpha, SchoolEntity);
-impl_property!(Alpha, WorkEntity);
-impl_property!(Alpha, CommunityEntity);
+define_setting_entity!(HomeEntity);
+define_setting_entity!(SchoolEntity);
+define_setting_entity!(WorkEntity);
+define_setting_entity!(CommunityEntity);
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub enum WrappedSettingId {
