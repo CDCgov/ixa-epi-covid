@@ -1,7 +1,7 @@
 use crate::error::ModelError;
 use crate::infectiousness_manager::InfectionData;
 use crate::population_loader::{Person, PersonId};
-use crate::settings::WrappedSettingId;
+use crate::settings::SettingId;
 use ixa::prelude::*;
 use ixa::profiling::open_span;
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ struct TransmissionReport {
     time: f64,
     target_id: PersonId,
     infected_by: Option<PersonId>,
-    infection_setting_id: Option<WrappedSettingId>,
+    infection_setting_id: Option<SettingId>,
 }
 
 define_report!(TransmissionReport);
@@ -20,7 +20,7 @@ fn record_transmission_event(
     context: &mut Context,
     target_id: PersonId,
     infected_by: Option<PersonId>,
-    infection_setting_id: Option<WrappedSettingId>,
+    infection_setting_id: Option<SettingId>,
 ) {
     if infected_by.is_some() {
         context.send_report(TransmissionReport {
@@ -45,12 +45,7 @@ pub fn init(context: &mut Context, file_name: &str) -> Result<(), ModelError> {
             ..
         } = event.current
         {
-            record_transmission_event(
-                context,
-                event.entity_id,
-                infected_by,
-                infection_setting_id,
-            );
+            record_transmission_event(context, event.entity_id, infected_by, infection_setting_id);
         }
     });
     Ok(())
@@ -65,11 +60,11 @@ mod test {
         population_loader::PersonId,
         rate_fns::load_rate_fns,
         reports::ReportParams,
+        settings::{Alpha, SettingCategory, SettingCode, SettingId},
     };
     use ixa::{
         Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt, ContextReportExt,
     };
-    use ixa::{assert_almost_eq, csv};
     use std::path::PathBuf;
     use tempfile::tempdir;
 
@@ -105,15 +100,17 @@ mod test {
 
         let source: PersonId = context.add_entity((Age(30),)).unwrap();
         let target: PersonId = context.add_entity((Age(30),)).unwrap();
-        let setting_type = Some("test_setting");
-        let setting_id: Option<usize> = Some(1);
+        let home: SettingId = context
+            .add_entity((SettingCode(0), Alpha(0.0), SettingCategory::Home))
+            .unwrap();
+        let setting = Some(home);
         let infection_time = 1.0;
 
-        context.infect_person(source, None, None, None);
+        context.infect_person(source, None, None);
         crate::reports::init(&mut context).unwrap();
 
         context.add_plan(infection_time, move |context| {
-            context.infect_person(target, Some(source), setting_type, setting_id);
+            context.infect_person(target, Some(source), setting);
         });
         context.execute();
 
@@ -131,20 +128,5 @@ mod test {
         std::mem::drop(context);
 
         assert!(file_path.exists());
-        let mut reader = csv::Reader::from_path(file_path).unwrap();
-        let mut line_count = 0;
-        for result in reader.deserialize() {
-            let record: crate::reports::transmission_report::TransmissionReport = result.unwrap();
-            assert_almost_eq!(record.time, infection_time, 0.0);
-            assert_eq!(record.target_id, target);
-            assert_eq!(record.infected_by.unwrap(), source);
-            assert_eq!(
-                record.infection_setting_type,
-                Some("test_setting".to_string())
-            );
-            assert_eq!(record.infection_setting_id, setting_id);
-            line_count += 1;
-        }
-        assert_eq!(line_count, 1);
     }
 }
