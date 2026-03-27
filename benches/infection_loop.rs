@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
-use epimodel::parameters::{CoreSettingsTypes, GlobalParams, Params, RateFnType};
-use epimodel::settings::SettingProperties;
+use epimodel::parameters::{GlobalParams, Params, RateFnType};
+use epimodel::settings::{SettingCategory, SettingProperties};
 use epimodel::symptom_status_manager::SymptomDelayDistLogNormParams;
 use epimodel::{ContextParametersExt, initialize_model};
 use ixa::HashMap;
@@ -34,22 +34,19 @@ fn make_params(synth_file: PathBuf) -> Params {
         critical_to_dead_delay: delay,
         critical_to_resolved_delay: delay,
         settings_properties: HashMap::from_iter([
-            (CoreSettingsTypes::Home, SettingProperties { alpha: 0.3 }),
+            (SettingCategory::Home, SettingProperties { alpha: 0.3 }),
+            (SettingCategory::Work, SettingProperties { alpha: 0.2 }),
+            (SettingCategory::School, SettingProperties { alpha: 0.2 }),
             (
-                CoreSettingsTypes::Workplace,
-                SettingProperties { alpha: 0.2 },
-            ),
-            (CoreSettingsTypes::School, SettingProperties { alpha: 0.2 }),
-            (
-                CoreSettingsTypes::CensusTract,
+                SettingCategory::Community,
                 SettingProperties { alpha: 0.01 },
             ),
         ]),
         itinerary_ratios: HashMap::from_iter([
-            (CoreSettingsTypes::Home, 0.3),
-            (CoreSettingsTypes::Workplace, 0.3),
-            (CoreSettingsTypes::School, 0.1),
-            (CoreSettingsTypes::CensusTract, 0.3),
+            (SettingCategory::Home, 0.3),
+            (SettingCategory::Work, 0.3),
+            (SettingCategory::School, 0.1),
+            (SettingCategory::Community, 0.3),
         ]),
         ..Default::default()
     }

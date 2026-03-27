@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::error::ModelError;
-use crate::parameters::{ContextParametersExt, CoreSettingsTypes};
+use crate::parameters::ContextParametersExt;
 use crate::settings::{
     Alpha, CommunityEntityId, ContextSettingExt, HomeEntityId, SchoolEntityId, SettingCategory,
     SettingCode, SettingProperties, WorkEntityId,
@@ -47,7 +47,7 @@ pub struct CommunityId(pub Option<CommunityEntityId>);
 fn create_person_from_record(
     context: &mut Context,
     person_record: &PeopleRecord,
-    settings_properties: &HashMap<CoreSettingsTypes, SettingProperties>,
+    settings_properties: &HashMap<SettingCategory, SettingProperties>,
 ) -> Result<(), ModelError> {
     // Create itinerary entries for all setting memberships in input file
     let tract: String = String::from_utf8(person_record.homeId[..11].to_owned())?;
@@ -63,7 +63,7 @@ fn create_person_from_record(
         SettingCode(home_id.parse()?),
         Alpha(
             settings_properties
-                .get(&CoreSettingsTypes::Home)
+                .get(&SettingCategory::Home)
                 .unwrap()
                 .alpha,
         ),
@@ -75,7 +75,7 @@ fn create_person_from_record(
         SettingCode(tract.parse()?),
         Alpha(
             settings_properties
-                .get(&CoreSettingsTypes::CensusTract)
+                .get(&SettingCategory::Community)
                 .unwrap()
                 .alpha,
         ),
@@ -88,7 +88,7 @@ fn create_person_from_record(
             SettingCode(school_string.parse()?),
             Alpha(
                 settings_properties
-                    .get(&CoreSettingsTypes::School)
+                    .get(&SettingCategory::School)
                     .unwrap()
                     .alpha,
             ),
@@ -102,7 +102,7 @@ fn create_person_from_record(
             SettingCode(workplace_string.parse()?),
             Alpha(
                 settings_properties
-                    .get(&CoreSettingsTypes::Workplace)
+                    .get(&SettingCategory::Work)
                     .unwrap()
                     .alpha,
             ),
@@ -147,9 +147,9 @@ pub fn init(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::parameters::{CoreSettingsTypes, GlobalParams, Params};
+    use crate::parameters::{GlobalParams, Params};
     use crate::settings::{
-        CommunityEntity, HomeEntity, SchoolEntity, WorkEntity, WrappedSettingId,
+        CommunityEntity, HomeEntity, SchoolEntity, SettingCategory, WorkEntity, WrappedSettingId,
     };
     use ixa::HashMap;
     use std::io::Write;
@@ -171,25 +171,19 @@ mod test {
             // and that function requires an itinerary write function to be set.
             settings_properties: HashMap::from_iter(
                 [
-                    (CoreSettingsTypes::Home, SettingProperties { alpha: 0.0 }),
-                    (CoreSettingsTypes::School, SettingProperties { alpha: 0.0 }),
-                    (
-                        CoreSettingsTypes::Workplace,
-                        SettingProperties { alpha: 0.0 },
-                    ),
-                    (
-                        CoreSettingsTypes::CensusTract,
-                        SettingProperties { alpha: 0.0 },
-                    ),
+                    (SettingCategory::Home, SettingProperties { alpha: 0.0 }),
+                    (SettingCategory::School, SettingProperties { alpha: 0.0 }),
+                    (SettingCategory::Work, SettingProperties { alpha: 0.0 }),
+                    (SettingCategory::Community, SettingProperties { alpha: 0.0 }),
                 ]
                 .into_iter()
                 .collect::<HashMap<_, _>>(),
             ),
             itinerary_ratios: HashMap::from_iter([
-                (CoreSettingsTypes::Home, 0.25),
-                (CoreSettingsTypes::School, 0.25),
-                (CoreSettingsTypes::Workplace, 0.25),
-                (CoreSettingsTypes::CensusTract, 0.25),
+                (SettingCategory::Home, 0.25),
+                (SettingCategory::School, 0.25),
+                (SettingCategory::Work, 0.25),
+                (SettingCategory::Community, 0.25),
             ]),
             ..Default::default()
         };

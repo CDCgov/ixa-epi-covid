@@ -7,7 +7,6 @@ use std::{fmt::Debug, hash::Hash};
 use crate::{
     ContextParametersExt, Params,
     error::ModelError,
-    parameters::CoreSettingsTypes,
     population_loader::{CommunityId, HomeId, Person, PersonId, SchoolId, WorkId},
 };
 
@@ -94,18 +93,14 @@ trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextPara
             itinerary_ratios, ..
         } = self.get_params();
         match setting {
-            WrappedSettingId::Home(_) => {
-                Ok(*itinerary_ratios.get(&CoreSettingsTypes::Home).unwrap())
-            }
+            WrappedSettingId::Home(_) => Ok(*itinerary_ratios.get(&SettingCategory::Home).unwrap()),
             WrappedSettingId::School(_) => {
-                Ok(*itinerary_ratios.get(&CoreSettingsTypes::School).unwrap())
+                Ok(*itinerary_ratios.get(&SettingCategory::School).unwrap())
             }
-            WrappedSettingId::Work(_) => {
-                Ok(*itinerary_ratios.get(&CoreSettingsTypes::Workplace).unwrap())
+            WrappedSettingId::Work(_) => Ok(*itinerary_ratios.get(&SettingCategory::Work).unwrap()),
+            WrappedSettingId::Community(_) => {
+                Ok(*itinerary_ratios.get(&SettingCategory::Community).unwrap())
             }
-            WrappedSettingId::Community(_) => Ok(*itinerary_ratios
-                .get(&CoreSettingsTypes::CensusTract)
-                .unwrap()),
         }
     }
 }
@@ -347,10 +342,7 @@ pub fn init(context: &mut Context) -> Result<(), ModelError> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{
-        Age,
-        parameters::{CoreSettingsTypes, GlobalParams},
-    };
+    use crate::{Age, parameters::GlobalParams};
     use ixa::{HashMap, assert_almost_eq};
 
     fn setup() -> Context {
@@ -361,25 +353,19 @@ mod test {
             // and that function requires an itinerary write function to be set.
             settings_properties: HashMap::from_iter(
                 [
-                    (CoreSettingsTypes::Home, SettingProperties { alpha: 0.0 }),
-                    (CoreSettingsTypes::School, SettingProperties { alpha: 0.0 }),
-                    (
-                        CoreSettingsTypes::Workplace,
-                        SettingProperties { alpha: 0.0 },
-                    ),
-                    (
-                        CoreSettingsTypes::CensusTract,
-                        SettingProperties { alpha: 0.0 },
-                    ),
+                    (SettingCategory::Home, SettingProperties { alpha: 0.0 }),
+                    (SettingCategory::School, SettingProperties { alpha: 0.0 }),
+                    (SettingCategory::Work, SettingProperties { alpha: 0.0 }),
+                    (SettingCategory::Community, SettingProperties { alpha: 0.0 }),
                 ]
                 .into_iter()
                 .collect::<HashMap<_, _>>(),
             ),
             itinerary_ratios: HashMap::from_iter([
-                (CoreSettingsTypes::Home, 0.25),
-                (CoreSettingsTypes::School, 0.25),
-                (CoreSettingsTypes::Workplace, 0.25),
-                (CoreSettingsTypes::CensusTract, 0.25),
+                (SettingCategory::Home, 0.25),
+                (SettingCategory::School, 0.25),
+                (SettingCategory::Work, 0.25),
+                (SettingCategory::Community, 0.25),
             ]),
             ..Default::default()
         };

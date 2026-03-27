@@ -76,13 +76,15 @@ mod test {
     use crate::infection_propagation_loop::InfectionRng;
     use crate::infectiousness_manager::InfectionData;
     use crate::population_loader::{CommunityId, HomeId, PersonId, WorkId};
-    use crate::settings::{Alpha, CommunityEntity, HomeEntity, SettingCode, WorkEntity};
+    use crate::settings::{
+        Alpha, CommunityEntity, HomeEntity, SettingCategory, SettingCode, WorkEntity,
+    };
     use crate::{
         infection_propagation_loop::{
             InfectionStatus, init, schedule_next_forecasted_infection, schedule_recovery,
         },
         infectiousness_manager::{InfectionContextExt, max_total_infectiousness_multiplier},
-        parameters::{ContextParametersExt, CoreSettingsTypes, GlobalParams, Params, RateFnType},
+        parameters::{ContextParametersExt, GlobalParams, Params, RateFnType},
         population_loader::Person,
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
         settings::SettingProperties,
@@ -119,10 +121,10 @@ mod test {
             infectiousness_rate_fn: RateFnType::Constant { rate, duration },
             settings_properties: HashMap::from_iter(
                 [
-                    (CoreSettingsTypes::Home, SettingProperties { alpha }),
-                    (CoreSettingsTypes::Workplace, SettingProperties { alpha }),
+                    (SettingCategory::Home, SettingProperties { alpha }),
+                    (SettingCategory::Work, SettingProperties { alpha }),
                     (
-                        CoreSettingsTypes::CensusTract,
+                        SettingCategory::Community,
                         SettingProperties {
                             alpha,
                             // Itinerary is specified in the `set_homogeneous_mixing_itinerary` function
@@ -134,9 +136,9 @@ mod test {
                 .collect::<HashMap<_, _>>(),
             ),
             itinerary_ratios: HashMap::from_iter([
-                (CoreSettingsTypes::Home, 1.0),
-                (CoreSettingsTypes::Workplace, 1.0),
-                (CoreSettingsTypes::CensusTract, 1.0),
+                (SettingCategory::Home, 1.0),
+                (SettingCategory::Work, 1.0),
+                (SettingCategory::Community, 1.0),
             ]),
             ..Default::default()
         };

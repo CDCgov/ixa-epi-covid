@@ -219,11 +219,12 @@ mod test {
         Age,
         error::ModelError,
         infectiousness_manager::{InfectionData, InfectionStatus},
-        parameters::{CoreSettingsTypes, GlobalParams, Params},
+        parameters::{GlobalParams, Params},
         population_loader::{CommunityId, Person, PersonId},
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
         settings::{
-            Alpha, CommunityEntity, HomeEntity, SettingCode, SettingProperties, WrappedSettingId,
+            Alpha, CommunityEntity, HomeEntity, SettingCategory, SettingCode, SettingProperties,
+            WrappedSettingId,
         },
     };
     use ixa::{HashMap, assert_almost_eq, prelude::*};
@@ -261,25 +262,19 @@ mod test {
                     max_time: 10.0,
                     settings_properties: HashMap::from_iter(
                         [
-                            (CoreSettingsTypes::Home, SettingProperties { alpha: 1.0 }),
-                            (CoreSettingsTypes::School, SettingProperties { alpha: 1.0 }),
-                            (
-                                CoreSettingsTypes::Workplace,
-                                SettingProperties { alpha: 1.0 },
-                            ),
-                            (
-                                CoreSettingsTypes::CensusTract,
-                                SettingProperties { alpha: 1.0 },
-                            ),
+                            (SettingCategory::Home, SettingProperties { alpha: 1.0 }),
+                            (SettingCategory::School, SettingProperties { alpha: 1.0 }),
+                            (SettingCategory::Work, SettingProperties { alpha: 1.0 }),
+                            (SettingCategory::Community, SettingProperties { alpha: 1.0 }),
                         ]
                         .into_iter()
                         .collect::<HashMap<_, _>>(),
                     ),
                     itinerary_ratios: HashMap::from_iter([
-                        (CoreSettingsTypes::Home, 0.25),
-                        (CoreSettingsTypes::School, 0.25),
-                        (CoreSettingsTypes::Workplace, 0.25),
-                        (CoreSettingsTypes::CensusTract, 0.25),
+                        (SettingCategory::Home, 0.25),
+                        (SettingCategory::School, 0.25),
+                        (SettingCategory::Work, 0.25),
+                        (SettingCategory::Community, 0.25),
                     ]),
                     ..Default::default()
                 },
