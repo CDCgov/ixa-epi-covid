@@ -1,4 +1,4 @@
-use ixa::{impl_derived_property, prelude::*};
+use ixa::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt::Debug};
 
@@ -6,9 +6,8 @@ use core::f64;
 use std::hash::Hash;
 
 use crate::{
-    ContextParametersExt,
+    ContextParametersExt, Params,
     error::ModelError,
-    parameters::GlobalParams,
     population_loader::{CommunityId, HomeId, Itinerary, Person, PersonId, SchoolId, WorkId},
 };
 
@@ -48,23 +47,7 @@ impl_property!(Alpha, Setting);
 
 impl_property!(SettingCategory, Setting);
 
-impl_derived_property!(
-    Multiplier,
-    Setting,
-    [Size, SettingCategory],
-    [GlobalParams],
-    |size, setting_category, params| {
-        if size.0 > 0 {
-            let alpha = params
-                .settings_properties
-                .get(&setting_category)
-                .unwrap()
-                .alpha;
-            return Multiplier(((size.0 - 1) as f64).powf(alpha));
-        }
-        Multiplier(0.0)
-    }
-);
+define_multi_property!((SettingCategory, SettingCode), Setting);
 
 #[derive(Default)]
 struct SettingDataContainer {
@@ -86,8 +69,22 @@ define_data_plugin!(
 trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextParametersExt {
     fn get_setting_ratio(&self, setting: SettingId) -> Result<f64, ModelError> {
         let setting_category = self.get_property::<Setting, SettingCategory>(setting);
-        let containter = self.get_data(SettingDataPlugin);
-        Ok(*containter.setting_ratios.get(&setting_category).unwrap())
+        let Params {
+            itinerary_ratios, ..
+        } = self.get_params().clone();
+        itinerary_ratios
+            .get(&setting_category)
+            .cloned()
+            .ok_or_else(|| {
+                ModelError::ModelError(format!(
+                    "No ratio found for setting category: {:?}",
+                    setting_category
+                ))
+            })
+    }
+
+    fn get_setting_alpha(&self, setting: SettingId) -> Result<f64, ModelError> {
+        Ok(self.get_property::<Setting, Alpha>(setting).0)
     }
 
     fn sample_person_from_setting_internal<T>(&self, setting: T) -> Result<PersonId, ModelError>
@@ -109,11 +106,35 @@ trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextPara
     {
         if let Some(setting_id) = self.get_property::<Person, T>(person_id).get_setting_id() {
             let ratio = self.get_setting_ratio(setting_id)?;
-            let multiplier = self.get_property::<Setting, Multiplier>(setting_id).0;
+            let multiplier = self.calculate_multiplier_internal(setting_id)?;
             Ok(Some((setting_id, ratio, multiplier)))
         } else {
             Ok(None)
         }
+    }
+
+    fn get_setting_size_internal(&self, setting: SettingId) -> Result<usize, ModelError> {
+        let setting_category = self.get_property::<Setting, SettingCategory>(setting);
+        match setting_category {
+            SettingCategory::Home => {
+                Ok(self.query_entity_count::<Person, _>((HomeId(Some(setting)),)))
+            }
+            SettingCategory::Work => {
+                Ok(self.query_entity_count::<Person, _>((WorkId(Some(setting)),)))
+            }
+            SettingCategory::School => {
+                Ok(self.query_entity_count::<Person, _>((SchoolId(Some(setting)),)))
+            }
+            SettingCategory::Community => {
+                Ok(self.query_entity_count::<Person, _>((CommunityId(Some(setting)),)))
+            }
+        }
+    }
+
+    fn calculate_multiplier_internal(&self, setting: SettingId) -> Result<f64, ModelError> {
+        let size = self.get_setting_size_internal(setting)? as f64 - 1.0;
+        let alpha = self.get_setting_alpha(setting)?;
+        Ok(size.powf(alpha))
     }
 }
 impl ContextSettingExtPrivate for Context {}
@@ -122,7 +143,7 @@ impl ContextSettingExtPrivate for Context {}
 pub trait ContextSettingExt:
     PluginContext + ContextEntitiesExt + ContextSettingExtPrivate + ContextParametersExt
 {
-    fn register_setting_ratios(&mut self) -> Result<(), IxaError> {
+    fn register_setting_ratios(&mut self) -> Result<(), ModelError> {
         let params = self.get_params().clone();
         let container = self.get_data_mut(SettingDataPlugin);
         for (setting_category, ratio) in params.itinerary_ratios.iter() {
@@ -130,14 +151,14 @@ pub trait ContextSettingExt:
         }
         Ok(())
     }
-    fn get_setting_size(&self, setting: SettingId) -> Result<usize, IxaError> {
-        Ok(self.get_property::<Setting, Size>(setting).0)
+    fn get_setting_size(&self, setting: SettingId) -> Result<usize, ModelError> {
+        self.get_setting_size_internal(setting)
     }
 
     fn get_active_settings_for_person(
         &self,
         person_id: PersonId,
-    ) -> Result<Vec<(SettingId, f64, f64)>, IxaError> {
+    ) -> Result<Vec<(SettingId, f64, f64)>, ModelError> {
         let mut active_settings = Vec::new();
 
         if let Some(home) = self
@@ -221,7 +242,7 @@ pub trait ContextSettingExt:
     }
 
     fn calculate_multipler(&self, setting: SettingId) -> Result<f64, ModelError> {
-        Ok(self.get_property::<Setting, Multiplier>(setting).0)
+        self.calculate_multiplier_internal(setting)
     }
 
     fn sample_active_setting(&self, person_id: PersonId) -> Result<SettingId, ModelError> {
@@ -272,7 +293,7 @@ pub trait ContextSettingExt:
         alpha: Alpha,
     ) -> Result<SettingId, IxaError> {
         if let Some(setting_id) = self
-            .query_result_iterator::<Setting, _>((setting_code, setting_category))
+            .query_result_iterator::<Setting, _>(((setting_category, setting_code),))
             .next()
         {
             Ok(setting_id)
@@ -283,21 +304,6 @@ pub trait ContextSettingExt:
             Ok(setting_id)
         }
     }
-
-    fn subscribe_to_setting_change<T>(&mut self)
-    where
-        T: Property<Person> + Itinerary + Debug,
-    {
-        self.subscribe_to_event(move |context, event: PropertyChangeEvent<Person, T>| {
-            if let Some(setting_id) = event.current.get_setting_id() {
-                let size = context.get_property::<Setting, Size>(setting_id).0;
-                context.set_property::<Setting, Size>(setting_id, Size(size + 1));
-            } else if let Some(previous_setting_id) = event.previous.get_setting_id() {
-                let size = context.get_property::<Setting, Size>(previous_setting_id).0;
-                context.set_property::<Setting, Size>(previous_setting_id, Size(size - 1));
-            }
-        });
-    }
 }
 
 impl ContextSettingExt for Context {}
@@ -305,12 +311,8 @@ impl ContextSettingExt for Context {}
 pub fn init(context: &mut Context) -> Result<(), IxaError> {
     context.index_property::<Setting, SettingCode>();
     context.index_property::<Setting, SettingCategory>();
+    context.index_property::<Setting, (SettingCategory, SettingCode)>();
 
-    context.subscribe_to_setting_change::<HomeId>();
-    context.subscribe_to_setting_change::<WorkId>();
-    context.subscribe_to_setting_change::<SchoolId>();
-    context.subscribe_to_setting_change::<CommunityId>();
-    context.register_setting_ratios()?;
     Ok(())
 }
 // To do: Write tests for each method like the one above in the init
