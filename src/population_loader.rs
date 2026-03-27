@@ -71,9 +71,8 @@ impl Itinerary for CommunityId {
 fn create_person_from_record(
     context: &mut Context,
     person_record: &PeopleRecord,
-) -> Result<(), ModelError> {
     settings_properties: &HashMap<SettingCategory, SettingProperties>,
-) -> Result<(), IxaError> {
+) -> Result<(), ModelError> {
     // Create itinerary entries for all setting memberships in input file
     let tract: String = String::from_utf8(person_record.homeId[..11].to_owned())?;
     let home_id: String = String::from_utf8(person_record.homeId.to_owned())?;
@@ -140,6 +139,7 @@ fn create_person_from_record(
 fn load_synth_population(
     context: &mut Context,
     synth_input_file: PathBuf,
+    settings_properties: &HashMap<SettingCategory, SettingProperties>,
 ) -> Result<(), ModelError> {
     let mut reader = csv::Reader::from_path(synth_input_file)?;
     let mut raw_record = csv::ByteRecord::new();
@@ -147,7 +147,7 @@ fn load_synth_population(
 
     while reader.read_byte_record(&mut raw_record)? {
         let record: PeopleRecord = raw_record.deserialize(Some(&headers))?;
-        create_person_from_record(context, &record, &settings_properties)?;
+        create_person_from_record(context, &record, settings_properties)?;
     }
     Ok(())
 }
@@ -160,18 +160,19 @@ pub fn init(
     context.index_property::<Person, SchoolId>();
     context.index_property::<Person, WorkId>();
     context.index_property::<Person, CommunityId>();
-    
-    let _span = open_span("load_synth_population");    
+
+    let _span = open_span("load_synth_population");
     let file = synth_population_override
         .unwrap_or_else(|| context.get_params().synth_population_file.clone());
-    load_synth_population(context, file)?;
+    let setting_properties = &context.get_params().settings_properties.clone();
+    load_synth_population(context, file, setting_properties)?;
     Ok(())
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::parameters::GlobalParams, Params;
+    use crate::parameters::{GlobalParams, Params};
     use crate::settings::{Setting, SettingCategory};
     use ixa::HashMap;
     use std::io::Write;
@@ -222,7 +223,8 @@ mod test {
             "age,homeId,schoolId,workplaceId\n43,360930331020001,,\n42,360930331020002,,",
         );
         let synth_file = persist_tmp_csv(&input);
-        load_synth_population(&mut context, synth_file).unwrap();
+        let settings_properties = &context.get_params().settings_properties.clone();
+        load_synth_population(&mut context, synth_file, settings_properties).unwrap();
         let age = [43, 42];
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
         let census_tract_id = 36_093_033_102;
@@ -267,7 +269,8 @@ mod test {
         let input =
             String::from("age,homeId,schoolId,workplaceId\n43,360930331,,\n42,360930331020002,,");
         let synth_file = persist_tmp_csv(&input);
-        load_synth_population(&mut context, synth_file).unwrap();
+        let settings_properties = &context.get_params().settings_properties.clone();
+        load_synth_population(&mut context, synth_file, settings_properties).unwrap();
     }
 
     #[test]
@@ -277,7 +280,8 @@ mod test {
             "age,homeId,schoolId,workplaceId\n43,360930331020001,1,\n42,360930331020002,2,",
         );
         let synth_file = persist_tmp_csv(&input);
-        load_synth_population(&mut context, synth_file).unwrap();
+        let settings_properties = &context.get_params().settings_properties.clone();
+        load_synth_population(&mut context, synth_file, settings_properties).unwrap();
         let age = [43, 42];
         let school_id = [1, 2];
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
@@ -344,7 +348,8 @@ mod test {
             "age,homeId,schoolId,workplaceId\n43,360930331020001,,1\n42,360930331020002,,2",
         );
         let synth_file = persist_tmp_csv(&input);
-        load_synth_population(&mut context, synth_file).unwrap();
+        let settings_properties = &context.get_params().settings_properties.clone();
+        load_synth_population(&mut context, synth_file, settings_properties).unwrap();
         let age = [43, 42];
         let workplace_id = [1, 2];
         let home_id = [360_930_331_020_001, 360_930_331_020_002];

@@ -72,7 +72,6 @@ mod test {
     use ixa::{HashMap, assert_almost_eq};
 
     use crate::Age;
-    use crate::error::ModelError;
     use crate::infection_propagation_loop::InfectionRng;
     use crate::infectiousness_manager::InfectionData;
     use crate::population_loader::{CommunityId, HomeId, PersonId, WorkId};

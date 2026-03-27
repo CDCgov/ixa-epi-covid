@@ -7,6 +7,7 @@ use std::hash::Hash;
 
 use crate::{
     ContextParametersExt,
+    error::ModelError,
     parameters::GlobalParams,
     population_loader::{CommunityId, HomeId, Itinerary, Person, PersonId, SchoolId, WorkId},
 };
@@ -83,26 +84,26 @@ define_data_plugin!(
 // alpha, setting code, setting category
 // Region?
 trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextParametersExt {
-    fn get_setting_ratio(&self, setting: SettingId) -> Result<f64, IxaError> {
+    fn get_setting_ratio(&self, setting: SettingId) -> Result<f64, ModelError> {
         let setting_category = self.get_property::<Setting, SettingCategory>(setting);
         let containter = self.get_data(SettingDataPlugin);
         Ok(*containter.setting_ratios.get(&setting_category).unwrap())
     }
 
-    fn sample_person_from_setting_internal<T>(&self, setting: T) -> Result<PersonId, IxaError>
+    fn sample_person_from_setting_internal<T>(&self, setting: T) -> Result<PersonId, ModelError>
     where
         T: Property<Person> + Itinerary + Debug,
     {
         self.sample_entity::<Person, _, _>(SettingRng, (setting,))
             .ok_or_else(|| {
-                IxaError::IxaError(format!("No members found for setting: {:?}", setting))
+                ModelError::ModelError(format!("No members found for setting: {:?}", setting))
             })
     }
 
     fn get_itinerary_properties_for_person_by_setting<T>(
         &self,
         person_id: PersonId,
-    ) -> Result<Option<(SettingId, f64, f64)>, IxaError>
+    ) -> Result<Option<(SettingId, f64, f64)>, ModelError>
     where
         T: Property<Person> + Itinerary + Debug,
     {
@@ -185,7 +186,7 @@ pub trait ContextSettingExt:
         active_settings.iter().map(|s| s.2).fold(0.0, f64::max)
     }
 
-    fn sample_person_from_setting(&self, setting: SettingId) -> Result<PersonId, IxaError> {
+    fn sample_person_from_setting(&self, setting: SettingId) -> Result<PersonId, ModelError> {
         let setting_category = self.get_property::<Setting, SettingCategory>(setting);
         match setting_category {
             SettingCategory::Home => {
@@ -207,7 +208,7 @@ pub trait ContextSettingExt:
         &self,
         person_id: PersonId,
         setting: SettingId,
-    ) -> Result<Option<PersonId>, IxaError> {
+    ) -> Result<Option<PersonId>, ModelError> {
         if self.get_setting_size(setting)? == 1 {
             return Ok(None);
         }
@@ -219,11 +220,11 @@ pub trait ContextSettingExt:
         }
     }
 
-    fn calculate_multipler(&self, setting: SettingId) -> Result<f64, IxaError> {
+    fn calculate_multipler(&self, setting: SettingId) -> Result<f64, ModelError> {
         Ok(self.get_property::<Setting, Multiplier>(setting).0)
     }
 
-    fn sample_active_setting(&self, person_id: PersonId) -> Result<SettingId, IxaError> {
+    fn sample_active_setting(&self, person_id: PersonId) -> Result<SettingId, ModelError> {
         let active_settings = self.get_active_settings_for_person(person_id)?;
         let mut weights_vec = vec![];
         for setting in active_settings.iter() {
