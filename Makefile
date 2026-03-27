@@ -15,8 +15,8 @@ uv-sync:
 synthetic-population:
 	uv run scripts/create_synthetic_population.py --state $(STATE) --size $(NORMALIZED_SIZE)
 
-input/synth_pop_people_$(STATE)_$(NORMALIZED_SIZE).csv:
-	make synthetic-population STATE=$(STATE) SIZE=$(NORMALIZED_SIZE)
+input/synth_pop_people_%.csv:
+	uv run scripts/create_synthetic_population.py --state $(shell echo "$*" | sed 's/_.*//')  --size $(shell echo "$*" | sed 's/^[A-Z]*_//')
 
 # Run the model with a synthetic population (e.g., make run SIZE=1_000_000)
 # Generates the population file if it doesn't exist.
@@ -46,3 +46,14 @@ profile-large:
 
 profile-xl:
 	make profile SIZE=10_000_000
+
+# Run benchmarks
+bench: input/synth_pop_people_WY_10_000.csv input/synth_pop_people_WY_100_000.csv
+	cargo bench --bench infection_loop
+
+# Compare benchmarks against a base ref (default: HEAD, i.e. uncommitted changes)
+# Usage: make bench-compare              # uncommitted changes vs last commit
+#        make bench-compare BASE=main    # working tree vs main
+BASE ?= HEAD
+bench-compare: input/synth_pop_people_WY_10_000.csv input/synth_pop_people_WY_100_000.csv
+	uv run scripts/bench_compare.py $(BASE)
