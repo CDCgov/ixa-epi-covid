@@ -217,6 +217,7 @@ mod test {
     };
     use crate::{
         Age,
+        error::ModelError,
         infectiousness_manager::{InfectionData, InfectionStatus},
         parameters::{CoreSettingsTypes, GlobalParams, Params},
         population_loader::{CommunityId, Person, PersonId},

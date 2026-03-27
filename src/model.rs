@@ -25,7 +25,7 @@ pub fn initialize_model(
         ExecutionPhase::Last,
     );
     context.set_start_time(-1000.);
-    settings::init(context);
+    settings::init(context)?;
     info!("Settings initialized");
     population_loader::init(context, synth_population_override)?;
     info!("Population loaded");

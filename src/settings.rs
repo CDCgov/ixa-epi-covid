@@ -2,10 +2,11 @@ use ixa::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use core::f64;
-use std::{hash::Hash, fmt::Debug};
+use std::{fmt::Debug, hash::Hash};
 
 use crate::{
-    Age, ContextParametersExt, Params,
+    ContextParametersExt, Params,
+    error::ModelError,
     parameters::CoreSettingsTypes,
     population_loader::{CommunityId, HomeId, Person, PersonId, SchoolId, WorkId},
 };
@@ -57,7 +58,7 @@ pub enum WrappedSettingId {
 // alpha, setting code, setting category
 // Region?
 trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextParametersExt {
-    fn sample_person_from_setting_t<T>(&self, wrapped_id: T) -> Result<PersonId, IxaError>
+    fn sample_person_from_setting_t<T>(&self, wrapped_id: T) -> Result<PersonId, ModelError>
     where
         T: Property<Person> + Debug,
     {
@@ -65,13 +66,13 @@ trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextPara
         if let Some(sample) = self.sample_entity::<Person, _, _>(SettingRng, (wrapped_id,)) {
             Ok(sample)
         } else {
-            Err(IxaError::IxaError(format!(
+            Err(ModelError::ModelError(format!(
                 "No members found for id: {}",
                 wrapped_id_debug
             )))
         }
     }
-    fn get_setting_alpha(&self, setting: WrappedSettingId) -> Result<f64, IxaError> {
+    fn get_setting_alpha(&self, setting: WrappedSettingId) -> Result<f64, ModelError> {
         match setting {
             WrappedSettingId::Home(home_id) => {
                 Ok(self.get_property::<HomeEntity, Alpha>(home_id).0)
@@ -88,7 +89,7 @@ trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextPara
         }
     }
 
-    fn get_setting_ratio(&self, setting: WrappedSettingId) -> Result<f64, IxaError> {
+    fn get_setting_ratio(&self, setting: WrappedSettingId) -> Result<f64, ModelError> {
         let Params {
             itinerary_ratios, ..
         } = self.get_params();
@@ -114,7 +115,7 @@ impl ContextSettingExtPrivate for Context {}
 pub trait ContextSettingExt:
     PluginContext + ContextEntitiesExt + ContextSettingExtPrivate + ContextParametersExt
 {
-    fn get_setting_size(&self, setting: WrappedSettingId) -> Result<usize, IxaError> {
+    fn get_setting_size(&self, setting: WrappedSettingId) -> Result<usize, ModelError> {
         match setting {
             WrappedSettingId::Home(home_id) => {
                 Ok(self.query_entity_count::<Person, _>((HomeId(Some(home_id)),)))
@@ -134,7 +135,7 @@ pub trait ContextSettingExt:
     fn get_active_settings_for_person(
         &self,
         person_id: PersonId,
-    ) -> Result<Vec<WrappedSettingId>, IxaError> {
+    ) -> Result<Vec<WrappedSettingId>, ModelError> {
         let mut active_settings = Vec::new();
         if let Some(home_id) = self.get_property::<Person, HomeId>(person_id).0 {
             active_settings.push(WrappedSettingId::Home(home_id));
@@ -181,13 +182,20 @@ pub trait ContextSettingExt:
         max_inf
     }
 
-    fn sample_person_from_setting(&self, setting: WrappedSettingId) -> Result<PersonId, IxaError> {
+    fn sample_person_from_setting(
+        &self,
+        setting: WrappedSettingId,
+    ) -> Result<PersonId, ModelError> {
         match setting {
-            WrappedSettingId::Home(home_id) => self.sample_person_from_setting_t(HomeId(Some(home_id))),
+            WrappedSettingId::Home(home_id) => {
+                self.sample_person_from_setting_t(HomeId(Some(home_id)))
+            }
             WrappedSettingId::School(school_id) => {
                 self.sample_person_from_setting_t(SchoolId(Some(school_id)))
             }
-            WrappedSettingId::Work(work_id) => self.sample_person_from_setting_t(WorkId(Some(work_id))),
+            WrappedSettingId::Work(work_id) => {
+                self.sample_person_from_setting_t(WorkId(Some(work_id)))
+            }
             WrappedSettingId::Community(community_id) => {
                 self.sample_person_from_setting_t(CommunityId(Some(community_id)))
             }
@@ -198,7 +206,7 @@ pub trait ContextSettingExt:
         &self,
         person_id: PersonId,
         setting: WrappedSettingId,
-    ) -> Result<Option<PersonId>, IxaError> {
+    ) -> Result<Option<PersonId>, ModelError> {
         if self.get_setting_size(setting)? == 1 {
             return Ok(None);
         }
@@ -210,13 +218,13 @@ pub trait ContextSettingExt:
         }
     }
 
-    fn calculate_multiplier(&self, setting: WrappedSettingId) -> Result<f64, IxaError> {
+    fn calculate_multiplier(&self, setting: WrappedSettingId) -> Result<f64, ModelError> {
         let size = self.get_setting_size(setting)?;
         let alpha = self.get_setting_alpha(setting)?;
         Ok(((size - 1) as f64).powf(alpha))
     }
 
-    fn sample_active_setting(&self, person_id: PersonId) -> Result<WrappedSettingId, IxaError> {
+    fn sample_active_setting(&self, person_id: PersonId) -> Result<WrappedSettingId, ModelError> {
         let mut weights_vec = vec![];
         let ids_vec = self.get_active_settings_for_person(person_id)?;
         let mut sum_weights = 0.0;
@@ -242,7 +250,7 @@ pub trait ContextSettingExt:
         setting_category: SettingCategory,
         setting_code: SettingCode,
         alpha: Alpha,
-    ) -> Result<(), IxaError> {
+    ) -> Result<(), ModelError> {
         let setting_entity_id = self.add_index_setting(setting_category, setting_code, alpha)?;
         match setting_entity_id {
             WrappedSettingId::Home(home_id) => {
@@ -265,7 +273,7 @@ pub trait ContextSettingExt:
         setting_category: SettingCategory,
         setting_code: SettingCode,
         alpha: Alpha,
-    ) -> Result<WrappedSettingId, IxaError> {
+    ) -> Result<WrappedSettingId, ModelError> {
         match setting_category {
             SettingCategory::Home => {
                 if let Some(setting_id) = self
@@ -325,7 +333,7 @@ pub trait ContextSettingExt:
 
 impl ContextSettingExt for Context {}
 
-pub fn init(context: &mut Context) -> Result<(), IxaError> {
+pub fn init(context: &mut Context) -> Result<(), ModelError> {
     context.index_property::<HomeEntity, SettingCode>();
     context.index_property::<WorkEntity, SettingCode>();
     context.index_property::<SchoolEntity, SettingCode>();
@@ -339,7 +347,10 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::parameters::{CoreSettingsTypes, GlobalParams};
+    use crate::{
+        Age,
+        parameters::{CoreSettingsTypes, GlobalParams},
+    };
     use ixa::{HashMap, assert_almost_eq};
 
     fn setup() -> Context {

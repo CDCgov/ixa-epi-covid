@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::error::ModelError;
-use crate::parameters::ContextParametersExt;
+use crate::parameters::{ContextParametersExt, CoreSettingsTypes};
 use crate::settings::{
     Alpha, CommunityEntityId, ContextSettingExt, HomeEntityId, SchoolEntityId, SettingCategory,
     SettingCode, SettingProperties, WorkEntityId,
@@ -47,6 +47,7 @@ pub struct CommunityId(pub Option<CommunityEntityId>);
 fn create_person_from_record(
     context: &mut Context,
     person_record: &PeopleRecord,
+    settings_properties: &HashMap<CoreSettingsTypes, SettingProperties>,
 ) -> Result<(), ModelError> {
     // Create itinerary entries for all setting memberships in input file
     let tract: String = String::from_utf8(person_record.homeId[..11].to_owned())?;
@@ -119,9 +120,10 @@ fn load_synth_population(
     let mut raw_record = csv::ByteRecord::new();
     let headers = reader.byte_headers()?.clone();
 
+    let settings_properties = &context.get_params().settings_properties.clone();
     while reader.read_byte_record(&mut raw_record)? {
         let record: PeopleRecord = raw_record.deserialize(Some(&headers))?;
-        create_person_from_record(context, &record, &settings_properties)?;
+        create_person_from_record(context, &record, settings_properties)?;
     }
     Ok(())
 }
@@ -134,8 +136,8 @@ pub fn init(
     context.index_property::<Person, SchoolId>();
     context.index_property::<Person, WorkId>();
     context.index_property::<Person, CommunityId>();
-    
-    let _span = open_span("load_synth_population");    
+
+    let _span = open_span("load_synth_population");
     let file = synth_population_override
         .unwrap_or_else(|| context.get_params().synth_population_file.clone());
     load_synth_population(context, file)?;
