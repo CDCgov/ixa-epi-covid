@@ -7,7 +7,7 @@ use crate::error::ModelError;
 use crate::parameters::ContextParametersExt;
 use crate::settings::{
     Alpha, CommunityEntityId, ContextSettingExt, HomeEntityId, SchoolEntityId, SettingCategory,
-    SettingCode, SettingProperties, WorkEntityId,
+    SettingCode, SettingProperties, WorkEntityId, WrappedSettingId,
 };
 use ixa::profiling::open_span;
 
@@ -43,6 +43,31 @@ pub struct WorkId(pub Option<WorkEntityId>);
 pub struct SchoolId(pub Option<SchoolEntityId>);
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash)]
 pub struct CommunityId(pub Option<CommunityEntityId>);
+
+pub trait Itinerary {
+    fn get_setting_id(&self) -> Option<WrappedSettingId>;
+}
+
+impl Itinerary for HomeId {
+    fn get_setting_id(&self) -> Option<WrappedSettingId> {
+        self.0.map(WrappedSettingId::Home)
+    }
+}
+impl Itinerary for WorkId {
+    fn get_setting_id(&self) -> Option<WrappedSettingId> {
+        self.0.map(WrappedSettingId::Work)
+    }
+}
+impl Itinerary for SchoolId {
+    fn get_setting_id(&self) -> Option<WrappedSettingId> {
+        self.0.map(WrappedSettingId::School)
+    }
+}
+impl Itinerary for CommunityId {
+    fn get_setting_id(&self) -> Option<WrappedSettingId> {
+        self.0.map(WrappedSettingId::Community)
+    }
+}
 
 fn create_person_from_record(
     context: &mut Context,
