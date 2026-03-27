@@ -24,8 +24,8 @@ pub enum RateFnType {
 pub enum CoreSettingsTypes {
     Home,
     School,
-    Workplace,
-    CensusTract,
+    Work,
+    Community,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

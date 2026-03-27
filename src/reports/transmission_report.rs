@@ -1,6 +1,6 @@
 use crate::infectiousness_manager::InfectionData;
 use crate::population_loader::{Person, PersonId};
-use crate::settings::WrappedSettingId;
+use crate::settings::SettingId;
 use ixa::prelude::*;
 use ixa::profiling::open_span;
 use serde::{Deserialize, Serialize};
@@ -10,7 +10,7 @@ struct TransmissionReport {
     time: f64,
     target_id: PersonId,
     infected_by: Option<PersonId>,
-    infection_setting_id: Option<WrappedSettingId>,
+    infection_setting_id: Option<SettingId>,
 }
 
 define_report!(TransmissionReport);
@@ -19,7 +19,7 @@ fn record_transmission_event(
     context: &mut Context,
     target_id: PersonId,
     infected_by: Option<PersonId>,
-    infection_setting_id: Option<WrappedSettingId>,
+    infection_setting_id: Option<SettingId>,
 ) {
     if infected_by.is_some() {
         context.send_report(TransmissionReport {
@@ -59,7 +59,7 @@ mod test {
         population_loader::PersonId,
         rate_fns::load_rate_fns,
         reports::ReportParams,
-        settings::{Alpha, HomeEntityId, SettingCode, WrappedSettingId},
+        settings::{Alpha, Setting, SettingCategory, SettingCode},
     };
     use ixa::{
         Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt, ContextReportExt,
@@ -99,8 +99,10 @@ mod test {
 
         let source: PersonId = context.add_entity((Age(30),)).unwrap();
         let target: PersonId = context.add_entity((Age(30),)).unwrap();
-        let home: HomeEntityId = context.add_entity((SettingCode(0), Alpha(0.0))).unwrap();
-        let setting = Some(WrappedSettingId::Home(home));
+        let home = context
+            .add_entity::<Setting, _>((SettingCategory::Home, SettingCode(0), Alpha(0.0)))
+            .unwrap();
+        let setting = Some(home);
         let infection_time = 1.0;
 
         context.infect_person(source, None, None);

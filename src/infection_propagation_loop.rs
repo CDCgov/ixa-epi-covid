@@ -73,8 +73,8 @@ mod test {
     use crate::Age;
     use crate::infection_propagation_loop::InfectionRng;
     use crate::infectiousness_manager::InfectionData;
-    use crate::population_loader::{CommunityId, HomeId, PersonId, WorkId};
-    use crate::settings::{Alpha, CommunityEntity, HomeEntity, SettingCode, WorkEntity};
+    use crate::population_loader::PersonId;
+    use crate::settings::{Alpha, ContextSettingExt, SettingCategory, SettingCode};
     use crate::{
         infection_propagation_loop::{
             InfectionStatus, init, schedule_next_forecasted_infection, schedule_recovery,
@@ -90,22 +90,12 @@ mod test {
         context: &mut Context,
         person_id: PersonId,
     ) -> Result<(), IxaError> {
-        let community_id = context
-            .query_result_iterator::<CommunityEntity, _>((SettingCode(0),))
-            .next();
-        if community_id.is_some() {
-            context.set_property::<Person, CommunityId>(person_id, CommunityId(community_id));
-        } else {
-            context
-                .add_entity::<CommunityEntity, _>((SettingCode(0), Alpha(0.0)))
-                .map(|community_id| {
-                    context.set_property::<Person, CommunityId>(
-                        person_id,
-                        CommunityId(Some(community_id)),
-                    );
-                })?;
-        }
-        Ok(())
+        context.add_person_to_setting(
+            person_id,
+            SettingCategory::Community,
+            SettingCode(0),
+            Alpha(0.0),
+        )
     }
 
     fn setup_context(seed: u64, rate: f64, alpha: f64, duration: f64) -> Context {
@@ -118,14 +108,13 @@ mod test {
             settings_properties: HashMap::from_iter(
                 [
                     (CoreSettingsTypes::Home, SettingProperties { alpha }),
-                    (CoreSettingsTypes::Workplace, SettingProperties { alpha }),
                     (
-                        CoreSettingsTypes::CensusTract,
-                        SettingProperties {
-                            alpha,
-                            // Itinerary is specified in the `set_homogeneous_mixing_itinerary` function
-                            // so we do not need to set it here.
-                        },
+                        CoreSettingsTypes::Work,
+                        SettingProperties { alpha },
+                    ),
+                    (
+                        CoreSettingsTypes::Community,
+                        SettingProperties { alpha },
                     ),
                 ]
                 .into_iter()
@@ -133,8 +122,8 @@ mod test {
             ),
             itinerary_ratios: HashMap::from_iter([
                 (CoreSettingsTypes::Home, 1.0),
-                (CoreSettingsTypes::Workplace, 1.0),
-                (CoreSettingsTypes::CensusTract, 1.0),
+                (CoreSettingsTypes::Work, 1.0),
+                (CoreSettingsTypes::Community, 1.0),
             ]),
             ..Default::default()
         };
@@ -147,7 +136,6 @@ mod test {
         // we still have people in settings.
         context
     }
-
     #[test]
     fn test_init_loop() {
         let mut context = setup_context(42, 1.0, 1.0, 5.0);
@@ -373,67 +361,93 @@ mod test {
     #[test]
     fn test_location_infections() {
         // Does one infectious person generate the number of infections as expected in different
-        // settings? We're going to run many simulations that each start with one infectious and three
-        // susceptible person. Each susceptible person belongs in one of three setting types
-        // and the infectious person is in all three settings. The simulation ends after the
-        // first person is infected. The location of this infection is records. We compare the number of
-        // infected people in each setting to the expected proportion defined by the ratios. We examine
-        // seven scenarios of ratios for the infectious individual.
+        // settings? We're going to run many simulations that each start with one infectious
+        // and three susceptible people. Each susceptible person belongs in one of three
+        // setting types and the infectious person is in all three settings. The simulation
+        // ends after the first person is infected. The location of this infection is
+        // recorded. We compare the number of infected people in each setting to the
+        // expected proportion defined by the ratios. We examine seven scenarios of ratios
+        // for the infectious individual.
         let num_sims: u64 = 1000;
         let rate = 1.5;
         let alpha = 0.42;
 
         // ratios is a matrix of ratio values for the three settings. The first value in each row
-        // corresponds to the home setting, the second to the census tract setting, and the third to
-        // the workplace setting.
+        // corresponds to the home setting, the second to the community setting, and the
+        // third to the work setting.
         let ratios = [[1.0, 1.0, 1.0]];
         for ratio in ratios {
-            // We add home workplace and census tract settings to context
-            // in the test setup for this unit test.
+            // We add home, work, and community settings to context in the test setup for
+            // this unit test.
             // We need the total infectiousness multiplier for the person.
             let sum_of_ratio: f64 = ratio.iter().sum();
             let mut total_infectiousness_multiplier = None;
             // Where we store the infection counts.
             let num_infected_home = Rc::new(RefCell::new(0usize));
-            let num_infected_censustract = Rc::new(RefCell::new(0usize));
-            let num_infected_workplace = Rc::new(RefCell::new(0usize));
+            let num_infected_community = Rc::new(RefCell::new(0usize));
+            let num_infected_work = Rc::new(RefCell::new(0usize));
 
             for seed in 0..num_sims {
                 let num_infected_home_clone = Rc::clone(&num_infected_home);
-                let num_infected_cenustract_clone = Rc::clone(&num_infected_censustract);
-                let num_infected_workplace_clone = Rc::clone(&num_infected_workplace);
+                let num_infected_community_clone = Rc::clone(&num_infected_community);
+                let num_infected_work_clone = Rc::clone(&num_infected_work);
                 let mut context = setup_context(seed, rate, alpha, 5.0);
 
                 // Add a a person who will get infected.
                 let infectious_person: PersonId = context.add_entity((Age(30),)).unwrap();
                 let person_home: PersonId = context.add_entity((Age(30),)).unwrap();
-                let person_censustract: PersonId = context.add_entity((Age(30),)).unwrap();
-                let person_workplace: PersonId = context.add_entity((Age(30),)).unwrap();
+                let person_community: PersonId = context.add_entity((Age(30),)).unwrap();
+                let person_work: PersonId = context.add_entity((Age(30),)).unwrap();
 
-                let home_id = context
-                    .add_entity::<HomeEntity, _>((SettingCode(0), Alpha(0.0)))
-                    .unwrap();
-                let workplace_id = context
-                    .add_entity::<WorkEntity, _>((SettingCode(0), Alpha(0.0)))
-                    .unwrap();
-                let census_tract_id = context
-                    .add_entity::<CommunityEntity, _>((SettingCode(0), Alpha(0.0)))
-                    .unwrap();
-                context.set_property::<Person, HomeId>(person_home, HomeId(Some(home_id)));
                 context
-                    .set_property::<Person, WorkId>(person_workplace, WorkId(Some(workplace_id)));
-                context.set_property::<Person, CommunityId>(
-                    person_censustract,
-                    CommunityId(Some(census_tract_id)),
-                );
+                    .add_person_to_setting(
+                        person_home,
+                        SettingCategory::Home,
+                        SettingCode(0),
+                        Alpha(0.0),
+                    )
+                    .unwrap();
+                context
+                    .add_person_to_setting(
+                        person_work,
+                        SettingCategory::Work,
+                        SettingCode(0),
+                        Alpha(0.0),
+                    )
+                    .unwrap();
+                context
+                    .add_person_to_setting(
+                        person_community,
+                        SettingCategory::Community,
+                        SettingCode(0),
+                        Alpha(0.0),
+                    )
+                    .unwrap();
 
-                context.set_property::<Person, HomeId>(infectious_person, HomeId(Some(home_id)));
                 context
-                    .set_property::<Person, WorkId>(infectious_person, WorkId(Some(workplace_id)));
-                context.set_property::<Person, CommunityId>(
-                    infectious_person,
-                    CommunityId(Some(census_tract_id)),
-                );
+                    .add_person_to_setting(
+                        infectious_person,
+                        SettingCategory::Home,
+                        SettingCode(0),
+                        Alpha(0.0),
+                    )
+                    .unwrap();
+                context
+                    .add_person_to_setting(
+                        infectious_person,
+                        SettingCategory::Work,
+                        SettingCode(0),
+                        Alpha(0.0),
+                    )
+                    .unwrap();
+                context
+                    .add_person_to_setting(
+                        infectious_person,
+                        SettingCategory::Community,
+                        SettingCode(0),
+                        Alpha(0.0),
+                    )
+                    .unwrap();
 
                 // We don't want infectious people beyond our index case to be able to transmit, so we
                 // have to do setup on our own since just calling `init` will trigger a watcher for
@@ -455,10 +469,10 @@ mod test {
                             // Reset the person to susceptible.
                             if event.entity_id == person_home {
                                 *num_infected_home_clone.borrow_mut() += 1;
-                            } else if event.entity_id == person_censustract {
-                                *num_infected_cenustract_clone.borrow_mut() += 1;
-                            } else if event.entity_id == person_workplace {
-                                *num_infected_workplace_clone.borrow_mut() += 1;
+                            } else if event.entity_id == person_community {
+                                *num_infected_community_clone.borrow_mut() += 1;
+                            } else if event.entity_id == person_work {
+                                *num_infected_work_clone.borrow_mut() += 1;
                             }
                             context.shutdown();
                         }
@@ -469,29 +483,29 @@ mod test {
                 context.execute();
             }
             println!(
-                "For ratio {:?}, average number of infections in home: {:?}, census tract: {:?}, workplace: {:?}",
+                "For ratio {:?}, average number of infections in home: {:?}, community: {:?}, work: {:?}",
                 ratio,
                 *num_infected_home.borrow() as f64 / num_sims as f64,
-                *num_infected_censustract.borrow() as f64 / num_sims as f64,
-                *num_infected_workplace.borrow() as f64 / num_sims as f64
+                *num_infected_community.borrow() as f64 / num_sims as f64,
+                *num_infected_work.borrow() as f64 / num_sims as f64
             );
 
             #[allow(clippy::cast_precision_loss)]
             let avg_number_infections_home = *num_infected_home.borrow() as f64 / num_sims as f64;
             assert_almost_eq!(avg_number_infections_home, ratio[0] / sum_of_ratio, 0.05);
             #[allow(clippy::cast_precision_loss)]
-            let avg_number_infections_censustract =
-                *num_infected_censustract.borrow() as f64 / num_sims as f64;
+            let avg_number_infections_community =
+                *num_infected_community.borrow() as f64 / num_sims as f64;
             assert_almost_eq!(
-                avg_number_infections_censustract,
+                avg_number_infections_community,
                 ratio[1] / sum_of_ratio,
                 0.05
             );
             #[allow(clippy::cast_precision_loss)]
-            let avg_number_infections_workplace =
-                *num_infected_workplace.borrow() as f64 / num_sims as f64;
+            let avg_number_infections_work =
+                *num_infected_work.borrow() as f64 / num_sims as f64;
             assert_almost_eq!(
-                avg_number_infections_workplace,
+                avg_number_infections_work,
                 ratio[2] / sum_of_ratio,
                 0.05
             );

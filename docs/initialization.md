@@ -6,4 +6,25 @@ When the simulation is instantiated, all individuals are created in the suscepti
 Seeded infections are allowed to vary in their remaining duration of infection at time 0.0. This is implemented using negative simulation time feature of `ixa`, where individuals to be seeded as infectious sample their infection duration elapsed at time 0.0 to be uniformly distributed from 0 to 100% of their assigned infection duration. Note that the process of seeding infections is distinct from the importation of novel infections from outside the community, discussed in more detail in the [importation module](importation.md). Even though both approaches allow for infectious individuals who arise external to the transmission model, imported cases begin their infection upon importation and still have their whole duration of infection ahead of them.
 
 ## Synthetic populations
-A synthetic population is a structured `.csv` file which defines the population that will be simulated. Each row corresponds to an individual with the properties defined by the columns of the file: `age`, `homeId`, `schoolId`, `workplaceId`. `age` corresponds to the age of the individual. `homeId`, `schoolId`, and `workplaceId` corresponds to the home, school and workplace setting an individual belongs to. An individual must belong to a home setting, but does not need to belong to a school or workplace (this is indicated by an empty entry). An individual's community or census tract group is derived from the individual's `homeId`. The implementation in `population_loader.rs` adds all people to the model, assigns the age person property and setting itinerary to each individual. For this model, the entries for all setting IDs should be represented by 17 character structured numeric values. The first 11 characters of the string contain information about the state, county, and census tract following the FIPS format, and the remaining 6 characters define the group.
+A synthetic population is a structured `.csv` file that defines the population
+to be simulated. Each row corresponds to an individual with four columns:
+`age`, `homeId`, `schoolId`, `workplaceId`. The input format is unchanged.
+
+- `age`: age of the individual.
+- `homeId`, `schoolId`, `workplaceId`: setting codes for the individual's home,
+  school, and work. Home is required; school/work may be empty.
+
+The model now stores all settings in a single `Setting` entity with categories
+`Home`, `School`, `Work`, and `Community`. Memberships are recorded via
+`PersonSetting` edges. `population_loader.rs` still reads the same columns and
+creates one setting per category/code pair, adding each person to the
+appropriate settings.
+
+Community membership is derived from `homeId`. The first 11 characters of
+`homeId` define the tract (FIPS state/county/tract); the remaining 6 characters
+define the group within that tract. The loader creates a `Community` setting
+using the 11-character prefix and joins the person to it.
+
+All setting codes in the CSV should be 17-character numeric strings. These are
+parsed into integers for storage and querying; keep the structured format so
+both tract and group remain accessible.

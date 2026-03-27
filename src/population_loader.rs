@@ -5,8 +5,7 @@ use std::path::PathBuf;
 
 use crate::parameters::{ContextParametersExt, CoreSettingsTypes, Params};
 use crate::settings::{
-    Alpha, CommunityEntityId, ContextSettingExt, HomeEntityId, SchoolEntityId, SettingCategory,
-    SettingCode, SettingProperties, WorkEntityId,
+    Alpha, ContextSettingExt, SettingCategory, SettingCode, SettingProperties,
 };
 use ixa::profiling::open_span;
 
@@ -29,19 +28,6 @@ impl_property!(Age, Person);
 pub struct Alive(pub bool);
 impl_property!(Alive, Person, default_const = Alive(true));
 
-impl_property!(HomeId, Person, default_const = HomeId(None));
-impl_property!(WorkId, Person, default_const = WorkId(None));
-impl_property!(SchoolId, Person, default_const = SchoolId(None));
-impl_property!(CommunityId, Person, default_const = CommunityId(None));
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash)]
-pub struct HomeId(pub Option<HomeEntityId>);
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash)]
-pub struct WorkId(pub Option<WorkEntityId>);
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash)]
-pub struct SchoolId(pub Option<SchoolEntityId>);
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash)]
-pub struct CommunityId(pub Option<CommunityEntityId>);
 
 fn create_person_from_record(
     context: &mut Context,
@@ -52,7 +38,7 @@ fn create_person_from_record(
     let tract: String = String::from_utf8(person_record.homeId[..11].to_owned())?;
     let home_id: String = String::from_utf8(person_record.homeId.to_owned())?;
     let school_string: String = String::from_utf8(person_record.schoolId.to_owned())?;
-    let workplace_string: String = String::from_utf8(person_record.workplaceId.to_owned())?;
+    let work_string: String = String::from_utf8(person_record.workplaceId.to_owned())?;
 
     // Add person to context
     let person_id: PersonId = context.add_entity((Age(person_record.age),)).unwrap();
@@ -74,7 +60,7 @@ fn create_person_from_record(
         SettingCode(tract.parse()?),
         Alpha(
             settings_properties
-                .get(&CoreSettingsTypes::CensusTract)
+                .get(&CoreSettingsTypes::Community)
                 .unwrap()
                 .alpha,
         ),
@@ -94,14 +80,14 @@ fn create_person_from_record(
         )?;
     }
 
-    if !workplace_string.is_empty() {
+    if !work_string.is_empty() {
         context.add_person_to_setting(
             person_id,
             SettingCategory::Work,
-            SettingCode(workplace_string.parse()?),
+            SettingCode(work_string.parse()?),
             Alpha(
                 settings_properties
-                    .get(&CoreSettingsTypes::Workplace)
+                    .get(&CoreSettingsTypes::Work)
                     .unwrap()
                     .alpha,
             ),
@@ -128,11 +114,6 @@ fn load_synth_population(context: &mut Context, synth_input_file: PathBuf) -> Re
 }
 
 pub fn init(context: &mut Context) -> Result<(), IxaError> {
-    context.index_property::<Person, HomeId>();
-    context.index_property::<Person, SchoolId>();
-    context.index_property::<Person, WorkId>();
-    context.index_property::<Person, CommunityId>();
-
     let _span = open_span("load_synth_population");
     let Params {
         synth_population_file,
@@ -146,9 +127,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 mod test {
     use super::*;
     use crate::parameters::{CoreSettingsTypes, GlobalParams};
-    use crate::settings::{
-        CommunityEntity, HomeEntity, SchoolEntity, WorkEntity, WrappedSettingId,
-    };
+    use crate::settings::{ContextSettingExt, Setting, SettingCategory, SettingCode};
     use ixa::HashMap;
     use std::io::Write;
     use std::path::PathBuf;
@@ -172,11 +151,11 @@ mod test {
                     (CoreSettingsTypes::Home, SettingProperties { alpha: 0.0 }),
                     (CoreSettingsTypes::School, SettingProperties { alpha: 0.0 }),
                     (
-                        CoreSettingsTypes::Workplace,
+                        CoreSettingsTypes::Work,
                         SettingProperties { alpha: 0.0 },
                     ),
                     (
-                        CoreSettingsTypes::CensusTract,
+                        CoreSettingsTypes::Community,
                         SettingProperties { alpha: 0.0 },
                     ),
                 ]
@@ -186,8 +165,8 @@ mod test {
             itinerary_ratios: HashMap::from_iter([
                 (CoreSettingsTypes::Home, 0.25),
                 (CoreSettingsTypes::School, 0.25),
-                (CoreSettingsTypes::Workplace, 0.25),
-                (CoreSettingsTypes::CensusTract, 0.25),
+                (CoreSettingsTypes::Work, 0.25),
+                (CoreSettingsTypes::Community, 0.25),
             ]),
             ..Default::default()
         };
@@ -198,7 +177,7 @@ mod test {
     }
 
     #[test]
-    fn check_synth_file_tract() {
+    fn check_synth_file_community() {
         let mut context = setup();
         let input = String::from(
             "age,homeId,schoolId,workplaceId\n43,360930331020001,,\n42,360930331020002,,",
@@ -207,50 +186,47 @@ mod test {
         load_synth_population(&mut context, synth_file).unwrap();
         let age = [43, 42];
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
-        let census_tract_id = 36_093_033_102;
+        let community_id = 36_093_033_102;
 
         assert_eq!(context.get_entity_count::<Person>(), 2);
-        assert_eq!(context.get_entity_count::<HomeEntity>(), 2);
-        assert_eq!(context.get_entity_count::<CommunityEntity>(), 1);
+        assert_eq!(
+            context.query_entity_count::<Setting, _>((SettingCategory::Home,)),
+            2
+        );
+        assert_eq!(
+            context.query_entity_count::<Setting, _>((SettingCategory::Community,)),
+            1
+        );
 
         for item in age.iter().take(1) {
             assert_eq!(1, context.query_entity_count::<Person, _>((Age(*item),)));
         }
         let home_id1 = context
-            .query_result_iterator::<HomeEntity, _>((SettingCode(home_id[0]),))
+            .query_result_iterator::<Setting, _>(
+                (SettingCategory::Home, SettingCode(home_id[0])),
+            )
             .next()
             .unwrap();
         let home_id2 = context
-            .query_result_iterator::<HomeEntity, _>((SettingCode(home_id[1]),))
+            .query_result_iterator::<Setting, _>(
+                (SettingCategory::Home, SettingCode(home_id[1])),
+            )
             .next()
             .unwrap();
-        let censustract_id = context
-            .query_result_iterator::<CommunityEntity, _>((SettingCode(census_tract_id),))
+        let community_setting_id = context
+            .query_result_iterator::<Setting, _>(
+                (SettingCategory::Community, SettingCode(community_id)),
+            )
             .next()
             .unwrap();
-        assert_eq!(
-            1,
-            context
-                .get_setting_size(WrappedSettingId::Home(home_id1))
-                .unwrap()
-        );
-        assert_eq!(
-            1,
-            context
-                .get_setting_size(WrappedSettingId::Home(home_id2))
-                .unwrap()
-        );
-        assert_eq!(
-            2,
-            context
-                .get_setting_size(WrappedSettingId::Community(censustract_id))
-                .unwrap()
-        );
+        assert_eq!(1, context.get_setting_size(home_id1).unwrap());
+        assert_eq!(1, context.get_setting_size(home_id2).unwrap());
+        assert_eq!(2, context.get_setting_size(community_setting_id).unwrap());
     }
 
     #[test]
     #[should_panic(expected = "range end index 11 out of range for slice of length 9")]
-    fn check_invalid_census_tract() {
+    fn check_invalid_community_prefix() {
         let mut context = setup();
         let input =
             String::from("age,homeId,schoolId,workplaceId\n43,360930331,,\n42,360930331020002,,");
@@ -269,71 +245,65 @@ mod test {
         let age = [43, 42];
         let school_id = [1, 2];
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
-        let census_tract_id = 36_093_033_102;
+        let community_id = 36_093_033_102;
 
         let home_id1 = context
-            .query_result_iterator::<HomeEntity, _>((SettingCode(home_id[0]),))
+            .query_result_iterator::<Setting, _>(
+                (SettingCategory::Home, SettingCode(home_id[0])),
+            )
             .next()
             .unwrap();
         let home_id2 = context
-            .query_result_iterator::<HomeEntity, _>((SettingCode(home_id[1]),))
+            .query_result_iterator::<Setting, _>(
+                (SettingCategory::Home, SettingCode(home_id[1])),
+            )
             .next()
             .unwrap();
         let school_id1 = context
-            .query_result_iterator::<SchoolEntity, _>((SettingCode(school_id[0]),))
+            .query_result_iterator::<Setting, _>(
+                (SettingCategory::School, SettingCode(school_id[0])),
+            )
             .next()
             .unwrap();
         let school_id2 = context
-            .query_result_iterator::<SchoolEntity, _>((SettingCode(school_id[1]),))
+            .query_result_iterator::<Setting, _>(
+                (SettingCategory::School, SettingCode(school_id[1])),
+            )
             .next()
             .unwrap();
-        let censustract_id = context
-            .query_result_iterator::<CommunityEntity, _>((SettingCode(census_tract_id),))
+        let community_setting_id = context
+            .query_result_iterator::<Setting, _>(
+                (SettingCategory::Community, SettingCode(community_id)),
+            )
             .next()
             .unwrap();
 
         assert_eq!(context.get_entity_count::<Person>(), 2);
-        assert_eq!(context.get_entity_count::<HomeEntity>(), 2);
-        assert_eq!(context.get_entity_count::<SchoolEntity>(), 2);
-        assert_eq!(context.get_entity_count::<CommunityEntity>(), 1);
+        assert_eq!(
+            context.query_entity_count::<Setting, _>((SettingCategory::Home,)),
+            2
+        );
+        assert_eq!(
+            context.query_entity_count::<Setting, _>((SettingCategory::School,)),
+            2
+        );
+        assert_eq!(
+            context.query_entity_count::<Setting, _>((SettingCategory::Community,)),
+            1
+        );
 
         for item in age.iter().take(1) {
             assert_eq!(1, context.query_entity_count::<Person, _>((Age(*item),)));
         }
-        assert_eq!(
-            1,
-            context
-                .get_setting_size(WrappedSettingId::Home(home_id1))
-                .unwrap()
-        );
-        assert_eq!(
-            1,
-            context
-                .get_setting_size(WrappedSettingId::Home(home_id2))
-                .unwrap()
-        );
-        assert_eq!(
-            1,
-            context
-                .get_setting_size(WrappedSettingId::School(school_id1))
-                .unwrap()
-        );
-        assert_eq!(
-            1,
-            context
-                .get_setting_size(WrappedSettingId::School(school_id2))
-                .unwrap()
-        );
-        assert_eq!(
-            2,
-            context
-                .get_setting_size(WrappedSettingId::Community(censustract_id))
-                .unwrap()
-        );
+        assert_eq!(1, context.get_setting_size(home_id1).unwrap());
+        assert_eq!(1, context.get_setting_size(home_id2).unwrap());
+        assert_eq!(1, context.get_setting_size(school_id1).unwrap());
+        assert_eq!(1, context.get_setting_size(school_id2).unwrap());
+        assert_eq!(2, context.get_setting_size(community_setting_id).unwrap());
     }
 
     #[test]
-    fn check_synth_file_workplace() {
+    fn check_synth_file_work() {
         let mut context = setup();
         let input = String::from(
             "age,homeId,schoolId,workplaceId\n43,360930331020001,,1\n42,360930331020002,,2",
@@ -341,67 +311,61 @@ mod test {
         let synth_file = persist_tmp_csv(&input);
         load_synth_population(&mut context, synth_file).unwrap();
         let age = [43, 42];
-        let workplace_id = [1, 2];
+        let work_id = [1, 2];
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
-        let census_tract_id = 36_093_033_102;
+        let community_id = 36_093_033_102;
 
         let home_id1 = context
-            .query_result_iterator::<HomeEntity, _>((SettingCode(home_id[0]),))
+            .query_result_iterator::<Setting, _>(
+                (SettingCategory::Home, SettingCode(home_id[0])),
+            )
             .next()
             .unwrap();
         let home_id2 = context
-            .query_result_iterator::<HomeEntity, _>((SettingCode(home_id[1]),))
+            .query_result_iterator::<Setting, _>(
+                (SettingCategory::Home, SettingCode(home_id[1])),
+            )
             .next()
             .unwrap();
-        let workplace_id1 = context
-            .query_result_iterator::<WorkEntity, _>((SettingCode(workplace_id[0]),))
+        let work_id1 = context
+            .query_result_iterator::<Setting, _>(
+                (SettingCategory::Work, SettingCode(work_id[0])),
+            )
             .next()
             .unwrap();
-        let workplace_id2 = context
-            .query_result_iterator::<WorkEntity, _>((SettingCode(workplace_id[1]),))
+        let work_id2 = context
+            .query_result_iterator::<Setting, _>(
+                (SettingCategory::Work, SettingCode(work_id[1])),
+            )
             .next()
             .unwrap();
-        let censustract_id = context
-            .query_result_iterator::<CommunityEntity, _>((SettingCode(census_tract_id),))
+        let community_setting_id = context
+            .query_result_iterator::<Setting, _>(
+                (SettingCategory::Community, SettingCode(community_id)),
+            )
             .next()
             .unwrap();
 
         assert_eq!(context.get_entity_count::<Person>(), 2);
-        assert_eq!(context.get_entity_count::<HomeEntity>(), 2);
-        assert_eq!(context.get_entity_count::<WorkEntity>(), 2);
-        assert_eq!(context.get_entity_count::<CommunityEntity>(), 1);
+        assert_eq!(
+            context.query_entity_count::<Setting, _>((SettingCategory::Home,)),
+            2
+        );
+        assert_eq!(
+            context.query_entity_count::<Setting, _>((SettingCategory::Work,)),
+            2
+        );
+        assert_eq!(
+            context.query_entity_count::<Setting, _>((SettingCategory::Community,)),
+            1
+        );
         for item in age.iter().take(1) {
             assert_eq!(1, context.query_entity_count::<Person, _>((Age(*item),)));
         }
-        assert_eq!(
-            1,
-            context
-                .get_setting_size(WrappedSettingId::Home(home_id1))
-                .unwrap()
-        );
-        assert_eq!(
-            1,
-            context
-                .get_setting_size(WrappedSettingId::Home(home_id2))
-                .unwrap()
-        );
-        assert_eq!(
-            1,
-            context
-                .get_setting_size(WrappedSettingId::Work(workplace_id1))
-                .unwrap()
-        );
-        assert_eq!(
-            1,
-            context
-                .get_setting_size(WrappedSettingId::Work(workplace_id2))
-                .unwrap()
-        );
-        assert_eq!(
-            2,
-            context
-                .get_setting_size(WrappedSettingId::Community(censustract_id))
-                .unwrap()
-        );
+        assert_eq!(1, context.get_setting_size(home_id1).unwrap());
+        assert_eq!(1, context.get_setting_size(home_id2).unwrap());
+        assert_eq!(1, context.get_setting_size(work_id1).unwrap());
+        assert_eq!(1, context.get_setting_size(work_id2).unwrap());
+        assert_eq!(2, context.get_setting_size(community_setting_id).unwrap());
     }
 }
