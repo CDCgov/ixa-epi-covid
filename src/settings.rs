@@ -1,1201 +1,410 @@
-use crate::{
-    error::ModelError,
-    parameters::{ContextParametersExt, CoreSettingsTypes, Params},
-    population_loader::PersonId,
-};
-
-use indexmap::set::IndexSet;
-
-use ixa::{HashMap, HashMapExt, HashSet, prelude::*, profiling::open_span};
+use ixa::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use std::{any::TypeId, hash::Hash};
+use crate::{ContextParametersExt, Params, population_loader::PersonId};
 
-use dyn_clone::DynClone;
+define_rng!(SettingRng);
 
-define_rng!(SettingsRng);
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy, Hash)]
+pub struct SettingCode(pub usize);
 
-// This is not the most flexible structure but would work for now
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
+pub struct Alpha(pub f64);
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct SettingProperties {
     pub alpha: f64,
 }
 
-pub trait SettingCategory: std::fmt::Debug + 'static {
-    fn get_type_id(&self) -> std::any::TypeId;
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy, Hash, Eq)]
+pub enum SettingCategory {
+    Home,
+    School,
+    Work,
+    Community,
 }
 
-#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
-pub struct SettingId<T: SettingCategory> {
-    pub id: usize,
-    // Marker to say this group id is associated with T (but does not own it)
-    _phantom: std::marker::PhantomData<T>,
+define_entity!(Setting);
+impl_property!(SettingCategory, Setting);
+impl_property!(SettingCode, Setting);
+impl_property!(Alpha, Setting);
+
+define_entity!(PersonSetting);
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash, Eq)]
+pub struct PersonRef(pub PersonId);
+impl_property!(PersonRef, PersonSetting);
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash, Eq)]
+pub struct SettingRef(pub SettingId);
+impl_property!(SettingRef, PersonSetting);
+
+fn index_setting_tables(context: &mut Context) {
+    context.index_property::<Setting, SettingCategory>();
+    context.index_property::<Setting, SettingCode>();
+    context.index_property::<PersonSetting, PersonRef>();
+    context.index_property::<PersonSetting, SettingRef>();
 }
 
-pub trait AnySettingId
-where
-    Self: std::fmt::Debug + DynClone + 'static,
-{
-    fn id(&self) -> usize;
-    fn calculate_multiplier(
-        &self,
-        members: &IndexSet<PersonId>,
-        setting_properties: SettingProperties,
-    ) -> f64;
-    fn get_category_id(&self) -> &'static str;
-    fn get_type_id(&self) -> TypeId;
-    fn get_tuple_id(&self) -> (TypeId, usize) {
-        (self.get_type_id(), self.id())
-    }
-}
-
-dyn_clone::clone_trait_object!(AnySettingId);
-
-impl<T: SettingCategory + Clone> AnySettingId for SettingId<T> {
-    fn id(&self) -> usize {
-        self.id
-    }
-    fn get_type_id(&self) -> TypeId {
-        TypeId::of::<T>()
-    }
-    #[allow(clippy::cast_precision_loss)]
-    fn calculate_multiplier(
-        &self,
-        members: &IndexSet<PersonId>,
-        setting_properties: SettingProperties,
-    ) -> f64 {
-        ((members.len() - 1) as f64).powf(setting_properties.alpha)
-    }
-    fn get_category_id(&self) -> &'static str {
-        std::any::type_name::<T>()
-            .rsplit("::")
-            .next()
-            .unwrap_or_default()
-    }
-}
-
-impl<T: SettingCategory> SettingId<T> {
-    pub fn new(_category: T, id: usize) -> SettingId<T> {
-        SettingId {
-            id,
-            _phantom: std::marker::PhantomData::<T>,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct ItineraryEntry {
-    pub setting: Box<dyn AnySettingId>,
-    ratio: f64,
-}
-
-impl ItineraryEntry {
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn new(setting: impl AnySettingId, ratio: f64) -> ItineraryEntry {
-        let boxed_setting = Box::new(setting);
-        ItineraryEntry {
-            setting: boxed_setting,
-            ratio,
-        }
-    }
-}
-
-pub fn append_itinerary_entry(
-    itinerary: &mut Vec<ItineraryEntry>,
-    context: &Context,
-    setting: impl AnySettingId,
-    nondefault_ratio: Option<f64>,
-) -> Result<(), ModelError> {
-    // Is this setting type registered? Our population loader is hard coded to always try to put
-    // people in the core setting types, but sometimes we don't want all the core setting types
-    // (we didn't specify them). So, first check that the setting in question exists.
-    if context
-        .get_data(SettingDataPlugin)
-        .setting_properties
-        .contains_key(&setting.get_type_id())
-    {
-        let ratio = match nondefault_ratio {
-            Some(user_input) => user_input,
-            None => get_itinerary_ratio(context, &setting)?,
-        };
-        itinerary.push(ItineraryEntry::new(setting, ratio));
-    }
-    Ok(())
-}
-
-// In the future, this method could take the person id as an argument for making individual-level
-// itineraries.
-fn get_itinerary_ratio(context: &Context, setting: &dyn AnySettingId) -> Result<f64, ModelError> {
-    let itinerary_ratio = context
-        .get_data(SettingDataPlugin)
-        .default_itinerary_ratios
-        .get(&setting.get_type_id());
-
-    match itinerary_ratio {
-        Some(ratio) => Ok(*ratio),
-        None => Err(ModelError::ModelError(
-            "Itinerary ratio not specified".to_string(),
-        )),
-    }
-}
-
-#[derive(Default)]
-struct SettingDataContainer {
-    setting_categories: HashSet<TypeId>,
-    // For each setting type (e.g., Home) store the properties (e.g., alpha)
-    setting_properties: HashMap<TypeId, SettingProperties>,
-    // For each setting type there is a default itinerary ratio
-    default_itinerary_ratios: HashMap<TypeId, f64>,
-    // For each setting type, have a map of each setting id and a list of members
-    all_members: HashMap<(TypeId, usize), IndexSet<PersonId>>,
-    itineraries: HashMap<PersonId, Vec<ItineraryEntry>>,
-}
-
-impl SettingDataContainer {
-    fn get_setting_members(&self, setting: &dyn AnySettingId) -> Option<&IndexSet<PersonId>> {
-        self.all_members.get(&setting.get_tuple_id())
-    }
-    fn get_itinerary(&self, person_id: PersonId) -> Option<&Vec<ItineraryEntry>> {
-        self.itineraries.get(&person_id)
-    }
-    fn with_itinerary<F>(&self, person_id: PersonId, mut callback: F)
-    where
-        F: FnMut(&dyn AnySettingId, &SettingProperties, &IndexSet<PersonId>, f64),
-    {
-        if let Some(itinerary) = self.get_itinerary(person_id) {
-            for entry in itinerary {
-                let setting = entry.setting.as_ref();
-                let setting_props = self
-                    .setting_properties
-                    .get(&entry.setting.get_type_id())
-                    .unwrap();
-                let members = self.get_setting_members(setting).unwrap();
-                callback(setting, setting_props, members, entry.ratio);
-            }
-        }
-    }
-    fn activate_itinerary(
-        &mut self,
-        person_id: PersonId,
-        itinerary: &Vec<ItineraryEntry>,
-    ) -> Result<(), ModelError> {
-        let _span = open_span("activate itinerary");
-        for itinerary_entry in itinerary {
-            // TODO: If we are changing a person's itinerary, the person_id should be removed from vector
-            // This isn't the same as the concept of being present or not.
-            if !self
-                .setting_categories
-                .contains(&itinerary_entry.setting.get_type_id())
-            {
-                return Err(ModelError::ModelError(
-                    "Itinerary entry setting type not registered".to_string(),
-                ));
-            }
-            self.set_member(
-                person_id,
-                itinerary_entry.ratio,
-                itinerary_entry.setting.get_tuple_id(),
-            );
-        }
-        Ok(())
-    }
-    fn set_member(&mut self, person_id: PersonId, ratio: f64, setting_identifier: (TypeId, usize)) {
-        if ratio > 0.0 {
-            self.add_member(person_id, setting_identifier);
-        }
-    }
-
-    fn add_member(&mut self, person_id: PersonId, setting_identifier: (TypeId, usize)) {
-        self.all_members
-            .entry(setting_identifier)
-            .or_default()
-            .insert(person_id);
-    }
-}
-
-#[macro_export]
-macro_rules! define_setting_category {
-    ($name:ident) => {
-        #[derive(Default, Copy, Clone, Debug, Hash, Eq, PartialEq)]
-        pub struct $name;
-
-        impl $crate::settings::SettingCategory for $name {
-            fn get_type_id(&self) -> std::any::TypeId {
-                std::any::TypeId::of::<$name>()
-            }
-        }
-    };
-}
-
-define_setting_category!(Home);
-define_setting_category!(CensusTract);
-define_setting_category!(School);
-define_setting_category!(Workplace);
-
-define_data_plugin!(
-    SettingDataPlugin,
-    SettingDataContainer,
-    SettingDataContainer::default()
-);
-
-trait ContextSettingInternalExt: PluginContext + ContextRandomExt {
-    fn get_setting_members_internal(
-        &self,
-        setting: &dyn AnySettingId,
-    ) -> Option<&IndexSet<PersonId>> {
-        self.get_data(SettingDataPlugin)
-            .get_setting_members(setting)
-    }
-
-    fn sample_setting_members_internal(&self, setting: &dyn AnySettingId) -> Option<PersonId> {
-        if let Some(members) = self
-            .get_data(SettingDataPlugin)
-            .get_setting_members(setting)
-        {
-            if members.is_empty() {
-                return None;
-            }
-            let person = members[self.sample_range(SettingsRng, 0..members.len())];
-            return Some(person);
-        }
-        None
-    }
-
-    fn get_itinerary_internal(&self, person_id: PersonId) -> Option<&Vec<ItineraryEntry>> {
-        self.get_data(SettingDataPlugin).get_itinerary(person_id)
-    }
-}
-impl ContextSettingInternalExt for Context {}
-
-fn validate_itinerary(itinerary: &[ItineraryEntry]) -> Result<(), ModelError> {
-    let mut setting_counts: HashMap<TypeId, HashSet<usize>> = HashMap::new();
-    let _span = open_span("validate_modified_itinerary");
-    for itinerary_entry in itinerary {
-        let setting_id = itinerary_entry.setting.id();
-        let setting_type = itinerary_entry.setting.get_type_id();
-        if setting_counts
-            .get(&setting_type)
-            .is_some_and(|set| set.contains(&setting_id))
-        {
-            return Err(ModelError::ModelError("Duplicated setting".to_string()));
-        }
-        setting_counts
-            .entry(setting_type)
-            .or_default()
-            .insert(setting_id);
-
-        if itinerary_entry.ratio < 0.0 {
-            return Err(ModelError::ModelError(
-                "Setting ratio must be greater than or equal to 0".to_string(),
-            ));
-        }
-    }
-    Ok(())
-}
-
-#[allow(private_bounds)]
 pub trait ContextSettingExt:
-    PluginContext + ContextSettingInternalExt + ContextRandomExt + ContextEntitiesExt
+    PluginContext + ContextEntitiesExt + ContextRandomExt + ContextParametersExt
 {
-    #[allow(dead_code)]
-    fn get_setting_properties(
-        &self,
-        setting: &dyn SettingCategory,
-    ) -> Result<SettingProperties, ModelError> {
-        let data_container = self.get_data(SettingDataPlugin);
+    fn get_setting_category(&self, setting: SettingId) -> SettingCategory {
+        self.get_property::<Setting, SettingCategory>(setting)
+    }
 
-        match data_container
-            .setting_properties
-            .get(&setting.get_type_id())
+    fn get_setting_alpha(&self, setting: SettingId) -> Result<f64, IxaError> {
+        Ok(self.get_property::<Setting, Alpha>(setting).0)
+    }
+
+    fn get_setting_ratio(&self, setting: SettingId) -> Result<f64, IxaError> {
+        let Params {
+            itinerary_ratios, ..
+        } = self.get_params();
+        let kind = self.get_setting_category(setting);
+        Ok(*itinerary_ratios.get(&kind).unwrap())
+    }
+
+    fn get_setting_size(&self, setting: SettingId) -> Result<usize, IxaError> {
+        Ok(self.query_entity_count::<PersonSetting, _>((SettingRef(setting),)))
+    }
+
+    fn sample_person_from_setting(&self, setting: SettingId) -> Result<PersonId, IxaError> {
+        if let Some(membership) =
+            self.sample_entity::<PersonSetting, _, _>(SettingRng, (SettingRef(setting),))
         {
-            None => Err(ModelError::ModelError(
-                "Attempting to get properties of unregistered setting type".to_string(),
-            )),
-            Some(properties) => Ok(*properties),
+            return Ok(self.get_property::<PersonSetting, PersonRef>(membership).0);
         }
+
+        Err(IxaError::IxaError(format!(
+            "No members found for setting id: {:?}",
+            setting
+        )))
     }
 
-    fn get_setting_itinerary_ratio(
+    fn get_active_settings_for_person(
         &self,
-        setting: &dyn SettingCategory,
-    ) -> Result<f64, ModelError> {
-        let data_container = self.get_data(SettingDataPlugin);
-
-        match data_container
-            .default_itinerary_ratios
-            .get(&setting.get_type_id())
-        {
-            None => Err(ModelError::ModelError(
-                "Attempting to get itinerary ratio of unregistered setting type".to_string(),
-            )),
-            Some(ratio) => Ok(*ratio),
-        }
-    }
-
-    fn register_setting_category(
-        &mut self,
-        setting: &dyn SettingCategory,
-        setting_props: SettingProperties,
-        default_itinerary_ratio: f64,
-    ) -> Result<(), ModelError> {
-        let container = self.get_data_mut(SettingDataPlugin);
-
-        if !container.setting_categories.insert(setting.get_type_id()) {
-            return Err(ModelError::ModelError(
-                "Setting type is already registered".to_string(),
-            ));
-        }
-
-        // Add properties
-        container
-            .setting_properties
-            .insert(setting.get_type_id(), setting_props);
-
-        container
-            .default_itinerary_ratios
-            .insert(setting.get_type_id(), default_itinerary_ratio);
-
-        Ok(())
-    }
-
-    fn add_itinerary(
-        &mut self,
         person_id: PersonId,
-        itinerary: Vec<ItineraryEntry>,
-    ) -> Result<(), ModelError> {
-        let _span = open_span("add_itinerary");
-        // Normalize itinerary ratios
-        validate_itinerary(&itinerary)?;
-
-        let total_ratio: f64 = itinerary.iter().map(|entry| entry.ratio).sum();
-        // If we passed validation, we know setting entries aren't all zero, so we can divide by
-        // total_ratio without worrying about dividing by zero.
-        let mut itinerary = itinerary;
-        for entry in &mut itinerary {
-            entry.ratio /= total_ratio;
+    ) -> Result<Vec<SettingId>, IxaError> {
+        let mut settings = Vec::new();
+        for membership in self.query_result_iterator::<PersonSetting, _>((PersonRef(person_id),)) {
+            settings.push(self.get_property::<PersonSetting, SettingRef>(membership).0);
         }
-        let container = self.get_data_mut(SettingDataPlugin);
-
-        // Clean up settings that from previous itinerary, if there is one
-
-        if container.itineraries.contains_key(&person_id) {
-            return Err(ModelError::ModelError(
-                "Person already has an itinerary.".to_string(),
-            ));
-        }
-
-        container.activate_itinerary(person_id, &itinerary)?;
-        container.itineraries.insert(person_id, itinerary);
-
-        Ok(())
+        Ok(settings)
     }
 
-    #[allow(dead_code)]
-    fn get_itinerary(&self, person_id: PersonId) -> Option<&Vec<ItineraryEntry>> {
-        self.get_itinerary_internal(person_id)
-    }
-
-    #[allow(dead_code)]
-    fn get_setting_members(&self, setting: &dyn AnySettingId) -> Option<&IndexSet<PersonId>> {
-        self.get_setting_members_internal(setting)
-    }
-
-    /// Get the total current infectiousness multiplier for a person
-    /// This is the sum of the infectiousness multipliers for each setting derived from the itinerary
-    /// with members filtered as Active and in the Current itinerary
-    /// These are generated without modification from the general formula of ratio * (N - 1) ^ alpha
-    /// where N is the number of active members in the setting
     fn calculate_current_infectiousness_multiplier_for_person(&self, person_id: PersonId) -> f64 {
-        let container = self.get_data(SettingDataPlugin);
-        let mut collector = 0.0;
-        container.with_itinerary(person_id, |setting, setting_props, members, ratio| {
-            let multiplier: f64 = if members.is_empty() {
-                0.0
-            } else {
-                setting.calculate_multiplier(members, *setting_props)
-            };
-            collector += ratio * multiplier;
-        });
-        collector
+        let active_settings = self.get_active_settings_for_person(person_id).unwrap();
+        let mut ratios = Vec::new();
+        let mut multipliers = Vec::new();
+        for setting_id in active_settings.iter() {
+            let multiplier = self.calculate_multipler(*setting_id).unwrap();
+            let ratio = self.get_setting_ratio(*setting_id).unwrap();
+            ratios.push(ratio);
+            multipliers.push(multiplier);
+        }
+        let sum_ratios: f64 = ratios.iter().sum();
+        let mut current_inf = 0.0;
+        if sum_ratios > 0.0 {
+            for (multiplier, ratio) in multipliers.iter().zip(ratios.iter()) {
+                current_inf += multiplier * (ratio / sum_ratios);
+            }
+        }
+        current_inf
     }
-    /// Get the maximum infectiousness multiplier for a person across all settings
-    /// derived from both the default and modified itineraries of the person.
-    /// These are generated without modification from the general formula of ratio * (N - 1) ^ alpha
-    /// where N is the number of all active and inactive members in the setting
+
     fn calculate_max_infectiousness_multiplier_for_person(&self, person_id: PersonId) -> f64 {
-        let container = self.get_data(SettingDataPlugin);
-        let mut collector = 0.0;
-        container.with_itinerary(person_id, |setting, setting_props, members, _ratio| {
-            let multiplier: f64 = setting.calculate_multiplier(members, *setting_props);
-            // We want to identify the max at the setting level, not itinerary level, so that we sample at the true maximum possible rate
-            collector = f64::max(collector, multiplier);
-        });
-        collector
+        let active_settings = self.get_active_settings_for_person(person_id).unwrap();
+        let mut max_inf = 0.0;
+        for setting_id in active_settings.iter() {
+            let multiplier = self.calculate_multipler(*setting_id).unwrap();
+            max_inf = f64::max(max_inf, multiplier);
+        }
+        max_inf
     }
 
     fn sample_from_setting_with_exclusion(
         &self,
         person_id: PersonId,
-        setting: &dyn AnySettingId,
-    ) -> Result<Option<PersonId>, ModelError> {
-        let _span = open_span("get_contact");
-        if let Some(members) = self.get_setting_members_internal(setting) {
-            if members.get(&person_id).is_some() && members.len() == 1 {
-                return Ok(None);
-            }
-            let mut contact_id;
-            loop {
-                contact_id = self.sample_setting_members_internal(setting);
-
-                if contact_id != Some(person_id) {
-                    break;
-                }
-            }
-            return Ok(contact_id);
+        setting: SettingId,
+    ) -> Result<Option<PersonId>, IxaError> {
+        if self.get_setting_size(setting)? == 1 {
+            return Ok(None);
         }
-        Err(ModelError::ModelError(
-            "Group membership is None".to_string(),
-        ))
+        loop {
+            let sampled_person = self.sample_person_from_setting(setting)?;
+            if sampled_person != person_id {
+                return Ok(Some(sampled_person));
+            }
+        }
     }
 
-    fn sample_current_setting(&self, person_id: PersonId) -> Option<&dyn AnySettingId> {
-        let _span = open_span("sample_setting");
-        let container = self.get_data(SettingDataPlugin);
-        let mut itinerary_multiplier = Vec::new();
-        container.with_itinerary(person_id, |setting, setting_props, members, ratio| {
-            let multiplier = if members.is_empty() {
-                0.0
-            } else {
-                setting.calculate_multiplier(members, *setting_props)
-            };
-            itinerary_multiplier.push(ratio * multiplier);
-        });
+    fn calculate_multipler(&self, setting: SettingId) -> Result<f64, IxaError> {
+        let size = self.get_setting_size(setting)?;
+        let alpha = self.get_setting_alpha(setting)?;
+        Ok(((size.saturating_sub(1)) as f64).powf(alpha))
+    }
 
-        let setting_index = self.sample_weighted(SettingsRng, &itinerary_multiplier);
-
-        if let Some(itinerary) = self.get_itinerary_internal(person_id) {
-            let itinerary_entry = &itinerary[setting_index];
-            Some(itinerary_entry.setting.as_ref())
+    fn sample_active_setting(&self, person_id: PersonId) -> Result<SettingId, IxaError> {
+        let mut weights = Vec::new();
+        let ids = self.get_active_settings_for_person(person_id)?;
+        let mut sum_weights = 0.0;
+        for id in ids.iter() {
+            let ratio = self.get_setting_ratio(*id)?;
+            let multiplier = self.calculate_multipler(*id)?;
+            weights.push(multiplier * ratio);
+            sum_weights += multiplier * ratio;
+        }
+        if sum_weights > 0.0 {
+            let setting_index = self.sample_weighted(SettingRng, &weights);
+            Ok(ids[setting_index])
         } else {
-            None
+            let setting_index = self.sample_range(SettingRng, 0..ids.len());
+            Ok(ids[setting_index])
         }
     }
 
-    fn sample_setting_members(&self, setting: &dyn AnySettingId) -> Option<PersonId> {
-        self.sample_setting_members_internal(setting)
+    fn add_person_to_setting(
+        &mut self,
+        person_id: PersonId,
+        setting_category: SettingCategory,
+        setting_code: SettingCode,
+        alpha: Alpha,
+    ) -> Result<(), IxaError> {
+        let setting_id = self.add_index_setting(setting_category, setting_code, alpha)?;
+        self.add_entity::<PersonSetting, _>((PersonRef(person_id), SettingRef(setting_id)))?;
+        Ok(())
+    }
+
+    fn add_index_setting(
+        &mut self,
+        setting_category: SettingCategory,
+        setting_code: SettingCode,
+        alpha: Alpha,
+    ) -> Result<SettingId, IxaError> {
+        if let Some(setting_id) = self
+            .query_result_iterator::<Setting, _>((setting_category, setting_code))
+            .next()
+        {
+            return Ok(setting_id);
+        }
+        self.add_entity::<Setting, _>((setting_category, setting_code, alpha))
     }
 }
+
 impl ContextSettingExt for Context {}
 
-pub fn init(context: &mut Context) {
-    let Params {
-        settings_properties,
-        itinerary_ratios,
-        ..
-    } = context.get_params();
-
-    let itinerary_ratios = itinerary_ratios.clone();
-    for (setting_category, setting_properties) in settings_properties.clone() {
-        match setting_category {
-            CoreSettingsTypes::Home => {
-                context
-                    .register_setting_category(
-                        &Home,
-                        setting_properties,
-                        itinerary_ratios
-                            .get(&CoreSettingsTypes::Home)
-                            .cloned()
-                            .unwrap_or(0.0),
-                    )
-                    .unwrap();
-            }
-            CoreSettingsTypes::CensusTract => {
-                context
-                    .register_setting_category(
-                        &CensusTract,
-                        setting_properties,
-                        itinerary_ratios
-                            .get(&CoreSettingsTypes::CensusTract)
-                            .cloned()
-                            .unwrap_or(0.0),
-                    )
-                    .unwrap();
-            }
-            CoreSettingsTypes::School => {
-                context
-                    .register_setting_category(
-                        &School,
-                        setting_properties,
-                        itinerary_ratios
-                            .get(&CoreSettingsTypes::School)
-                            .cloned()
-                            .unwrap_or(0.0),
-                    )
-                    .unwrap();
-            }
-            CoreSettingsTypes::Workplace => {
-                context
-                    .register_setting_category(
-                        &Workplace,
-                        setting_properties,
-                        itinerary_ratios
-                            .get(&CoreSettingsTypes::Workplace)
-                            .cloned()
-                            .unwrap_or(0.0),
-                    )
-                    .unwrap();
-            }
-        }
-    }
+pub fn init(context: &mut Context) -> Result<(), IxaError> {
+    index_setting_tables(context);
+    Ok(())
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{
-        Age, parameters::GlobalParams, population_loader::PersonId, settings::ContextSettingExt,
-    };
-    use ixa::assert_almost_eq;
+    use crate::parameters::GlobalParams;
+    use crate::population_loader::Person;
+    use ixa::{HashMap, assert_almost_eq};
 
-    define_setting_category!(Community);
-
-    fn register_default_settings(context: &mut Context) {
-        context
-            .register_setting_category(&Home, SettingProperties { alpha: 0.1 }, 1.0)
-            .unwrap();
-        context
-            .register_setting_category(&Workplace, SettingProperties { alpha: 0.3 }, 1.0)
-            .unwrap();
-        context
-            .register_setting_category(&CensusTract, SettingProperties { alpha: 0.01 }, 1.0)
-            .unwrap();
-
-        context
-            .register_setting_category(&School, SettingProperties { alpha: 0.01 }, 1.0)
-            .unwrap();
-    }
-
-    #[test]
-    fn test_setting_category_creation() {
+    fn setup() -> Context {
         let mut context = Context::new();
-        context
-            .register_setting_category(&Home, SettingProperties { alpha: 0.1 }, 0.5)
-            .unwrap();
-        context
-            .register_setting_category(&CensusTract, SettingProperties { alpha: 0.001 }, 0.25)
-            .unwrap();
-        let home_props = context.get_setting_properties(&Home).unwrap();
-        let tract_props = context.get_setting_properties(&CensusTract).unwrap();
-
-        let home_ratio = context.get_setting_itinerary_ratio(&Home).unwrap();
-        let tract_ratio = context.get_setting_itinerary_ratio(&CensusTract).unwrap();
-
-        assert_almost_eq!(0.1, home_props.alpha, 0.0);
-        assert_eq!(0.5, home_ratio);
-        assert_almost_eq!(0.001, tract_props.alpha, 0.0);
-        assert_eq!(0.25, tract_ratio);
-    }
-
-    #[test]
-    fn test_get_properties_after_registration() {
-        let mut context = Context::new();
-        let e = context.get_setting_properties(&Home).err();
-        match e {
-            Some(ModelError::ModelError(msg)) => {
-                assert_eq!(
-                    msg,
-                    "Attempting to get properties of unregistered setting type"
-                );
-            }
-            Some(ue) => panic!(
-                "Expected an error setting plugin data is none. Instead got: {:?}",
-                ue.to_string()
-            ),
-            None => panic!("Expected an error. Instead, validation passed with no errors."),
-        }
-
-        context
-            .register_setting_category(&Home, SettingProperties { alpha: 0.1 }, 1.0)
-            .unwrap();
-        context.get_setting_properties(&Home).unwrap();
-        let e = context.get_setting_properties(&CensusTract).err();
-        match e {
-            Some(ModelError::ModelError(msg)) => {
-                assert_eq!(
-                    msg,
-                    "Attempting to get properties of unregistered setting type"
-                );
-            }
-            Some(ue) => panic!(
-                "Expected an error attempting to get properties of unregistered setting type. Instead got: {:?}",
-                ue.to_string()
-            ),
-            None => panic!("Expected an error. Instead, validation passed with no errors."),
-        }
-
-        context.get_setting_itinerary_ratio(&Home).unwrap();
-        let e = context.get_setting_itinerary_ratio(&CensusTract).err();
-        match e {
-            Some(ModelError::ModelError(msg)) => {
-                assert_eq!(
-                    msg,
-                    "Attempting to get itinerary ratio of unregistered setting type"
-                );
-            }
-            Some(ue) => panic!(
-                "Expected an error attempting to get itinerary ratio of unregistered setting type. Instead got: {:?}",
-                ue.to_string()
-            ),
-            None => panic!("Expected an error. Instead, validation passed with no errors."),
-        }
-    }
-
-    #[test]
-    fn test_duplicate_setting_category_registration() {
-        let mut context = Context::new();
-        context
-            .register_setting_category(&Home, SettingProperties { alpha: 0.1 }, 1.0)
-            .unwrap();
-        let e = context
-            .register_setting_category(&Home, SettingProperties { alpha: 0.001 }, 1.0)
-            .err();
-        match e {
-            Some(ModelError::ModelError(msg)) => {
-                assert_eq!(msg, "Setting type is already registered");
-            }
-            Some(ue) => panic!(
-                "Expected an error that there are duplicate settings types. Instead got: {:?}",
-                ue.to_string()
-            ),
-            None => panic!("Expected an error. Instead, validation passed with no errors."),
-        }
-    }
-
-    #[test]
-    fn test_duplicated_itinerary() {
-        let mut context = Context::new();
-        register_default_settings(&mut context);
-
-        let person: PersonId = context.add_entity((Age(30),)).unwrap();
-        let itinerary = vec![
-            ItineraryEntry::new(SettingId::new(Home, 2), 0.5),
-            ItineraryEntry::new(SettingId::new(Home, 2), 0.5),
-        ];
-        let e = context.add_itinerary(person, itinerary).err();
-        match e {
-            Some(ModelError::ModelError(msg)) => {
-                assert_eq!(msg, "Duplicated setting");
-            }
-            Some(ue) => panic!(
-                "Expected an error that there are duplicate settings. Instead got: {:?}",
-                ue.to_string()
-            ),
-            None => panic!("Expected an error. Instead, validation passed with no errors."),
-        }
-    }
-
-    #[test]
-    fn test_feasible_itinerary_ratio() {
-        let mut context = Context::new();
-        register_default_settings(&mut context);
-        let person: PersonId = context.add_entity((Age(30),)).unwrap();
-        let itinerary = vec![ItineraryEntry::new(SettingId::new(Home, 2), -0.5)];
-
-        let e = context.add_itinerary(person, itinerary).err();
-        match e {
-            Some(ModelError::ModelError(msg)) => {
-                assert_eq!(msg, "Setting ratio must be greater than or equal to 0");
-            }
-            Some(ue) => panic!(
-                "Expected an error setting ratios should be greater than or equal to 0. Instead got: {:?}",
-                ue.to_string()
-            ),
-            None => panic!("Expected an error. Instead, validation passed with no errors."),
-        }
-    }
-
-    #[test]
-    fn test_feasible_itinerary_setting() {
-        let mut context = Context::new();
-        register_default_settings(&mut context);
-        let person: PersonId = context.add_entity((Age(30),)).unwrap();
-
-        // Community is a defined setting but not registered
-        let itinerary = vec![ItineraryEntry::new(SettingId::new(Community, 2), 0.5)];
-
-        let e = context.add_itinerary(person, itinerary).err();
-        match e {
-            Some(ModelError::ModelError(msg)) => {
-                assert_eq!(msg, "Itinerary entry setting type not registered");
-            }
-            Some(ue) => panic!(
-                "Expected an error setting . Instead got: {:?}",
-                ue.to_string()
-            ),
-            None => panic!("Expected an error. Instead, validation passed with no errors."),
-        }
-    }
-
-    #[test]
-    fn test_change_activity_members() {
-        let mut context = Context::new();
-        register_default_settings(&mut context);
-        let active_person: PersonId = context.add_entity((Age(30),)).unwrap();
-        let inactive_person: PersonId = context.add_entity((Age(30),)).unwrap();
-        let active_itinerary = vec![ItineraryEntry::new(SettingId::new(Home, 1), 1.0)];
-        let inactive_itinerary = vec![ItineraryEntry::new(SettingId::new(Home, 1), 0.0)];
-        context
-            .add_itinerary(active_person, active_itinerary.clone())
-            .unwrap();
-        context
-            .add_itinerary(inactive_person, inactive_itinerary.clone())
-            .unwrap();
-
-        let home = SettingId::new(Home, 1);
-
-        let members = context.get_setting_members_internal(&home).unwrap();
-
-        assert_eq!(members.len(), 1);
-    }
-
-    #[test]
-    fn test_add_itinerary() {
-        let mut context = Context::new();
-        register_default_settings(&mut context);
-        let person: PersonId = context.add_entity((Age(30),)).unwrap();
-        let itinerary = vec![
-            ItineraryEntry::new(SettingId::new(Home, 1), 0.5),
-            ItineraryEntry::new(SettingId::new(Home, 2), 0.5),
-        ];
-        context.add_itinerary(person, itinerary).unwrap();
-        let members = context
-            .get_setting_members(&SettingId::new(Home, 2))
-            .unwrap();
-        assert_eq!(members.len(), 1);
-
-        let person2: PersonId = context.add_entity((Age(30),)).unwrap();
-        let itinerary2 = vec![ItineraryEntry::new(SettingId::new(Home, 2), 1.0)];
-        context.add_itinerary(person2, itinerary2).unwrap();
-
-        let members2 = context
-            .get_setting_members(&SettingId::new(Home, 2))
-            .unwrap();
-        assert_eq!(members2.len(), 2);
-
-        let itinerary3 = vec![ItineraryEntry::new(SettingId::new(Home, 3), 0.5)];
-
-        let e = context.add_itinerary(person, itinerary3).err();
-        match e {
-            Some(ModelError::ModelError(msg)) => {
-                assert_eq!(msg, "Person already has an itinerary.");
-            }
-            Some(ue) => panic!(
-                "Expected an error setting . Instead got: {:?}",
-                ue.to_string()
-            ),
-            None => panic!("Expected an error. Instead, validation passed with no errors."),
-        }
-    }
-
-    #[test]
-    fn test_get_itinerary() {
-        let mut context = Context::new();
-        register_default_settings(&mut context);
-        let person: PersonId = context.add_entity((Age(30),)).unwrap();
-        let default_itinerary = vec![
-            ItineraryEntry::new(SettingId::new(Home, 1), 0.5),
-            ItineraryEntry::new(SettingId::new(Home, 2), 0.5),
-        ];
-        context.add_itinerary(person, default_itinerary).unwrap();
-
-        let default = context.get_itinerary(person).unwrap();
-
-        for entry in default {
-            assert_almost_eq!(entry.ratio, 0.5, 0.0);
-        }
-    }
-
-    #[test]
-    fn test_setting_registration() {
-        let mut context = Context::new();
-        context
-            .register_setting_category(&Home, SettingProperties { alpha: 0.1 }, 1.0)
-            .unwrap();
-        context
-            .register_setting_category(&CensusTract, SettingProperties { alpha: 0.01 }, 1.0)
-            .unwrap();
-        for s in 0..5 {
-            for _ in 0..5 {
-                let person: PersonId = context.add_entity((Age(30),)).unwrap();
-                let itinerary = vec![
-                    ItineraryEntry::new(SettingId::new(Home, s), 0.5),
-                    ItineraryEntry::new(SettingId::new(CensusTract, s), 0.5),
-                ];
-                context.add_itinerary(person, itinerary).unwrap();
-            }
-            let members = context
-                .get_setting_members(&SettingId::new(Home, s))
-                .unwrap();
-            let tract_members = context
-                .get_setting_members(&SettingId::new(CensusTract, s))
-                .unwrap();
-
-            assert_eq!(members.len(), 5);
-            assert_eq!(tract_members.len(), 5);
-        }
-    }
-
-    #[test]
-    fn test_setting_registration_activity() {
-        let mut context = Context::new();
-        context
-            .register_setting_category(&Home, SettingProperties { alpha: 0.1 }, 1.0)
-            .unwrap();
-        context
-            .register_setting_category(&CensusTract, SettingProperties { alpha: 0.01 }, 1.0)
-            .unwrap();
-        for s in 0..5 {
-            for _ in 0..5 {
-                let person: PersonId = context.add_entity((Age(30),)).unwrap();
-                let itinerary = vec![
-                    ItineraryEntry::new(SettingId::new(Home, s), 1.0),
-                    ItineraryEntry::new(SettingId::new(CensusTract, s), 0.0),
-                ];
-                context.add_itinerary(person, itinerary).unwrap();
-            }
-            let all_home_members = context
-                .get_setting_members_internal(&SettingId::new(Home, s))
-                .unwrap();
-            let all_tract_members =
-                context.get_setting_members_internal(&SettingId::new(CensusTract, s));
-
-            assert_eq!(all_home_members.len(), 5);
-            assert_eq!(all_tract_members, None);
-        }
-    }
-
-    #[test]
-    fn test_setting_multiplier() {
-        let mut context = Context::new();
-        context
-            .register_setting_category(&Home, SettingProperties { alpha: 0.1 }, 1.0)
-            .unwrap();
-        for s in 0..5 {
-            // Create 5 people
-            for _ in 0..5 {
-                let person: PersonId = context.add_entity((Age(30),)).unwrap();
-                let itinerary = vec![ItineraryEntry::new(SettingId::new(Home, s), 0.5)];
-                context.add_itinerary(person, itinerary).unwrap();
-            }
-        }
-
-        let home_id = 0;
-        let person: PersonId = context.add_entity((Age(30),)).unwrap();
-        let itinerary = vec![ItineraryEntry::new(SettingId::new(Home, home_id), 0.5)];
-        context.add_itinerary(person, itinerary).unwrap();
-        let members = context
-            .get_setting_members(&SettingId::new(Home, home_id))
-            .unwrap();
-
-        let setting_type = &SettingId::new(Home, home_id);
-
-        let inf_multiplier =
-            setting_type.calculate_multiplier(members, SettingProperties { alpha: 0.1 });
-
-        // This is assuming we know what the function for Home is (N - 1) ^ alpha
-        assert_almost_eq!(inf_multiplier, f64::from(6 - 1).powf(0.1), 0.0);
-    }
-
-    #[test]
-    fn test_total_infectiousness_multiplier() {
-        // Go through all the settings and compute infectiousness multiplier
-        let mut context = Context::new();
-        register_default_settings(&mut context);
-
-        for s in 0..5 {
-            for _ in 0..5 {
-                let person: PersonId = context.add_entity((Age(30),)).unwrap();
-                let itinerary = vec![
-                    ItineraryEntry::new(SettingId::new(Home, s), 0.5),
-                    ItineraryEntry::new(SettingId::new(CensusTract, s), 0.5),
-                ];
-                context.add_itinerary(person, itinerary).unwrap();
-            }
-        }
-        // Create a new person and register to home 0
-        let itinerary = vec![ItineraryEntry::new(SettingId::new(Home, 0), 1.0)];
-        let person: PersonId = context.add_entity((Age(30),)).unwrap();
-        context.add_itinerary(person, itinerary).unwrap();
-
-        // If only registered at home, total infectiousness multiplier should be (6 - 1) ^ (alpha)
-        let inf_multiplier = context.calculate_max_infectiousness_multiplier_for_person(person);
-        assert_almost_eq!(inf_multiplier, f64::from(6 - 1).powf(0.1), 0.0);
-
-        // If person's itinerary is changed for two settings,
-        // CensusTract 0 should have 6 members, Home 0 should have 7 members
-        // the total infectiousness should be the sum of infs * proportion
-        let person: PersonId = context.add_entity((Age(30),)).unwrap();
-        let itinerary_complete = vec![
-            ItineraryEntry::new(SettingId::new(Home, 0), 0.5),
-            ItineraryEntry::new(SettingId::new(CensusTract, 0), 0.5),
-        ];
-        context.add_itinerary(person, itinerary_complete).unwrap();
-        let members_home = context
-            .get_setting_members(&SettingId::new(Home, 0))
-            .unwrap();
-        let members_tract = context
-            .get_setting_members(&SettingId::new(CensusTract, 0))
-            .unwrap();
-        assert_eq!(members_home.len(), 7);
-        assert_eq!(members_tract.len(), 6);
-
-        let inf_multiplier_two_settings =
-            context.calculate_max_infectiousness_multiplier_for_person(person);
-
-        let alpha_h = context.get_setting_properties(&Home).unwrap().alpha;
-        let alpha_ct = context.get_setting_properties(&CensusTract).unwrap().alpha;
-
-        assert_almost_eq!(
-            inf_multiplier_two_settings,
-            f64::max(
-                f64::from(7 - 1).powf(alpha_h),
-                f64::from(6 - 1).powf(alpha_ct)
-            ),
-            0.0
-        );
-    }
-
-    #[test]
-    fn test_sample_setting() {
-        let mut context = Context::new();
-        context.init_random(42);
-        context
-            .register_setting_category(&Home, SettingProperties { alpha: 0.1 }, 1.0)
-            .unwrap();
-        context
-            .register_setting_category(&CensusTract, SettingProperties { alpha: 0.01 }, 1.0)
-            .unwrap();
-
-        let person_a: PersonId = context.add_entity((Age(30),)).unwrap();
-        let person_b: PersonId = context.add_entity((Age(30),)).unwrap();
-        let itinerary_a = vec![
-            ItineraryEntry::new(SettingId::new(Home, 0), 0.5),
-            ItineraryEntry::new(SettingId::new(CensusTract, 0), 0.5),
-        ];
-        let itinerary_b = vec![ItineraryEntry::new(SettingId::new(Home, 0), 1.0)];
-        context.add_itinerary(person_a, itinerary_a).unwrap();
-        context.add_itinerary(person_b, itinerary_b).unwrap();
-
-        // When person a is used to select a setting for contact, it should return Home. While they are
-        // also a member of CensusTract, since they are the only member the multiplier used to weight the
-        // selection is 0.0 from calculate_multiplier. Thus the probability CensusTract is selected is 0.0.
-        let setting_id = context.sample_current_setting(person_a).unwrap();
-        assert_eq!(setting_id.get_type_id(), TypeId::of::<Home>());
-        assert_eq!(setting_id.id(), 0);
-
-        let setting_id = context.sample_current_setting(person_b).unwrap();
-        assert_eq!(setting_id.get_type_id(), TypeId::of::<Home>());
-        assert_eq!(setting_id.id(), 0);
-
-        let person_c: PersonId = context.add_entity((Age(30),)).unwrap();
-        let itinerary_c = vec![ItineraryEntry::new(SettingId::new(CensusTract, 0), 0.5)];
-        context.add_itinerary(person_c, itinerary_c).unwrap();
-        let setting_id = context.sample_current_setting(person_c).unwrap();
-        assert_eq!(setting_id.get_type_id(), TypeId::of::<CensusTract>());
-        assert_eq!(setting_id.id(), 0);
-    }
-
-    #[test]
-    fn test_get_contact_from_setting() {
-        // Register two people to a setting and make sure that the person chosen is the other one
-        // Attempt to draw a contact from a setting with only the person trying to get a contact
-        let mut context = Context::new();
-        context.init_random(42);
-        context
-            .register_setting_category(&Home, SettingProperties { alpha: 0.1 }, 1.0)
-            .unwrap();
-        context
-            .register_setting_category(&CensusTract, SettingProperties { alpha: 0.01 }, 1.0)
-            .unwrap();
-
-        let person_a: PersonId = context.add_entity((Age(30),)).unwrap();
-        let person_b: PersonId = context.add_entity((Age(30),)).unwrap();
-        let itinerary_a = vec![
-            ItineraryEntry::new(SettingId::new(Home, 0), 0.5),
-            ItineraryEntry::new(SettingId::new(CensusTract, 0), 0.5),
-        ];
-        let itinerary_b = vec![ItineraryEntry::new(SettingId::new(Home, 0), 1.0)];
-        context.add_itinerary(person_a, itinerary_a).unwrap();
-        context.add_itinerary(person_b, itinerary_b).unwrap();
-        let setting_id = context.sample_current_setting(person_a).unwrap();
-        let members = context.get_setting_members(setting_id).unwrap();
-        assert!(members.contains(&person_a));
-
-        assert_eq!(
-            Some(person_b),
-            context
-                .sample_from_setting_with_exclusion(person_a, setting_id)
-                .unwrap()
-        );
-
-        assert!(
-            context
-                .sample_from_setting_with_exclusion(person_a, &SettingId::new(CensusTract, 0))
-                .unwrap()
-                .is_none()
-        );
-
-        let person_c: PersonId = context.add_entity((Age(30),)).unwrap();
-        let itinerary_c = vec![ItineraryEntry::new(SettingId::new(CensusTract, 0), 0.5)];
-        context.add_itinerary(person_c, itinerary_c).unwrap();
-
-        let e =
-            context.sample_from_setting_with_exclusion(person_a, &SettingId::new(CensusTract, 10));
-        match e {
-            Err(ModelError::ModelError(msg)) => {
-                assert_eq!(msg, "Group membership is None");
-            }
-            Err(ue) => panic!(
-                "Expected an error attempting contact outside group membership. Instead got: {:?}",
-                ue.to_string()
-            ),
-            Ok(_) => panic!("Expected an error. Instead, validation passed with no errors."),
-        }
-    }
-
-    #[test]
-    fn test_default_itinerary_ratio_specification() {
-        let mut context = Context::new();
-        context
-            .register_setting_category(&Home, SettingProperties { alpha: 0.1 }, 1.0)
-            .unwrap();
-        let e = get_itinerary_ratio(&context, &SettingId::new(CensusTract, 0)).err();
-        match e {
-            Some(ModelError::ModelError(msg)) => {
-                assert_eq!(msg, "Itinerary ratio not specified");
-            }
-            Some(ue) => panic!(
-                "Expected an error that itinerary specification is not specified. Instead got: {:?}",
-                ue.to_string()
-            ),
-            None => panic!("Expected an error. Instead, validation passed with no errors."),
-        }
-    }
-
-    #[test]
-    fn test_append_itinerary_entry() {
-        let mut context = Context::new();
-        context
-            .register_setting_category(&Home, SettingProperties { alpha: 0.1 }, 0.5)
-            .unwrap();
-        context
-            .register_setting_category(&School, SettingProperties { alpha: 0.2 }, 0.25)
-            .unwrap();
-        let mut itinerary = vec![];
-
-        // Test appending a valid entry
-        append_itinerary_entry(&mut itinerary, &context, SettingId::new(Home, 1), None).unwrap();
-        assert_eq!(itinerary.len(), 1);
-        assert_eq!(itinerary[0].setting.get_type_id(), TypeId::of::<Home>());
-        assert_eq!(itinerary[0].setting.id(), 1);
-        assert_almost_eq!(itinerary[0].ratio, 0.5, 0.0);
-
-        // Test appending an entry with a different setting type
-        append_itinerary_entry(&mut itinerary, &context, SettingId::new(School, 42), None).unwrap();
-        assert_eq!(itinerary.len(), 2);
-        assert_eq!(itinerary[1].setting.get_type_id(), TypeId::of::<School>());
-        assert_eq!(itinerary[1].setting.id(), 42);
-        assert_almost_eq!(itinerary[1].ratio, 0.25, 0.0);
-
-        // Test appending an entry with a non-default ratio
-        append_itinerary_entry(&mut itinerary, &context, SettingId::new(Home, 2), Some(1.0))
-            .unwrap();
-        assert_eq!(itinerary.len(), 3);
-        assert_eq!(itinerary[2].setting.get_type_id(), TypeId::of::<Home>());
-        assert_eq!(itinerary[2].setting.id(), 2);
-        assert_almost_eq!(itinerary[2].ratio, 1.0, 0.0);
-    }
-
-    #[test]
-    fn test_get_itinerary_ratio() {
-        let mut context = Context::new();
-        context
-            .register_setting_category(&Home, SettingProperties { alpha: 0.1 }, 0.5)
-            .unwrap();
-
-        // Test with a valid setting type
-        let ratio = get_itinerary_ratio(&context, &SettingId::new(Home, 0)).unwrap();
-        assert_almost_eq!(ratio, 0.5, 0.0);
-    }
-
-    #[test]
-    fn test_only_include_registered_settings_in_itineraries() {
-        let mut context = Context::new();
+        index_setting_tables(&mut context);
         let parameters = Params {
             settings_properties: HashMap::from_iter(
-                [(CoreSettingsTypes::Home, SettingProperties { alpha: 0.5 })]
-                    .into_iter()
-                    .collect::<HashMap<_, _>>(),
+                [
+                    (SettingCategory::Home, SettingProperties { alpha: 0.0 }),
+                    (SettingCategory::School, SettingProperties { alpha: 0.0 }),
+                    (SettingCategory::Work, SettingProperties { alpha: 0.0 }),
+                    (SettingCategory::Community, SettingProperties { alpha: 0.0 }),
+                ]
+                .into_iter()
+                .collect::<HashMap<_, _>>(),
             ),
-            itinerary_ratios: HashMap::from_iter(
-                [(CoreSettingsTypes::Home, 0.5)]
-                    .into_iter()
-                    .collect::<HashMap<_, _>>(),
-            ),
+            itinerary_ratios: HashMap::from_iter([
+                (SettingCategory::Home, 0.25),
+                (SettingCategory::School, 0.25),
+                (SettingCategory::Work, 0.25),
+                (SettingCategory::Community, 0.25),
+            ]),
             ..Default::default()
         };
-
         context
             .set_global_property_value(GlobalParams, parameters)
             .unwrap();
-
-        init(&mut context);
-        let mut iitinerary = vec![];
-        append_itinerary_entry(
-            &mut iitinerary,
-            &context,
-            SettingId::new(Workplace, 1),
-            None,
-        )
-        .unwrap();
-
-        assert_eq!(iitinerary.len(), 0);
-
-        append_itinerary_entry(&mut iitinerary, &context, SettingId::new(Home, 1), None).unwrap();
-        assert_eq!(iitinerary.len(), 1);
-        assert_eq!(iitinerary[0].setting.get_type_id(), TypeId::of::<Home>());
+        context
     }
 
     #[test]
-    fn test_itinerary_normalized_one() {
-        let mut context = Context::new();
-        let person: PersonId = context.add_entity((Age(30),)).unwrap();
+    fn test_get_setting_alpha() {
+        let mut context = setup();
+        let setting_id = context
+            .add_entity::<Setting, _>((SettingCategory::Home, SettingCode(6), Alpha(0.7)))
+            .unwrap();
+        let a = context.get_setting_alpha(setting_id).unwrap();
+        assert_eq!(a, 0.7);
+    }
+
+    #[test]
+    fn test_get_setting_size() {
+        let mut context = setup();
+        let setting_id = context
+            .add_entity::<Setting, _>((SettingCategory::Home, SettingCode(5), Alpha(0.5)))
+            .unwrap();
+        let person1 = context.add_entity::<Person, _>((crate::Age(20),)).unwrap();
+        let person2 = context.add_entity::<Person, _>((crate::Age(21),)).unwrap();
         context
-            .register_setting_category(&Home, SettingProperties { alpha: 0.1 }, 5.0)
+            .add_person_to_setting(person1, SettingCategory::Home, SettingCode(5), Alpha(0.5))
             .unwrap();
         context
-            .register_setting_category(&CensusTract, SettingProperties { alpha: 0.01 }, 2.5)
+            .add_person_to_setting(person2, SettingCategory::Home, SettingCode(5), Alpha(0.5))
+            .unwrap();
+        let size = context.get_setting_size(setting_id).unwrap();
+        assert_eq!(size, 2);
+    }
+
+    #[test]
+    fn test_get_setting_ratio() {
+        let mut context = setup();
+        let setting_id = context
+            .add_entity::<Setting, _>((SettingCategory::School, SettingCode(7), Alpha(0.5)))
+            .unwrap();
+        let ratio = context.get_setting_ratio(setting_id).unwrap();
+        assert_eq!(ratio, 0.25);
+    }
+
+    #[test]
+    fn test_get_active_settings_for_person() {
+        let mut context = setup();
+        let setting_id = context
+            .add_entity::<Setting, _>((SettingCategory::Home, SettingCode(7), Alpha(0.5)))
+            .unwrap();
+        let person_id = context.add_entity::<Person, _>((crate::Age(22),)).unwrap();
+        context
+            .add_person_to_setting(person_id, SettingCategory::Home, SettingCode(7), Alpha(0.5))
+            .unwrap();
+        let active = context.get_active_settings_for_person(person_id).unwrap();
+        assert!(active.contains(&setting_id));
+    }
+
+    #[test]
+    fn test_calculate_current_infectiousness_multiplier_for_person() {
+        let mut context = setup();
+        let p1 = context.add_entity::<Person, _>((crate::Age(23),)).unwrap();
+        let p2 = context.add_entity::<Person, _>((crate::Age(23),)).unwrap();
+        let p3 = context.add_entity::<Person, _>((crate::Age(23),)).unwrap();
+        context
+            .add_person_to_setting(p1, SettingCategory::Home, SettingCode(8), Alpha(0.5))
             .unwrap();
         context
-            .register_setting_category(&School, SettingProperties { alpha: 0.2 }, 2.5)
+            .add_person_to_setting(p2, SettingCategory::Home, SettingCode(8), Alpha(0.5))
+            .unwrap();
+        context
+            .add_person_to_setting(p3, SettingCategory::Home, SettingCode(8), Alpha(0.5))
+            .unwrap();
+        context
+            .add_person_to_setting(p1, SettingCategory::Work, SettingCode(9), Alpha(0.5))
+            .unwrap();
+        context
+            .add_person_to_setting(p2, SettingCategory::Work, SettingCode(9), Alpha(0.5))
             .unwrap();
 
-        // Test creating an itinerary with all settings
-        let mut itinerary = vec![];
-        append_itinerary_entry(&mut itinerary, &context, SettingId::new(Home, 1), None).unwrap();
-        append_itinerary_entry(
-            &mut itinerary,
-            &context,
-            SettingId::new(CensusTract, 1),
-            None,
-        )
-        .unwrap();
-        append_itinerary_entry(&mut itinerary, &context, SettingId::new(School, 1), None).unwrap();
+        let val = context.calculate_current_infectiousness_multiplier_for_person(p1);
+        assert_almost_eq!(val, 1.207, 0.001);
+        // home size = 3, alpha = 0.5 => (3-1)^0.5 = 1.4142
+        // work size = 2, alpha = 0.5 => (2-1)^0.5 = 1
+        // ratios are equal, so (1.4142/2) + (1/2) ~= 1.207
+    }
 
-        context.add_itinerary(person, itinerary).unwrap();
-        let itinerary = context.get_itinerary(person).unwrap();
+    #[test]
+    fn test_calculate_max_infectiousness_multiplier_for_person() {
+        let mut context = setup();
+        let p1 = context.add_entity::<Person, _>((crate::Age(24),)).unwrap();
+        let p2 = context.add_entity::<Person, _>((crate::Age(24),)).unwrap();
+        context
+            .add_person_to_setting(p1, SettingCategory::Home, SettingCode(9), Alpha(1.0))
+            .unwrap();
+        context
+            .add_person_to_setting(p2, SettingCategory::Home, SettingCode(9), Alpha(1.0))
+            .unwrap();
+        context
+            .add_person_to_setting(p1, SettingCategory::Work, SettingCode(10), Alpha(1.0))
+            .unwrap();
+        let val = context.calculate_max_infectiousness_multiplier_for_person(p1);
+        assert_eq!(val, 1.0);
+    }
 
-        let total_ratio: Vec<f64> = itinerary.iter().map(|entry| entry.ratio).collect();
-        assert_eq!(total_ratio, vec![0.5, 0.25, 0.25]);
+    #[test]
+    fn test_sample_person_from_setting() {
+        let mut context = setup();
+        let setting_id = context
+            .add_entity::<Setting, _>((SettingCategory::Community, SettingCode(10), Alpha(0.5)))
+            .unwrap();
+        let person_id = context.add_entity::<Person, _>((crate::Age(25),)).unwrap();
+        context
+            .add_person_to_setting(
+                person_id,
+                SettingCategory::Community,
+                SettingCode(10),
+                Alpha(0.5),
+            )
+            .unwrap();
+        let sampled = context.sample_person_from_setting(setting_id).unwrap();
+        assert_eq!(sampled, person_id);
+    }
+
+    #[test]
+    fn test_sample_from_setting_with_exclusion() {
+        let mut context = setup();
+        let setting_id = context
+            .add_entity::<Setting, _>((SettingCategory::Work, SettingCode(11), Alpha(0.5)))
+            .unwrap();
+        let p1 = context.add_entity::<Person, _>((crate::Age(26),)).unwrap();
+        let p2 = context.add_entity::<Person, _>((crate::Age(27),)).unwrap();
+        context
+            .add_person_to_setting(p1, SettingCategory::Work, SettingCode(11), Alpha(0.5))
+            .unwrap();
+        context
+            .add_person_to_setting(p2, SettingCategory::Work, SettingCode(11), Alpha(0.5))
+            .unwrap();
+        let sampled = context
+            .sample_from_setting_with_exclusion(p1, setting_id)
+            .unwrap();
+        assert_eq!(sampled, Some(p2));
+    }
+
+    #[test]
+    fn test_sample_active_setting() {
+        let mut context = setup();
+        let setting_id = context
+            .add_entity::<Setting, _>((SettingCategory::Home, SettingCode(13), Alpha(0.5)))
+            .unwrap();
+        let person_id = context.add_entity::<Person, _>((crate::Age(30),)).unwrap();
+        context
+            .add_person_to_setting(
+                person_id,
+                SettingCategory::Home,
+                SettingCode(13),
+                Alpha(0.5),
+            )
+            .unwrap();
+        let sampled = context.sample_active_setting(person_id).unwrap();
+        assert_eq!(sampled, setting_id);
+    }
+
+    #[test]
+    fn test_add_person_to_setting_and_add_index_setting() {
+        let mut context = setup();
+        let person_id = context.add_entity::<Person, _>((crate::Age(31),)).unwrap();
+        let setting_code = SettingCode(14);
+        let alpha = Alpha(0.3);
+        context
+            .add_person_to_setting(person_id, SettingCategory::Home, setting_code, alpha)
+            .unwrap();
+        let setting_id = context
+            .query_result_iterator::<Setting, _>((SettingCategory::Home, setting_code))
+            .next()
+            .unwrap();
+        let stored_code = context.get_property::<Setting, SettingCode>(setting_id);
+        assert_eq!(stored_code, setting_code);
     }
 }

@@ -1,18 +1,17 @@
 use crate::error::ModelError;
 use crate::infectiousness_manager::InfectionData;
 use crate::population_loader::{Person, PersonId};
+use crate::settings::SettingId;
 use ixa::prelude::*;
 use ixa::profiling::open_span;
 use serde::{Deserialize, Serialize};
-use std::string::ToString;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 struct TransmissionReport {
     time: f64,
     target_id: PersonId,
     infected_by: Option<PersonId>,
-    infection_setting_type: Option<String>,
-    infection_setting_id: Option<usize>,
+    infection_setting_id: Option<SettingId>,
 }
 
 define_report!(TransmissionReport);
@@ -21,15 +20,13 @@ fn record_transmission_event(
     context: &mut Context,
     target_id: PersonId,
     infected_by: Option<PersonId>,
-    infection_setting_type: Option<String>,
-    infection_setting_id: Option<usize>,
+    infection_setting_id: Option<SettingId>,
 ) {
     if infected_by.is_some() {
         context.send_report(TransmissionReport {
             time: context.get_current_time(),
             target_id,
             infected_by,
-            infection_setting_type,
             infection_setting_id,
         });
     }
@@ -44,18 +41,11 @@ pub fn init(context: &mut Context, file_name: &str) -> Result<(), ModelError> {
         let _span = open_span("transmission_report");
         if let InfectionData::Infectious {
             infected_by,
-            infection_setting_type,
             infection_setting_id,
             ..
         } = event.current
         {
-            record_transmission_event(
-                context,
-                event.entity_id,
-                infected_by,
-                infection_setting_type.map(ToString::to_string),
-                infection_setting_id,
-            );
+            record_transmission_event(context, event.entity_id, infected_by, infection_setting_id);
         }
     });
     Ok(())
@@ -70,11 +60,11 @@ mod test {
         population_loader::PersonId,
         rate_fns::load_rate_fns,
         reports::ReportParams,
+        settings::{Alpha, Setting, SettingCategory, SettingCode},
     };
     use ixa::{
         Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt, ContextReportExt,
     };
-    use ixa::{assert_almost_eq, csv};
     use std::path::PathBuf;
     use tempfile::tempdir;
 
@@ -110,15 +100,17 @@ mod test {
 
         let source: PersonId = context.add_entity((Age(30),)).unwrap();
         let target: PersonId = context.add_entity((Age(30),)).unwrap();
-        let setting_type = Some("test_setting");
-        let setting_id: Option<usize> = Some(1);
+        let home = context
+            .add_entity::<Setting, _>((SettingCategory::Home, SettingCode(0), Alpha(0.0)))
+            .unwrap();
+        let setting = Some(home);
         let infection_time = 1.0;
 
-        context.infect_person(source, None, None, None);
+        context.infect_person(source, None, None);
         crate::reports::init(&mut context).unwrap();
 
         context.add_plan(infection_time, move |context| {
-            context.infect_person(target, Some(source), setting_type, setting_id);
+            context.infect_person(target, Some(source), setting);
         });
         context.execute();
 
