@@ -225,12 +225,13 @@ mod test {
             Alpha, ContextSettingExt, Setting, SettingCategory, SettingCode, SettingProperties,
         },
     };
+    use crate::error::ModelError;
     use ixa::{HashMap, assert_almost_eq, prelude::*};
 
     fn set_homogeneous_mixing_itinerary(
         context: &mut Context,
         person_id: PersonId,
-    ) -> Result<(), IxaError> {
+    ) -> Result<(), ModelError> {
         context.add_person_to_setting(
             person_id,
             SettingCategory::Community,

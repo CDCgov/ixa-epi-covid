@@ -3,6 +3,7 @@ use ixa::{HashMap, csv, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::error::ModelError;
 use crate::parameters::ContextParametersExt;
 use crate::Params;
 use crate::settings::{Alpha, ContextSettingExt, SettingCategory, SettingCode, SettingProperties};
@@ -31,7 +32,7 @@ fn create_person_from_record(
     context: &mut Context,
     person_record: &PeopleRecord,
     settings_properties: &HashMap<SettingCategory, SettingProperties>,
-) -> Result<(), IxaError> {
+) -> Result<(), ModelError> {
     // Create itinerary entries for all setting memberships in input file
     let tract: String = String::from_utf8(person_record.homeId[..11].to_owned())?;
     let home_id: String = String::from_utf8(person_record.homeId.to_owned())?;
@@ -95,7 +96,7 @@ fn create_person_from_record(
     Ok(())
 }
 
-fn load_synth_population(context: &mut Context, synth_input_file: PathBuf) -> Result<(), IxaError> {
+fn load_synth_population(context: &mut Context, synth_input_file: PathBuf) -> Result<(), ModelError> {
     let Params {
         settings_properties,
         ..
@@ -114,7 +115,7 @@ fn load_synth_population(context: &mut Context, synth_input_file: PathBuf) -> Re
 pub fn init(
     context: &mut Context,
     synth_population_override: Option<PathBuf>,
-) -> Result<(), IxaError> {
+) -> Result<(), ModelError> {
     let _span = open_span("load_synth_population");
     let synth_population_file = synth_population_override
         .unwrap_or_else(|| context.get_params().synth_population_file.clone());

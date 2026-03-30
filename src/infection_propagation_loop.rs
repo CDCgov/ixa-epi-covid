@@ -72,6 +72,7 @@ mod test {
     use ixa::{HashMap, assert_almost_eq};
 
     use crate::Age;
+    use crate::error::ModelError;
     use crate::infection_propagation_loop::InfectionRng;
     use crate::infectiousness_manager::InfectionData;
     use crate::population_loader::PersonId;
@@ -90,7 +91,7 @@ mod test {
     fn set_homogeneous_mixing_itinerary(
         context: &mut Context,
         person_id: PersonId,
-    ) -> Result<(), IxaError> {
+    ) -> Result<(), ModelError> {
         context.add_person_to_setting(
             person_id,
             SettingCategory::Community,
