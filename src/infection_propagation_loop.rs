@@ -91,7 +91,7 @@ mod test {
     fn set_homogeneous_mixing_itinerary(
         context: &mut Context,
         person_id: PersonId,
-    ) -> Result<(), IxaError> {
+    ) -> Result<(), ModelError> {
         context.add_person_to_setting(
             person_id,
             SettingCategory::Community,

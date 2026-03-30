@@ -1,7 +1,7 @@
 use ixa::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{ContextParametersExt, Params, population_loader::PersonId};
+use crate::{ContextParametersExt, Params, error::ModelError, population_loader::PersonId};
 
 define_rng!(SettingRng);
 
@@ -53,11 +53,11 @@ pub trait ContextSettingExt:
         self.get_property::<Setting, SettingCategory>(setting)
     }
 
-    fn get_setting_alpha(&self, setting: SettingId) -> Result<f64, IxaError> {
+    fn get_setting_alpha(&self, setting: SettingId) -> Result<f64, ModelError> {
         Ok(self.get_property::<Setting, Alpha>(setting).0)
     }
 
-    fn get_setting_ratio(&self, setting: SettingId) -> Result<f64, IxaError> {
+    fn get_setting_ratio(&self, setting: SettingId) -> Result<f64, ModelError> {
         let Params {
             itinerary_ratios, ..
         } = self.get_params();
@@ -65,18 +65,18 @@ pub trait ContextSettingExt:
         Ok(*itinerary_ratios.get(&kind).unwrap())
     }
 
-    fn get_setting_size(&self, setting: SettingId) -> Result<usize, IxaError> {
+    fn get_setting_size(&self, setting: SettingId) -> Result<usize, ModelError> {
         Ok(self.query_entity_count::<PersonSetting, _>((SettingRef(setting),)))
     }
 
-    fn sample_person_from_setting(&self, setting: SettingId) -> Result<PersonId, IxaError> {
+    fn sample_person_from_setting(&self, setting: SettingId) -> Result<PersonId, ModelError> {
         if let Some(membership) =
             self.sample_entity::<PersonSetting, _, _>(SettingRng, (SettingRef(setting),))
         {
             return Ok(self.get_property::<PersonSetting, PersonRef>(membership).0);
         }
 
-        Err(IxaError::IxaError(format!(
+        Err(ModelError::ModelError(format!(
             "No members found for setting id: {:?}",
             setting
         )))
@@ -85,7 +85,7 @@ pub trait ContextSettingExt:
     fn get_active_settings_for_person(
         &self,
         person_id: PersonId,
-    ) -> Result<Vec<SettingId>, IxaError> {
+    ) -> Result<Vec<SettingId>, ModelError> {
         let mut settings = Vec::new();
         for membership in self.query_result_iterator::<PersonSetting, _>((PersonRef(person_id),)) {
             settings.push(self.get_property::<PersonSetting, SettingRef>(membership).0);
@@ -127,7 +127,7 @@ pub trait ContextSettingExt:
         &self,
         person_id: PersonId,
         setting: SettingId,
-    ) -> Result<Option<PersonId>, IxaError> {
+    ) -> Result<Option<PersonId>, ModelError> {
         if self.get_setting_size(setting)? == 1 {
             return Ok(None);
         }
@@ -139,13 +139,13 @@ pub trait ContextSettingExt:
         }
     }
 
-    fn calculate_multipler(&self, setting: SettingId) -> Result<f64, IxaError> {
+    fn calculate_multipler(&self, setting: SettingId) -> Result<f64, ModelError> {
         let size = self.get_setting_size(setting)?;
         let alpha = self.get_setting_alpha(setting)?;
         Ok(((size.saturating_sub(1)) as f64).powf(alpha))
     }
 
-    fn sample_active_setting(&self, person_id: PersonId) -> Result<SettingId, IxaError> {
+    fn sample_active_setting(&self, person_id: PersonId) -> Result<SettingId, ModelError> {
         let mut weights = Vec::new();
         let ids = self.get_active_settings_for_person(person_id)?;
         let mut sum_weights = 0.0;
@@ -170,7 +170,7 @@ pub trait ContextSettingExt:
         setting_category: SettingCategory,
         setting_code: SettingCode,
         alpha: Alpha,
-    ) -> Result<(), IxaError> {
+    ) -> Result<(), ModelError> {
         let setting_id = self.add_index_setting(setting_category, setting_code, alpha)?;
         self.add_entity::<PersonSetting, _>((PersonRef(person_id), SettingRef(setting_id)))?;
         Ok(())
@@ -181,20 +181,20 @@ pub trait ContextSettingExt:
         setting_category: SettingCategory,
         setting_code: SettingCode,
         alpha: Alpha,
-    ) -> Result<SettingId, IxaError> {
+    ) -> Result<SettingId, ModelError> {
         if let Some(setting_id) = self
             .query_result_iterator::<Setting, _>((setting_category, setting_code))
             .next()
         {
             return Ok(setting_id);
         }
-        self.add_entity::<Setting, _>((setting_category, setting_code, alpha))
+        Ok(self.add_entity::<Setting, _>((setting_category, setting_code, alpha))?)
     }
 }
 
 impl ContextSettingExt for Context {}
 
-pub fn init(context: &mut Context) -> Result<(), IxaError> {
+pub fn init(context: &mut Context) -> Result<(), ModelError> {
     index_setting_tables(context);
     Ok(())
 }

@@ -368,12 +368,9 @@ mod tests {
                 .collect::<HashMap<_, _>>(),
             ),
             itinerary_ratios: HashMap::from_iter(
-                [
-                    (SettingCategory::Home, 0.0),
-                    (SettingCategory::School, 0.0),
-                ]
-                .into_iter()
-                .collect::<HashMap<_, _>>(),
+                [(SettingCategory::Home, 0.0), (SettingCategory::School, 0.0)]
+                    .into_iter()
+                    .collect::<HashMap<_, _>>(),
             ),
             ..Default::default()
         };

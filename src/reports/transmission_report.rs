@@ -63,7 +63,8 @@ mod test {
         settings::{Alpha, Setting, SettingCategory, SettingCode},
     };
     use ixa::{
-        Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt, ContextReportExt,
+        Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt,
+        ContextReportExt, assert_almost_eq, csv,
     };
     use std::path::PathBuf;
     use tempfile::tempdir;
@@ -135,11 +136,7 @@ mod test {
             assert_almost_eq!(record.time, infection_time, 0.0);
             assert_eq!(record.target_id, target);
             assert_eq!(record.infected_by.unwrap(), source);
-            assert_eq!(
-                record.infection_setting_type,
-                Some("test_setting".to_string())
-            );
-            assert_eq!(record.infection_setting_id, setting_id);
+            assert_eq!(record.infection_setting_id, setting);
             line_count += 1;
         }
         assert_eq!(line_count, 1);
