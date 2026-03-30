@@ -1,5 +1,6 @@
 use ixa::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::io;
 
 use crate::{ContextParametersExt, Params, population_loader::PersonId};
 
@@ -76,10 +77,11 @@ pub trait ContextSettingExt:
             return Ok(self.get_property::<PersonSetting, PersonRef>(membership).0);
         }
 
-        Err(IxaError::IxaError(format!(
-            "No members found for setting id: {:?}",
-            setting
-        )))
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("No members found for setting id: {:?}", setting),
+        )
+        .into())
     }
 
     fn get_active_settings_for_person(

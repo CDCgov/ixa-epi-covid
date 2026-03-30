@@ -270,10 +270,6 @@ mod test {
             .unwrap();
         load_rate_fns(&mut context).unwrap();
         context
-            .register_setting_category(&HomogeneousMixing, SettingProperties { alpha: 1.0 }, 1.0)
-            .unwrap();
-
-        context
     }
 
     #[test]
@@ -281,7 +277,7 @@ mod test {
         let mut context = setup_context();
         let p1: PersonId = context.add_entity((Age(30),)).unwrap();
         context.add_plan(2.0, move |context| {
-            context.infect_person(p1, None, None, None);
+            context.infect_person(p1, None, None);
         });
         context.execute();
         let InfectionData::Infectious { infection_time, .. } =
@@ -298,7 +294,7 @@ mod test {
         let mut context = setup_context();
         let p1: PersonId = context.add_entity((Age(30),)).unwrap();
         context.add_plan(2.0, move |context| {
-            context.infect_person(p1, None, None, None);
+            context.infect_person(p1, None, None);
         });
         context.add_plan(3.0, move |context| {
             context.recover_person(p1);
@@ -320,7 +316,7 @@ mod test {
         let mut context = setup_context();
         let p1: PersonId = context.add_entity((Age(30),)).unwrap();
         context.add_plan(2.0, move |context| {
-            context.infect_person(p1, None, None, None);
+            context.infect_person(p1, None, None);
         });
         // Run the simulation until time 3.0 at which the point the individual should have been
         // infected for 1.0 time units.
@@ -362,7 +358,7 @@ mod test {
         let p3: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p3).unwrap();
 
-        context.infect_person(p1, None, None, None);
+        context.infect_person(p1, None, None);
 
         let f = get_forecast(&context, p1).expect("Forecast should be returned");
         // The expected rate is 2.0, because intrinsic is 1.0 and there are 2 contacts.
@@ -375,7 +371,7 @@ mod test {
         let mut context = setup_context();
         let p1: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
-        context.infect_person(p1, None, None, None);
+        context.infect_person(p1, None, None);
         // We need to add another person so that our total infectiousness is 1.
         let p2: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p2).unwrap();
@@ -389,7 +385,7 @@ mod test {
         let mut context = setup_context();
         let p1: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
-        context.infect_person(p1, None, None, None);
+        context.infect_person(p1, None, None);
         let p2: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p2).unwrap();
 
