@@ -89,6 +89,15 @@ def print_summary(title: str, base: dict[str, str], current: dict[str, str]):
     print("=" * 70)
 
 
+def base_uses_core_settings(worktree_dir: Path) -> bool:
+    """Return True when the base ref still uses CoreSettingsTypes."""
+
+    parameters_rs = worktree_dir / "src" / "parameters.rs"
+    if not parameters_rs.exists():
+        return False
+    return "CoreSettingsTypes" in parameters_rs.read_text()
+
+
 def ensure_bench_ready(worktree_dir: Path, repo_root: Path):
     """Ensure the base worktree can build the infection_loop bench."""
 
@@ -190,11 +199,9 @@ def main():
             dest.symlink_to(f)
 
     ensure_bench_ready(worktree_dir, repo_root)
-
-    # 2. Build both sequentially (compilation is cached, no need to parallel)
-    print(f"==> Building base ({base_ref})...")
-    result = subprocess.run(
-        [
+    base_is_old_settings = base_uses_core_settings(worktree_dir)
+    if base_is_old_settings:
+        base_build_cmd = [
             "cargo",
             "bench",
             "--bench",
@@ -202,10 +209,23 @@ def main():
             "--features",
             "bench_old_settings",
             "--no-run",
-        ],
-        cwd=worktree_dir,
-        env=base_env,
-    )
+        ]
+        bench_cmd_base = [
+            "cargo",
+            "bench",
+            "--bench",
+            "infection_loop",
+            "--features",
+            "bench_old_settings",
+            "--",
+        ]
+    else:
+        base_build_cmd = ["cargo", "bench", "--bench", "infection_loop", "--no-run"]
+        bench_cmd_base = ["cargo", "bench", "--bench", "infection_loop", "--"]
+
+    # 2. Build both sequentially (compilation is cached, no need to parallel)
+    print(f"==> Building base ({base_ref})...")
+    result = subprocess.run(base_build_cmd, cwd=worktree_dir, env=base_env)
     if result.returncode != 0:
         sys.exit(1)
 
@@ -224,15 +244,6 @@ def main():
     print(f"    current: {current_branch}")
     print()
 
-    bench_cmd_base = [
-        "cargo",
-        "bench",
-        "--bench",
-        "infection_loop",
-        "--features",
-        "bench_old_settings",
-        "--",
-    ]
     bench_cmd_current = ["cargo", "bench", "--bench", "infection_loop", "--"]
 
     def stream_output(proc, prefix: str) -> str:
