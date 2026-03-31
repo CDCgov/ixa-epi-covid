@@ -35,10 +35,7 @@ fn make_params(synth_file: PathBuf) -> Params {
         critical_to_resolved_delay: delay,
         settings_properties: HashMap::from_iter([
             (SettingCategory::Home, SettingProperties { alpha: 0.3 }),
-            (
-                SettingCategory::Work,
-                SettingProperties { alpha: 0.2 },
-            ),
+            (SettingCategory::Work, SettingProperties { alpha: 0.2 }),
             (SettingCategory::School, SettingProperties { alpha: 0.2 }),
             (
                 SettingCategory::Community,
