@@ -1,9 +1,8 @@
-use ixa::prelude::*;
+use ixa::{impl_derived_property, prelude::*};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fmt::Debug};
+use std::fmt::Debug;
 
 use core::f64;
-use std::hash::Hash;
 
 use crate::{
     ContextParametersExt, Params,
@@ -31,69 +30,46 @@ pub enum SettingCategory {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct SettingCode(pub usize);
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy, Hash)]
-pub struct Size(pub usize);
-
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
-pub struct Multiplier(pub f64);
-
-impl_property!(Size, Setting, default_const = Size(0));
-
 impl_property!(SettingCode, Setting);
 
 impl_property!(SettingCategory, Setting);
 
 define_multi_property!((SettingCategory, SettingCode), Setting);
 
-#[derive(Default)]
-struct SettingDataContainer {
-    setting_ratios: HashMap<SettingCategory, f64>,
-}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy, Hash, Eq)]
+pub struct SettingPropertyIndex(pub usize);
 
-impl SettingDataContainer {}
-
-define_data_plugin!(
-    SettingDataPlugin,
-    SettingDataContainer,
-    SettingDataContainer::default()
+impl_derived_property!(
+    SettingPropertyIndex,
+    Setting,
+    [SettingCategory],
+    [],
+    |setting_category| match setting_category {
+        SettingCategory::Home => SettingPropertyIndex(0),
+        SettingCategory::Work => SettingPropertyIndex(1),
+        SettingCategory::School => SettingPropertyIndex(2),
+        SettingCategory::Community => SettingPropertyIndex(3),
+    }
 );
 
-// Add settings from the synthetic population file
-// Setting properties:
-// alpha, setting code, setting category
-// Region?
+define_global_property!(SettingAlphas, [f64; 4]);
+define_global_property!(SettingRatios, [f64; 4]);
+
 trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextParametersExt {
     fn get_setting_ratio(&self, setting: SettingId) -> Result<f64, ModelError> {
-        let setting_category = self.get_property::<Setting, SettingCategory>(setting);
-        let Params {
-            itinerary_ratios, ..
-        } = self.get_params().clone();
-        itinerary_ratios
-            .get(&setting_category)
-            .cloned()
-            .ok_or_else(|| {
-                ModelError::ModelError(format!(
-                    "No ratio found for setting category: {:?}",
-                    setting_category
-                ))
-            })
+        let ratios = self.get_global_property_value(SettingRatios).unwrap();
+        let setting_index = self
+            .get_property::<Setting, SettingPropertyIndex>(setting)
+            .0;
+        Ok(ratios[setting_index])
     }
 
     fn get_setting_alpha(&self, setting: SettingId) -> Result<f64, ModelError> {
-        let category = self.get_property::<Setting, SettingCategory>(setting);
-        let Params {
-            settings_properties,
-            ..
-        } = self.get_params().clone();
-        settings_properties
-            .get(&category)
-            .map(|props| props.alpha)
-            .ok_or_else(|| {
-                ModelError::ModelError(format!(
-                    "No alpha found for setting category: {:?}",
-                    category
-                ))
-            })
+        let alphas = self.get_global_property_value(SettingAlphas).unwrap();
+        let setting_index = self
+            .get_property::<Setting, SettingPropertyIndex>(setting)
+            .0;
+        Ok(alphas[setting_index])
     }
 
     fn sample_person_from_setting_internal<T>(&self, setting: T) -> Result<PersonId, ModelError>
@@ -152,14 +128,46 @@ impl ContextSettingExtPrivate for Context {}
 pub trait ContextSettingExt:
     PluginContext + ContextEntitiesExt + ContextSettingExtPrivate + ContextParametersExt
 {
-    fn register_setting_ratios(&mut self) -> Result<(), ModelError> {
-        let params = self.get_params().clone();
-        let container = self.get_data_mut(SettingDataPlugin);
-        for (setting_category, ratio) in params.itinerary_ratios.iter() {
-            container.setting_ratios.insert(*setting_category, *ratio);
-        }
-        Ok(())
+    fn register_setting_global_properties(&mut self) {
+        let Params {
+            settings_properties,
+            itinerary_ratios,
+            ..
+        } = self.get_params().clone();
+        self.set_global_property_value(
+            SettingAlphas,
+            [
+                settings_properties
+                    .get(&SettingCategory::Home)
+                    .unwrap()
+                    .alpha,
+                settings_properties
+                    .get(&SettingCategory::School)
+                    .unwrap()
+                    .alpha,
+                settings_properties
+                    .get(&SettingCategory::Work)
+                    .unwrap()
+                    .alpha,
+                settings_properties
+                    .get(&SettingCategory::Community)
+                    .unwrap()
+                    .alpha,
+            ],
+        )
+        .unwrap();
+        self.set_global_property_value(
+            SettingRatios,
+            [
+                *itinerary_ratios.get(&SettingCategory::Home).unwrap(),
+                *itinerary_ratios.get(&SettingCategory::School).unwrap(),
+                *itinerary_ratios.get(&SettingCategory::Work).unwrap(),
+                *itinerary_ratios.get(&SettingCategory::Community).unwrap(),
+            ],
+        )
+        .unwrap();
     }
+
     fn get_setting_size(&self, setting: SettingId) -> Result<usize, ModelError> {
         self.get_setting_size_internal(setting)
     }
@@ -319,7 +327,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
     context.index_property::<Setting, SettingCode>();
     context.index_property::<Setting, SettingCategory>();
     context.index_property::<Setting, (SettingCategory, SettingCode)>();
-
+    context.register_setting_global_properties();
     Ok(())
 }
 // To do: Write tests for each method like the one above in the init

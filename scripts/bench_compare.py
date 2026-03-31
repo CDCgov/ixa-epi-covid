@@ -89,18 +89,22 @@ def print_summary(title: str, base: dict[str, str], current: dict[str, str]):
     print("=" * 70)
 
 
+def base_uses_core_settings(worktree_dir: Path) -> bool:
+    """Return True when the base ref still uses CoreSettingsTypes."""
+
+    parameters_rs = worktree_dir / "src" / "parameters.rs"
+    if not parameters_rs.exists():
+        return False
+    return "CoreSettingsTypes" in parameters_rs.read_text()
+
+
 def ensure_bench_ready(worktree_dir: Path, repo_root: Path):
-    """Ensure the base worktree can build the infection_loop bench.
+    """Ensure the base worktree can build the infection_loop bench."""
 
-    If the base already has its own benchmark file, use it as-is.
-    Otherwise copy from the current branch and ensure Cargo.toml
-    has the necessary bench and dev-dependency config.
-    """
-    bench_dest = worktree_dir / "benches" / "infection_loop.rs"
-    if bench_dest.exists():
-        return
-
+    manifest = worktree_dir / "Cargo.toml"
     bench_src = repo_root / "benches" / "infection_loop.rs"
+    bench_dest = worktree_dir / "benches" / "infection_loop.rs"
+
     if not bench_src.exists():
         print(
             "Benchmark source benches/infection_loop.rs not found.",
@@ -108,10 +112,6 @@ def ensure_bench_ready(worktree_dir: Path, repo_root: Path):
         )
         sys.exit(1)
 
-    bench_dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy(bench_src, bench_dest)
-
-    manifest = worktree_dir / "Cargo.toml"
     text = manifest.read_text()
     modified = False
 
@@ -121,23 +121,37 @@ def ensure_bench_ready(worktree_dir: Path, repo_root: Path):
         )
         modified = True
 
-    if "[dev-dependencies]" not in text:
-        text = text.rstrip() + (
-            '\n[dev-dependencies]\ncriterion = { version = "0.5", '
-            'features = ["html_reports"] }\n'
-        )
+    if "criterion" not in text:
+        if "[dev-dependencies]" in text:
+            text = text.replace(
+                "[dev-dependencies]",
+                '[dev-dependencies]\ncriterion = { version = "0.5", '
+                'features = ["html_reports"] }',
+                1,
+            )
+        else:
+            text = text.rstrip() + (
+                '\n[dev-dependencies]\ncriterion = { version = "0.5", '
+                'features = ["html_reports"] }\n'
+            )
         modified = True
-    elif "criterion" not in text:
-        text = text.replace(
-            "[dev-dependencies]",
-            '[dev-dependencies]\ncriterion = { version = "0.5", '
-            'features = ["html_reports"] }',
-            1,
-        )
+
+    if "bench_old_settings" not in text:
+        if "[features]" in text:
+            text = text.replace(
+                "[features]",
+                "[features]\nbench_old_settings = []",
+                1,
+            )
+        else:
+            text = text.rstrip() + "\n[features]\nbench_old_settings = []\n"
         modified = True
 
     if modified:
         manifest.write_text(text)
+
+    bench_dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(bench_src, bench_dest)
 
 
 def main():
@@ -188,14 +202,41 @@ def main():
             dest.symlink_to(f)
 
     ensure_bench_ready(worktree_dir, repo_root)
+    base_is_old_settings = base_uses_core_settings(worktree_dir)
+    if base_is_old_settings:
+        base_build_cmd = [
+            "cargo",
+            "bench",
+            "--bench",
+            "infection_loop",
+            "--features",
+            "bench_old_settings",
+            "--no-run",
+        ]
+        bench_cmd_base = [
+            "cargo",
+            "bench",
+            "--bench",
+            "infection_loop",
+            "--features",
+            "bench_old_settings",
+            "--",
+        ]
+    else:
+        base_build_cmd = [
+            "cargo",
+            "bench",
+            "--bench",
+            "infection_loop",
+            "--no-run",
+        ]
+        bench_cmd_base = ["cargo", "bench", "--bench", "infection_loop", "--"]
 
     bench_cmd = ["cargo", "bench", "--bench", "infection_loop"]
 
     # 2. Build both sequentially (compilation is cached, no need to parallel)
     print(f"==> Building base ({base_ref})...")
-    result = subprocess.run(
-        [*bench_cmd, "--no-run"], cwd=worktree_dir, env=base_env
-    )
+    result = subprocess.run(base_build_cmd, cwd=worktree_dir, env=base_env)
     if result.returncode != 0:
         sys.exit(1)
 
@@ -214,6 +255,8 @@ def main():
     print(f"    current: {current_branch}")
     print()
 
+    bench_cmd_current = ["cargo", "bench", "--bench", "infection_loop", "--"]
+
     def stream_output(proc, prefix: str) -> str:
         lines = []
         for line in proc.stdout:
@@ -223,7 +266,7 @@ def main():
         return "".join(lines)
 
     proc_base = subprocess.Popen(
-        [*bench_cmd, "--", "--save-baseline", "base", *extra_args],
+        [*bench_cmd_base, "--save-baseline", "base", *extra_args],
         cwd=worktree_dir,
         env=base_env,
         stdout=subprocess.PIPE,
@@ -231,7 +274,7 @@ def main():
         text=True,
     )
     proc_current = subprocess.Popen(
-        [*bench_cmd, "--", "--save-baseline", "current", *extra_args],
+        [*bench_cmd_current, "--save-baseline", "current", *extra_args],
         cwd=repo_root,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
