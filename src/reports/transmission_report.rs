@@ -60,10 +60,11 @@ mod test {
         population_loader::PersonId,
         rate_fns::load_rate_fns,
         reports::ReportParams,
-        settings::{Alpha, SettingCategory, SettingCode, SettingId},
+        settings::{SettingCategory, SettingCode, SettingId},
     };
     use ixa::{
-        Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt, ContextReportExt,
+        Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt,
+        ContextReportExt, assert_almost_eq, csv,
     };
     use std::path::PathBuf;
     use tempfile::tempdir;
@@ -101,7 +102,7 @@ mod test {
         let source: PersonId = context.add_entity((Age(30),)).unwrap();
         let target: PersonId = context.add_entity((Age(30),)).unwrap();
         let home: SettingId = context
-            .add_entity((SettingCode(0), Alpha(0.0), SettingCategory::Home))
+            .add_entity((SettingCode(0), SettingCategory::Home))
             .unwrap();
         let setting = Some(home);
         let infection_time = 1.0;
@@ -128,5 +129,16 @@ mod test {
         std::mem::drop(context);
 
         assert!(file_path.exists());
+        let mut reader = csv::Reader::from_path(file_path).unwrap();
+        let mut line_count = 0;
+        for result in reader.deserialize() {
+            let record: crate::reports::transmission_report::TransmissionReport = result.unwrap();
+            assert_almost_eq!(record.time, infection_time, 0.0);
+            assert_eq!(record.target_id, target);
+            assert_eq!(record.infected_by.unwrap(), source);
+            assert_eq!(record.infection_setting_id, setting);
+            line_count += 1;
+        }
+        assert_eq!(line_count, 1);
     }
 }

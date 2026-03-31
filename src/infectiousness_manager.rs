@@ -221,7 +221,7 @@ mod test {
         parameters::{GlobalParams, Params},
         population_loader::{CommunityId, Person, PersonId},
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
-        settings::{Alpha, Setting, SettingCategory, SettingCode, SettingProperties},
+        settings::{Setting, SettingCategory, SettingCode, SettingProperties},
     };
     use ixa::{HashMap, assert_almost_eq, prelude::*};
 
@@ -236,7 +236,7 @@ mod test {
             context.set_property::<Person, CommunityId>(person_id, CommunityId(community_id));
         } else {
             context
-                .add_entity::<Setting, _>((SettingCode(0), Alpha(1.0), SettingCategory::Community))
+                .add_entity::<Setting, _>((SettingCode(0), SettingCategory::Community))
                 .map(|community_id| {
                     context.set_property::<Person, CommunityId>(
                         person_id,
@@ -407,7 +407,7 @@ mod test {
         let index: PersonId = context.add_entity((Age(30),)).unwrap();
         let contact: PersonId = context.add_entity((Age(30),)).unwrap();
         let home_id = context
-            .add_entity::<Setting, _>((SettingCode(0), Alpha(0.1), SettingCategory::Home))
+            .add_entity::<Setting, _>((SettingCode(0), SettingCategory::Home))
             .unwrap();
         let infection_setting_id = Some(home_id);
         context.infect_person(contact, Some(index), infection_setting_id);

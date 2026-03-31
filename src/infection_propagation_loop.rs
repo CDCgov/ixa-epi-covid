@@ -75,7 +75,7 @@ mod test {
     use crate::infection_propagation_loop::InfectionRng;
     use crate::infectiousness_manager::InfectionData;
     use crate::population_loader::{CommunityId, HomeId, PersonId, WorkId};
-    use crate::settings::{Alpha, Setting, SettingCategory, SettingCode};
+    use crate::settings::{Setting, SettingCategory, SettingCode};
     use crate::{
         infection_propagation_loop::{
             InfectionStatus, init, schedule_next_forecasted_infection, schedule_recovery,
@@ -98,7 +98,7 @@ mod test {
             context.set_property::<Person, CommunityId>(person_id, CommunityId(community_id));
         } else {
             context
-                .add_entity::<Setting, _>((SettingCode(0), Alpha(0.0), SettingCategory::Community))
+                .add_entity::<Setting, _>((SettingCode(0), SettingCategory::Community))
                 .map(|community_id| {
                     context.set_property::<Person, CommunityId>(
                         person_id,
@@ -412,17 +412,13 @@ mod test {
                 let person_workplace: PersonId = context.add_entity((Age(30),)).unwrap();
 
                 let home_id = context
-                    .add_entity::<Setting, _>((SettingCode(0), Alpha(0.0), SettingCategory::Home))
+                    .add_entity::<Setting, _>((SettingCode(0), SettingCategory::Home))
                     .unwrap();
                 let workplace_id = context
-                    .add_entity::<Setting, _>((SettingCode(0), Alpha(0.0), SettingCategory::Work))
+                    .add_entity::<Setting, _>((SettingCode(0), SettingCategory::Work))
                     .unwrap();
                 let census_tract_id = context
-                    .add_entity::<Setting, _>((
-                        SettingCode(0),
-                        Alpha(0.0),
-                        SettingCategory::Community,
-                    ))
+                    .add_entity::<Setting, _>((SettingCode(0), SettingCategory::Community))
                     .unwrap();
                 context.set_property::<Person, HomeId>(person_home, HomeId(Some(home_id)));
                 context

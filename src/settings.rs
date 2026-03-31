@@ -8,7 +8,7 @@ use std::hash::Hash;
 use crate::{
     ContextParametersExt, Params,
     error::ModelError,
-    population_loader::{CommunityId, HomeId, Itinerary, Person, PersonId, SchoolId, WorkId},
+    population_loader::{CommunityId, GenericSetting, HomeId, Person, PersonId, SchoolId, WorkId},
 };
 
 define_rng!(SettingRng);
@@ -27,8 +27,6 @@ pub enum SettingCategory {
     School,
     Community,
 }
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
-pub struct Alpha(pub f64);
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct SettingCode(pub usize);
@@ -42,8 +40,6 @@ pub struct Multiplier(pub f64);
 impl_property!(Size, Setting, default_const = Size(0));
 
 impl_property!(SettingCode, Setting);
-
-impl_property!(Alpha, Setting);
 
 impl_property!(SettingCategory, Setting);
 
@@ -84,12 +80,25 @@ trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextPara
     }
 
     fn get_setting_alpha(&self, setting: SettingId) -> Result<f64, ModelError> {
-        Ok(self.get_property::<Setting, Alpha>(setting).0)
+        let category = self.get_property::<Setting, SettingCategory>(setting);
+        let Params {
+            settings_properties,
+            ..
+        } = self.get_params().clone();
+        settings_properties
+            .get(&category)
+            .map(|props| props.alpha)
+            .ok_or_else(|| {
+                ModelError::ModelError(format!(
+                    "No alpha found for setting category: {:?}",
+                    category
+                ))
+            })
     }
 
     fn sample_person_from_setting_internal<T>(&self, setting: T) -> Result<PersonId, ModelError>
     where
-        T: Property<Person> + Itinerary + Debug,
+        T: Property<Person> + GenericSetting + Debug,
     {
         self.sample_entity::<Person, _, _>(SettingRng, (setting,))
             .ok_or_else(|| {
@@ -102,7 +111,7 @@ trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextPara
         person_id: PersonId,
     ) -> Result<Option<(SettingId, f64, f64)>, ModelError>
     where
-        T: Property<Person> + Itinerary + Debug,
+        T: Property<Person> + GenericSetting + Debug,
     {
         if let Some(setting_id) = self.get_property::<Person, T>(person_id).get_setting_id() {
             let ratio = self.get_setting_ratio(setting_id)?;
@@ -266,9 +275,8 @@ pub trait ContextSettingExt:
         person_id: PersonId,
         setting_category: SettingCategory,
         setting_code: SettingCode,
-        alpha: Alpha,
     ) -> Result<(), IxaError> {
-        let setting_entity_id = self.add_index_setting(setting_category, setting_code, alpha)?;
+        let setting_entity_id = self.add_index_setting(setting_category, setting_code)?;
         match setting_category {
             SettingCategory::Home => {
                 self.set_property::<Person, HomeId>(person_id, HomeId(Some(setting_entity_id)))
@@ -290,7 +298,6 @@ pub trait ContextSettingExt:
         &mut self,
         setting_category: SettingCategory,
         setting_code: SettingCode,
-        alpha: Alpha,
     ) -> Result<SettingId, IxaError> {
         if let Some(setting_id) = self
             .query_result_iterator::<Setting, _>(((setting_category, setting_code),))
@@ -299,7 +306,7 @@ pub trait ContextSettingExt:
             Ok(setting_id)
         } else {
             let setting_id = self
-                .add_entity::<Setting, _>((setting_code, alpha, setting_category))
+                .add_entity::<Setting, _>((setting_code, setting_category))
                 .unwrap();
             Ok(setting_id)
         }
@@ -325,7 +332,7 @@ mod test {
     use crate::{Age, Params, parameters::GlobalParams};
     use ixa::{HashMap, assert_almost_eq};
 
-    fn setup() -> Context {
+    fn setup(alpha: f64) -> Context {
         let mut context = Context::new();
         let parameters = Params {
             // We need to specify an itinerary split here even though we don't draw people from
@@ -333,10 +340,10 @@ mod test {
             // and that function requires an itinerary write function to be set.
             settings_properties: HashMap::from_iter(
                 [
-                    (SettingCategory::Home, SettingProperties { alpha: 0.0 }),
-                    (SettingCategory::School, SettingProperties { alpha: 0.0 }),
-                    (SettingCategory::Work, SettingProperties { alpha: 0.0 }),
-                    (SettingCategory::Community, SettingProperties { alpha: 0.0 }),
+                    (SettingCategory::Home, SettingProperties { alpha }),
+                    (SettingCategory::School, SettingProperties { alpha }),
+                    (SettingCategory::Work, SettingProperties { alpha }),
+                    (SettingCategory::Community, SettingProperties { alpha }),
                 ]
                 .into_iter()
                 .collect::<HashMap<_, _>>(),
@@ -357,9 +364,9 @@ mod test {
 
     #[test]
     fn test_get_setting_size_empty() {
-        let mut context = setup();
+        let mut context = setup(0.0);
         let home_id = context
-            .add_entity::<Setting, _>((SettingCode(100), Alpha(0.5), SettingCategory::Home))
+            .add_entity::<Setting, _>((SettingCode(100), SettingCategory::Home))
             .unwrap();
         // No persons assigned yet
         let size = context.get_setting_size(home_id).unwrap();
@@ -368,12 +375,12 @@ mod test {
 
     #[test]
     fn test_get_setting_size_multiple_categories() {
-        let mut context = setup();
+        let mut context = setup(0.0);
         let home_id = context
-            .add_entity::<Setting, _>((SettingCode(101), Alpha(0.5), SettingCategory::Home))
+            .add_entity::<Setting, _>((SettingCode(101), SettingCategory::Home))
             .unwrap();
         let work_id = context
-            .add_entity::<Setting, _>((SettingCode(102), Alpha(0.5), SettingCategory::Work))
+            .add_entity::<Setting, _>((SettingCode(102), SettingCategory::Work))
             .unwrap();
         let person1 = context.add_entity::<Person, _>((Age(20),)).unwrap();
         let person2 = context.add_entity::<Person, _>((Age(21),)).unwrap();
@@ -389,9 +396,9 @@ mod test {
 
     #[test]
     fn test_get_setting_size_after_removal() {
-        let mut context = setup();
+        let mut context = setup(0.0);
         let home_id = context
-            .add_entity::<Setting, _>((SettingCode(103), Alpha(0.5), SettingCategory::Home))
+            .add_entity::<Setting, _>((SettingCode(103), SettingCategory::Home))
             .unwrap();
         let person1 = context.add_entity::<Person, _>((Age(23),)).unwrap();
         let person2 = context.add_entity::<Person, _>((Age(24),)).unwrap();
@@ -407,9 +414,9 @@ mod test {
 
     #[test]
     fn test_sample_person_from_home() {
-        let mut context = setup();
+        let mut context = setup(0.0);
         let home_id = context
-            .add_entity::<Setting, _>((SettingCode(1), Alpha(0.5), SettingCategory::Home))
+            .add_entity::<Setting, _>((SettingCode(1), SettingCategory::Home))
             .unwrap();
         let person_id = context.add_entity::<Person, _>((Age(20),)).unwrap();
         let sampled_none = context.sample_person_from_setting(home_id);
@@ -421,9 +428,9 @@ mod test {
 
     #[test]
     fn test_sample_person_from_work() {
-        let mut context = setup();
+        let mut context = setup(0.0);
         let work_id = context
-            .add_entity::<Setting, _>((SettingCode(2), Alpha(0.5), SettingCategory::Work))
+            .add_entity::<Setting, _>((SettingCode(2), SettingCategory::Work))
             .unwrap();
         let person_id = context.add_entity::<Person, _>((Age(30),)).unwrap();
         context.set_property::<Person, WorkId>(person_id, WorkId(Some(work_id)));
@@ -433,9 +440,9 @@ mod test {
 
     #[test]
     fn test_sample_person_from_school() {
-        let mut context = setup();
+        let mut context = setup(0.0);
         let school_id = context
-            .add_entity::<Setting, _>((SettingCode(3), Alpha(0.5), SettingCategory::School))
+            .add_entity::<Setting, _>((SettingCode(3), SettingCategory::School))
             .unwrap();
         let person_id = context.add_entity::<Person, _>((Age(10),)).unwrap();
         context.set_property::<Person, SchoolId>(person_id, SchoolId(Some(school_id)));
@@ -445,9 +452,9 @@ mod test {
 
     #[test]
     fn test_sample_person_from_community() {
-        let mut context = setup();
+        let mut context = setup(0.0);
         let community_id = context
-            .add_entity::<Setting, _>((SettingCode(4), Alpha(0.5), SettingCategory::Community))
+            .add_entity::<Setting, _>((SettingCode(4), SettingCategory::Community))
             .unwrap();
         let person_id = context.add_entity::<Person, _>((Age(40),)).unwrap();
         context.set_property::<Person, CommunityId>(person_id, CommunityId(Some(community_id)));
@@ -457,9 +464,9 @@ mod test {
 
     #[test]
     fn test_get_setting_size() {
-        let mut context = setup();
+        let mut context = setup(0.0);
         let home_id = context
-            .add_entity::<Setting, _>((SettingCode(5), Alpha(0.5), SettingCategory::Home))
+            .add_entity::<Setting, _>((SettingCode(5), SettingCategory::Home))
             .unwrap();
         let person1 = context.add_entity::<Person, _>((Age(20),)).unwrap();
         let person2 = context.add_entity::<Person, _>((Age(21),)).unwrap();
@@ -471,9 +478,9 @@ mod test {
 
     #[test]
     fn test_get_setting_ratio() {
-        let mut context = setup();
+        let mut context = setup(0.0);
         let school_id = context
-            .add_entity::<Setting, _>((SettingCode(7), Alpha(0.5), SettingCategory::School))
+            .add_entity::<Setting, _>((SettingCode(7), SettingCategory::School))
             .unwrap();
         let ratio = context.get_setting_ratio(school_id).unwrap();
         assert_eq!(ratio, 0.25);
@@ -493,12 +500,13 @@ mod test {
 
     #[test]
     fn test_calculate_current_infectiousness_multiplier_for_person() {
-        let mut context = setup();
+        let alpha = 0.5;
+        let mut context = setup(alpha);
         let home_id = context
-            .add_entity::<Setting, _>((SettingCode(8), Alpha(0.5), SettingCategory::Home))
+            .add_entity::<Setting, _>((SettingCode(8), SettingCategory::Home))
             .unwrap();
         let work_id = context
-            .add_entity::<Setting, _>((SettingCode(9), Alpha(0.5), SettingCategory::Work))
+            .add_entity::<Setting, _>((SettingCode(9), SettingCategory::Work))
             .unwrap();
         let p1 = context.add_entity::<Person, _>((Age(23),)).unwrap();
         let p2 = context.add_entity::<Person, _>((Age(23),)).unwrap();
@@ -517,12 +525,13 @@ mod test {
 
     #[test]
     fn test_calculate_max_infectiousness_multiplier_for_person() {
-        let mut context = setup();
+        let alpha = 1.0;
+        let mut context = setup(alpha);
         let home_id = context
-            .add_entity::<Setting, _>((SettingCode(9), Alpha(1.0), SettingCategory::Home))
+            .add_entity::<Setting, _>((SettingCode(9), SettingCategory::Home))
             .unwrap();
         let work_id = context
-            .add_entity::<Setting, _>((SettingCode(10), Alpha(1.0), SettingCategory::Work))
+            .add_entity::<Setting, _>((SettingCode(10), SettingCategory::Work))
             .unwrap();
         let p1 = context.add_entity::<Person, _>((Age(24),)).unwrap();
         let p2 = context.add_entity::<Person, _>((Age(24),)).unwrap();
@@ -536,9 +545,9 @@ mod test {
 
     #[test]
     fn test_sample_person_from_setting() {
-        let mut context = setup();
+        let mut context = setup(0.0);
         let comm_id = context
-            .add_entity::<Setting, _>((SettingCode(10), Alpha(0.5), SettingCategory::Community))
+            .add_entity::<Setting, _>((SettingCode(10), SettingCategory::Community))
             .unwrap();
         let person_id = context.add_entity::<Person, _>((Age(25),)).unwrap();
         context.set_property::<Person, CommunityId>(person_id, CommunityId(Some(comm_id)));
@@ -548,9 +557,9 @@ mod test {
 
     #[test]
     fn test_sample_from_setting_with_exclusion() {
-        let mut context = setup();
+        let mut context = setup(0.0);
         let work_id = context
-            .add_entity::<Setting, _>((SettingCode(11), Alpha(0.5), SettingCategory::Work))
+            .add_entity::<Setting, _>((SettingCode(11), SettingCategory::Work))
             .unwrap();
         let p1 = context.add_entity::<Person, _>((Age(26),)).unwrap();
         let p2 = context.add_entity::<Person, _>((Age(27),)).unwrap();
@@ -564,9 +573,9 @@ mod test {
 
     #[test]
     fn test_sample_active_setting() {
-        let mut context = setup();
+        let mut context = setup(0.0);
         let home_id = context
-            .add_entity::<Setting, _>((SettingCode(13), Alpha(0.5), SettingCategory::Home))
+            .add_entity::<Setting, _>((SettingCode(13), SettingCategory::Home))
             .unwrap();
         let person_id = context.add_entity::<Person, _>((Age(30),)).unwrap();
         context.set_property::<Person, HomeId>(person_id, HomeId(Some(home_id)));
@@ -576,12 +585,11 @@ mod test {
 
     #[test]
     fn test_add_person_to_setting_and_add_index_setting() {
-        let mut context = setup();
+        let mut context = setup(0.0);
         let person_id = context.add_entity::<Person, _>((Age(31),)).unwrap();
         let setting_code = SettingCode(14);
-        let alpha = Alpha(0.3);
         context
-            .add_person_to_setting(person_id, SettingCategory::Home, setting_code, alpha)
+            .add_person_to_setting(person_id, SettingCategory::Home, setting_code)
             .unwrap();
         let home_id = context.get_property::<Person, HomeId>(person_id).0.unwrap();
         let code = context.get_property::<Setting, SettingCode>(home_id);

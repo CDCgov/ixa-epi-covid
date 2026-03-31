@@ -1,13 +1,11 @@
-use ixa::{HashMap, csv, prelude::*};
+use ixa::{csv, prelude::*};
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::error::ModelError;
 use crate::parameters::ContextParametersExt;
-use crate::settings::{
-    Alpha, ContextSettingExt, SettingCategory, SettingCode, SettingId, SettingProperties,
-};
+use crate::settings::{ContextSettingExt, SettingCategory, SettingCode, SettingId};
 use ixa::profiling::open_span;
 
 define_entity!(Person);
@@ -43,26 +41,26 @@ pub struct SchoolId(pub Option<SettingId>);
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash)]
 pub struct CommunityId(pub Option<SettingId>);
 
-pub trait Itinerary {
+pub trait GenericSetting {
     fn get_setting_id(&self) -> Option<SettingId>;
 }
 
-impl Itinerary for HomeId {
+impl GenericSetting for HomeId {
     fn get_setting_id(&self) -> Option<SettingId> {
         self.0
     }
 }
-impl Itinerary for WorkId {
+impl GenericSetting for WorkId {
     fn get_setting_id(&self) -> Option<SettingId> {
         self.0
     }
 }
-impl Itinerary for SchoolId {
+impl GenericSetting for SchoolId {
     fn get_setting_id(&self) -> Option<SettingId> {
         self.0
     }
 }
-impl Itinerary for CommunityId {
+impl GenericSetting for CommunityId {
     fn get_setting_id(&self) -> Option<SettingId> {
         self.0
     }
@@ -71,7 +69,6 @@ impl Itinerary for CommunityId {
 fn create_person_from_record(
     context: &mut Context,
     person_record: &PeopleRecord,
-    settings_properties: &HashMap<SettingCategory, SettingProperties>,
 ) -> Result<(), ModelError> {
     // Create itinerary entries for all setting memberships in input file
     let tract: String = String::from_utf8(person_record.homeId[..11].to_owned())?;
@@ -85,24 +82,12 @@ fn create_person_from_record(
         person_id,
         SettingCategory::Home,
         SettingCode(home_id.parse()?),
-        Alpha(
-            settings_properties
-                .get(&SettingCategory::Home)
-                .unwrap()
-                .alpha,
-        ),
     )?;
 
     context.add_person_to_setting(
         person_id,
         SettingCategory::Community,
         SettingCode(tract.parse()?),
-        Alpha(
-            settings_properties
-                .get(&SettingCategory::Community)
-                .unwrap()
-                .alpha,
-        ),
     )?;
 
     if !school_string.is_empty() {
@@ -110,12 +95,6 @@ fn create_person_from_record(
             person_id,
             SettingCategory::School,
             SettingCode(school_string.parse()?),
-            Alpha(
-                settings_properties
-                    .get(&SettingCategory::School)
-                    .unwrap()
-                    .alpha,
-            ),
         )?;
     }
 
@@ -124,12 +103,6 @@ fn create_person_from_record(
             person_id,
             SettingCategory::Work,
             SettingCode(workplace_string.parse()?),
-            Alpha(
-                settings_properties
-                    .get(&SettingCategory::Work)
-                    .unwrap()
-                    .alpha,
-            ),
         )?;
     }
 
@@ -139,7 +112,6 @@ fn create_person_from_record(
 fn load_synth_population(
     context: &mut Context,
     synth_input_file: PathBuf,
-    settings_properties: &HashMap<SettingCategory, SettingProperties>,
 ) -> Result<(), ModelError> {
     let mut reader = csv::Reader::from_path(synth_input_file)?;
     let mut raw_record = csv::ByteRecord::new();
@@ -147,7 +119,7 @@ fn load_synth_population(
 
     while reader.read_byte_record(&mut raw_record)? {
         let record: PeopleRecord = raw_record.deserialize(Some(&headers))?;
-        create_person_from_record(context, &record, settings_properties)?;
+        create_person_from_record(context, &record)?;
     }
     Ok(())
 }
@@ -164,8 +136,7 @@ pub fn init(
     let _span = open_span("load_synth_population");
     let file = synth_population_override
         .unwrap_or_else(|| context.get_params().synth_population_file.clone());
-    let setting_properties = &context.get_params().settings_properties.clone();
-    load_synth_population(context, file, setting_properties)?;
+    load_synth_population(context, file)?;
     Ok(())
 }
 
@@ -173,7 +144,7 @@ pub fn init(
 mod test {
     use super::*;
     use crate::parameters::{GlobalParams, Params};
-    use crate::settings::{Setting, SettingCategory};
+    use crate::settings::{Setting, SettingCategory, SettingProperties};
     use ixa::HashMap;
     use std::io::Write;
     use std::path::PathBuf;
@@ -223,8 +194,7 @@ mod test {
             "age,homeId,schoolId,workplaceId\n43,360930331020001,,\n42,360930331020002,,",
         );
         let synth_file = persist_tmp_csv(&input);
-        let settings_properties = &context.get_params().settings_properties.clone();
-        load_synth_population(&mut context, synth_file, settings_properties).unwrap();
+        load_synth_population(&mut context, synth_file).unwrap();
         let age = [43, 42];
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
         let census_tract_id = 36_093_033_102;
@@ -269,8 +239,7 @@ mod test {
         let input =
             String::from("age,homeId,schoolId,workplaceId\n43,360930331,,\n42,360930331020002,,");
         let synth_file = persist_tmp_csv(&input);
-        let settings_properties = &context.get_params().settings_properties.clone();
-        load_synth_population(&mut context, synth_file, settings_properties).unwrap();
+        load_synth_population(&mut context, synth_file).unwrap();
     }
 
     #[test]
@@ -280,8 +249,7 @@ mod test {
             "age,homeId,schoolId,workplaceId\n43,360930331020001,1,\n42,360930331020002,2,",
         );
         let synth_file = persist_tmp_csv(&input);
-        let settings_properties = &context.get_params().settings_properties.clone();
-        load_synth_population(&mut context, synth_file, settings_properties).unwrap();
+        load_synth_population(&mut context, synth_file).unwrap();
         let age = [43, 42];
         let school_id = [1, 2];
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
@@ -348,8 +316,7 @@ mod test {
             "age,homeId,schoolId,workplaceId\n43,360930331020001,,1\n42,360930331020002,,2",
         );
         let synth_file = persist_tmp_csv(&input);
-        let settings_properties = &context.get_params().settings_properties.clone();
-        load_synth_population(&mut context, synth_file, settings_properties).unwrap();
+        load_synth_population(&mut context, synth_file).unwrap();
         let age = [43, 42];
         let workplace_id = [1, 2];
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
