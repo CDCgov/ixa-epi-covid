@@ -113,6 +113,7 @@ def main():
     base_env = {**os.environ, "CARGO_TARGET_DIR": str(base_target_dir)}
 
     # 1. Set up or update worktree
+    run(["git", "worktree", "prune"])
     if worktree_dir.exists():
         print(f"==> Reusing worktree for {base_ref} ({base_sha})")
     else:
