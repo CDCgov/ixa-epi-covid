@@ -1,4 +1,5 @@
 **/profiling.json
+.vscode
 
 # Data
 *.csv

@@ -1,18 +1,43 @@
 use std::path::{Path, PathBuf};
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
+#[cfg(feature = "bench_old_settings")]
 use epimodel::parameters::{CoreSettingsTypes, GlobalParams, Params, RateFnType};
+#[cfg(not(feature = "bench_old_settings"))]
+use epimodel::parameters::{GlobalParams, Params, RateFnType};
+#[cfg(feature = "bench_old_settings")]
 use epimodel::settings::SettingProperties;
+#[cfg(not(feature = "bench_old_settings"))]
+use epimodel::settings::{SettingCategory, SettingProperties};
 use epimodel::symptom_status_manager::SymptomDelayDistLogNormParams;
 use epimodel::{ContextParametersExt, initialize_model};
 use ixa::HashMap;
 use ixa::prelude::*;
+
+#[cfg(feature = "bench_old_settings")]
+type SettingType = CoreSettingsTypes;
+#[cfg(not(feature = "bench_old_settings"))]
+type SettingType = SettingCategory;
 
 fn make_params(synth_file: PathBuf) -> Params {
     let delay = SymptomDelayDistLogNormParams {
         mu: 0.1,
         sigma: 0.1,
     };
+    #[cfg(feature = "bench_old_settings")]
+    let settings = [
+        (SettingType::Home, 0.3, 0.3),
+        (SettingType::Workplace, 0.2, 0.3),
+        (SettingType::School, 0.2, 0.1),
+        (SettingType::CensusTract, 0.01, 0.3),
+    ];
+    #[cfg(not(feature = "bench_old_settings"))]
+    let settings = [
+        (SettingType::Home, 0.3, 0.3),
+        (SettingType::Work, 0.2, 0.3),
+        (SettingType::School, 0.2, 0.1),
+        (SettingType::Community, 0.01, 0.3),
+    ];
     Params {
         seed: 42,
         max_time: 10.0,
@@ -33,24 +58,12 @@ fn make_params(synth_file: PathBuf) -> Params {
         probability_dead_given_critical: 0.2,
         critical_to_dead_delay: delay,
         critical_to_resolved_delay: delay,
-        settings_properties: HashMap::from_iter([
-            (CoreSettingsTypes::Home, SettingProperties { alpha: 0.3 }),
-            (
-                CoreSettingsTypes::Workplace,
-                SettingProperties { alpha: 0.2 },
-            ),
-            (CoreSettingsTypes::School, SettingProperties { alpha: 0.2 }),
-            (
-                CoreSettingsTypes::CensusTract,
-                SettingProperties { alpha: 0.01 },
-            ),
-        ]),
-        itinerary_ratios: HashMap::from_iter([
-            (CoreSettingsTypes::Home, 0.3),
-            (CoreSettingsTypes::Workplace, 0.3),
-            (CoreSettingsTypes::School, 0.1),
-            (CoreSettingsTypes::CensusTract, 0.3),
-        ]),
+        settings_properties: HashMap::from_iter(
+            settings
+                .iter()
+                .map(|(ty, alpha, _)| (*ty, SettingProperties { alpha: *alpha })),
+        ),
+        itinerary_ratios: HashMap::from_iter(settings.iter().map(|(ty, _, ratio)| (*ty, *ratio))),
         ..Default::default()
     }
 }
