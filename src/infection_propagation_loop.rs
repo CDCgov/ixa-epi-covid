@@ -120,6 +120,7 @@ mod test {
                 [
                     (SettingCategory::Home, SettingProperties { alpha }),
                     (SettingCategory::Work, SettingProperties { alpha }),
+                    (SettingCategory::School, SettingProperties { alpha }),
                     (
                         SettingCategory::Community,
                         SettingProperties {
@@ -135,6 +136,7 @@ mod test {
             itinerary_ratios: HashMap::from_iter([
                 (SettingCategory::Home, 1.0),
                 (SettingCategory::Work, 1.0),
+                (SettingCategory::School, 1.0),
                 (SettingCategory::Community, 1.0),
             ]),
             ..Default::default()
@@ -144,8 +146,7 @@ mod test {
             .set_global_property_value(GlobalParams, parameters)
             .unwrap();
 
-        // We also set up a homogenous mixing itinerary so that when we don't call `settings::init`,
-        // we still have people in settings.
+        crate::settings::init(&mut context).unwrap();
         context
     }
 

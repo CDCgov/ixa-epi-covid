@@ -277,6 +277,7 @@ mod test {
             )
             .unwrap();
         load_rate_fns(&mut context).unwrap();
+        crate::settings::init(&mut context).unwrap();
         context
     }
 

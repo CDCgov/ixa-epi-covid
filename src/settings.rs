@@ -264,6 +264,10 @@ pub trait ContextSettingExt:
 
     fn sample_active_setting(&self, person_id: PersonId) -> Result<SettingId, ModelError> {
         let active_settings = self.get_active_settings_for_person(person_id)?;
+        println!(
+            "Active settings for person {:?}: {:?}",
+            person_id, active_settings
+        );
         let mut weights_vec = vec![];
         for setting in active_settings.iter() {
             weights_vec.push(setting.1 * setting.2);
@@ -367,6 +371,7 @@ mod test {
         context
             .set_global_property_value(GlobalParams, parameters)
             .unwrap();
+        init(&mut context).unwrap();
         context
     }
 
