@@ -16,6 +16,7 @@ Examples:
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -88,6 +89,57 @@ def print_summary(title: str, base: dict[str, str], current: dict[str, str]):
     print("=" * 70)
 
 
+def ensure_bench_ready(worktree_dir: Path, repo_root: Path):
+    """Ensure the base worktree can build the infection_loop bench.
+
+    If the base already has its own benchmark file, use it as-is.
+    Otherwise copy from the current branch and ensure Cargo.toml
+    has the necessary bench and dev-dependency config.
+    """
+    bench_dest = worktree_dir / "benches" / "infection_loop.rs"
+    if bench_dest.exists():
+        return
+
+    bench_src = repo_root / "benches" / "infection_loop.rs"
+    if not bench_src.exists():
+        print(
+            "Benchmark source benches/infection_loop.rs not found.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    bench_dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(bench_src, bench_dest)
+
+    manifest = worktree_dir / "Cargo.toml"
+    text = manifest.read_text()
+    modified = False
+
+    if 'name = "infection_loop"' not in text:
+        text = text.rstrip() + (
+            '\n\n[[bench]]\nname = "infection_loop"\nharness = false\n'
+        )
+        modified = True
+
+    if "[dev-dependencies]" not in text:
+        text = text.rstrip() + (
+            '\n[dev-dependencies]\ncriterion = { version = "0.5", '
+            'features = ["html_reports"] }\n'
+        )
+        modified = True
+    elif "criterion" not in text:
+        text = text.replace(
+            "[dev-dependencies]",
+            '[dev-dependencies]\ncriterion = { version = "0.5", '
+            'features = ["html_reports"] }',
+            1,
+        )
+        modified = True
+
+    if modified:
+        manifest.write_text(text)
+
+
 def main():
     args = sys.argv[1:]
 
@@ -119,9 +171,13 @@ def main():
     else:
         print(f"==> Setting up worktree for {base_ref} ({base_sha})...")
         worktree_dir.parent.mkdir(parents=True, exist_ok=True)
-        run(
+        result = run(
             ["git", "worktree", "add", "--detach", str(worktree_dir), base_ref]
         )
+        if result.returncode != 0:
+            print(result.stdout, file=sys.stderr)
+            print(result.stderr, file=sys.stderr)
+            sys.exit(result.returncode)
 
     # Symlink input CSVs
     input_dir = worktree_dir / "input"
@@ -131,19 +187,21 @@ def main():
         if not dest.exists():
             dest.symlink_to(f)
 
+    ensure_bench_ready(worktree_dir, repo_root)
+
+    bench_cmd = ["cargo", "bench", "--bench", "infection_loop"]
+
     # 2. Build both sequentially (compilation is cached, no need to parallel)
     print(f"==> Building base ({base_ref})...")
     result = subprocess.run(
-        ["cargo", "bench", "--bench", "infection_loop", "--no-run"],
-        cwd=worktree_dir,
-        env=base_env,
+        [*bench_cmd, "--no-run"], cwd=worktree_dir, env=base_env
     )
     if result.returncode != 0:
         sys.exit(1)
 
     print(f"==> Building current ({current_branch})...")
     result = subprocess.run(
-        ["cargo", "bench", "--bench", "infection_loop", "--no-run"],
+        [*bench_cmd, "--no-run"],
         cwd=repo_root,
     )
     if result.returncode != 0:
@@ -156,8 +214,6 @@ def main():
     print(f"    current: {current_branch}")
     print()
 
-    bench_cmd = ["cargo", "bench", "--bench", "infection_loop", "--"]
-
     def stream_output(proc, prefix: str) -> str:
         lines = []
         for line in proc.stdout:
@@ -167,7 +223,7 @@ def main():
         return "".join(lines)
 
     proc_base = subprocess.Popen(
-        [*bench_cmd, "--save-baseline", "base", *extra_args],
+        [*bench_cmd, "--", "--save-baseline", "base", *extra_args],
         cwd=worktree_dir,
         env=base_env,
         stdout=subprocess.PIPE,
@@ -175,7 +231,7 @@ def main():
         text=True,
     )
     proc_current = subprocess.Popen(
-        [*bench_cmd, "--save-baseline", "current", *extra_args],
+        [*bench_cmd, "--", "--save-baseline", "current", *extra_args],
         cwd=repo_root,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
