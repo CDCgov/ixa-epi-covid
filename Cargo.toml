@@ -32,6 +32,7 @@ harness = false
 
 [features]
 profiling = ["ixa/profiling"]
+bench_old_settings = []
 
 [profile.release]
 opt-level = 3

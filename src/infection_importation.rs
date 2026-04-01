@@ -39,7 +39,7 @@ trait NovelInfectionContextExt: PluginContext + ContextEntitiesExt + Infectiousn
 
         let infection_time = self.sample_distr(ImportationRng, uniform);
         self.add_plan(infection_time, move |context| {
-            context.infect_person(target_id, None, None, None);
+            context.infect_person(target_id, None, None);
         });
     }
 }
@@ -82,7 +82,7 @@ fn plan_importations(context: &mut Context, imported_infections: usize, time: f6
         for target_id in attempted_targets {
             if context.get_property::<Person, InfectionStatus>(target_id) == InfectionStatus::Susceptible {
                 trace!("Importing infection for {target_id} at time {}.", time);
-                context.infect_person(target_id, None, None, None);
+                context.infect_person(target_id, None, None);
             } else {
                 trace!("Attempted to import infection for {target_id} at time {}, but they were not susceptible.", time);
             }
