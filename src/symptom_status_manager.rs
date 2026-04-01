@@ -467,7 +467,7 @@ mod test {
 
         let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
         init(&mut context).unwrap();
-        context.infect_person(p1, None, None, None);
+        context.infect_person(p1, None, None);
         context.add_plan_with_phase(
             parameters.infect_to_mild_delay.mu.exp(),
             move |context| {
@@ -496,7 +496,7 @@ mod test {
 
         let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
         init(&mut context).unwrap();
-        context.infect_person(p1, None, None, None);
+        context.infect_person(p1, None, None);
         context.execute();
         assert_eq!(
             context.get_property::<Person, SymptomStatus>(p1),
@@ -534,7 +534,7 @@ mod test {
             // Initialize event subscriptions and plans for symptom status manager
             init(&mut context).unwrap();
             // Infect the person to trigger the symptom status manager
-            context.infect_person(p1, None, None, None);
+            context.infect_person(p1, None, None);
             // Add a plan to shutdown after we see they progress to an absorbing state
             context.add_plan(1000.0, ixa::Context::shutdown);
 

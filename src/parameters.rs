@@ -5,8 +5,13 @@ use std::{fmt::Debug, path::PathBuf};
 use crate::error::ModelError;
 use crate::infection_importation::ImportCasesFromFile;
 use crate::reports::ReportParams;
-use crate::settings::SettingProperties;
+use crate::settings::SettingCategory;
 use crate::symptom_status_manager::SymptomDelayDistLogNormParams;
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
+pub enum ItinerarySpecificationType {
+    Constant { ratio: f64 },
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RateFnType {
@@ -15,12 +20,9 @@ pub enum RateFnType {
     Constant { rate: f64, duration: f64 },
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Hash, PartialEq, Eq)]
-pub enum CoreSettingsTypes {
-    Home,
-    School,
-    Workplace,
-    CensusTract,
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+pub struct SettingProperties {
+    pub alpha: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -61,9 +63,9 @@ pub struct Params {
     /// Parameters for log normal delay distribution from critical illness to resolution
     pub critical_to_resolved_delay: SymptomDelayDistLogNormParams,
     /// Setting properties by setting type
-    pub settings_properties: HashMap<CoreSettingsTypes, SettingProperties>,
+    pub settings_properties: HashMap<SettingCategory, SettingProperties>,
     /// ratios used to initialize individuals itineraries by setting type.
-    pub itinerary_ratios: HashMap<CoreSettingsTypes, f64>,
+    pub itinerary_ratios: HashMap<SettingCategory, f64>,
     /// Prevalence report with a period and name required
     pub prevalence_report: ReportParams,
     /// Incidence report with a period and name required
@@ -369,19 +371,16 @@ mod tests {
         let parameters = Params {
             settings_properties: HashMap::from_iter(
                 [
-                    (CoreSettingsTypes::Home, SettingProperties { alpha: 0.5 }),
-                    (CoreSettingsTypes::School, SettingProperties { alpha: 0.5 }),
+                    (SettingCategory::Home, SettingProperties { alpha: 0.5 }),
+                    (SettingCategory::School, SettingProperties { alpha: 0.5 }),
                 ]
                 .into_iter()
                 .collect::<HashMap<_, _>>(),
             ),
             itinerary_ratios: HashMap::from_iter(
-                [
-                    (CoreSettingsTypes::Home, 0.0),
-                    (CoreSettingsTypes::School, 0.0),
-                ]
-                .into_iter()
-                .collect::<HashMap<_, _>>(),
+                [(SettingCategory::Home, 0.0), (SettingCategory::School, 0.0)]
+                    .into_iter()
+                    .collect::<HashMap<_, _>>(),
             ),
             ..Default::default()
         };
@@ -408,16 +407,16 @@ mod tests {
         let parameters = Params {
             settings_properties: HashMap::from_iter(
                 [
-                    (CoreSettingsTypes::Home, SettingProperties { alpha: 0.5 }),
-                    (CoreSettingsTypes::School, SettingProperties { alpha: 0.5 }),
+                    (SettingCategory::Home, SettingProperties { alpha: 0.5 }),
+                    (SettingCategory::School, SettingProperties { alpha: 0.5 }),
                 ]
                 .into_iter()
                 .collect::<HashMap<_, _>>(),
             ),
             itinerary_ratios: HashMap::from_iter(
                 [
-                    (CoreSettingsTypes::Home, -0.1),
-                    (CoreSettingsTypes::School, 0.0),
+                    (SettingCategory::Home, -0.1),
+                    (SettingCategory::School, 0.0),
                 ]
                 .into_iter()
                 .collect::<HashMap<_, _>>(),
