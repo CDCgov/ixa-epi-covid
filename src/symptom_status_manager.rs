@@ -429,7 +429,7 @@ mod test {
     #[test]
     fn test_draw_transition_time() {
         let start_time = 3.0;
-        let state_duration: f64 = 5.0;
+        let state_duration: f64 = 7.0;
         let log_normal_delay_params = SymptomDelayDistLogNormParams {
             mu: state_duration.ln(),
             sigma: 0.0,
