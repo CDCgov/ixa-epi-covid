@@ -1,0 +1,121 @@
+---
+title: "Delay distributions for symptom status"
+format: html
+---
+
+## Parameterizing symptom status delay distributions
+We use log-normal distributions for the delay distributions between symptom status transitions (i.e., the time spent in a given symptom state before transitioning either to a more severe state or to the `Resolved` state).
+
+### Parameter estimate sources
+
+| Transition | Source | Notes |
+| --- | --- | --- |
+| `infect_to_mild_delay` | [McAloon et al. 2020](https://pubmed.ncbi.nlm.nih.gov/32801208/) | Estimates of the incubation period of COVID-19 from a systematic review and meta-analysis; the authors generated pooled estimates across studies for $\mu$ and $\sigma$. |
+| `mild_to_severe_delay` | [CDC COVID-19 Pandemic Planning Scenarios](https://archive.cdc.gov/www_cdc_gov/coronavirus/2019-ncov/hcp/planning-scenarios.html) | Age-stratified median and IQR estimates from COVID-NET of the delay from symptom onset to hospitalization; estimates for persons $\geq$ 65 are used here. |
+| `severe_to_critical_delay` | [Murthy et al. 2021](https://pubmed.ncbi.nlm.nih.gov/33688026/) | The COVID-19 planning scenarios do not include estimates of the delay from hospital admission to ICU admission. The estimate used here comes from a study in Canadian hospitals. The estimated median delay is zero days (suggesting many patients were directly admitted to an ICU).|
+| `critical_to_dead_delay` | [CDC COVID-19 Pandemic Planning Scenarios](https://archive.cdc.gov/www_cdc_gov/coronavirus/2019-ncov/hcp/planning-scenarios.html) | Age-stratified median and IQR estimates from COVID-NET of the duration of hospitalization for patients admitted to the ICU; estimates for persons $\geq$ 65 are used here. One limitation of using this estimate as a proxy for `critical_to_dead_delay` is that it is based on duration of hospitalization, not just duration in ICU. However, if we assume that the `severe_to_critical` delay is short, this may not be a significant limitation. Another limitation is that this estimate is for all ICU patients, not just those who die. However, median time from symptom onset to hospitalization (used as a proxy for `mild_to_severe`) plus the median duration of hospitalization among those admitted to the ICU is similar to median time from symptom onset to death, suggesting that there may not be major differences in duration of ICU stays among those who die versus those who recover.|
+| `mild_to_resolved_delay` | [Breugnon et a. 2021](https://pubmed.ncbi.nlm.nih.gov/33038441/) | The COVID-19 planning scenarios do not include an estimate of duration of illness for persons who are never hospitalized; the estimate used here comes from a study of French healthcare workers with COVID-19 in March and April 2020 who were actively monitored. |
+| `severe_to_resolved_delay` | [CDC COVID-19 Pandemic Planning Scenarios](https://archive.cdc.gov/www_cdc_gov/coronavirus/2019-ncov/hcp/planning-scenarios.html) | Age-stratified median and IQR estimates from COVID-NET of the duration of hospitalization among persons who are not admitted to an ICU; estimates for persons $\geq$ 65 are used here. One limitation of this estimate as a proxy for `severe_to_resolved_delay` is that some deaths presumably occurred among hospitalized patients never admitted to an ICU. |
+| `critical_to_resolved_delay` | [CDC COVID-19 Pandemic Planning Scenarios](https://archive.cdc.gov/www_cdc_gov/coronavirus/2019-ncov/hcp/planning-scenarios.html) | Age-stratified median and IQR estimates from COVID-NET of the duration of hospitalization for patients admitted to the ICU; estimates for persons $\geq$ 65 are used here. This is the same estimate as used for `critical_to_dead_delay`; see note above regarding limitations of using this value and why it may be reasonable to use the same estimate for `critical_to_resolved_delay` and `critical_to_dead_delay`.|
+
+### Relating median and IQR to log-normal parameters
+Except for `infect_to_mild_delay` for which we have published log-normal parameter estimates, the available estimates are medians and first and third quartiles. From these estimates, we need to calculate the $\mu$ and $\sigma$ parameters for a corresponding log-normal distribution.
+
+The median, $m$, of a log-normal distribution equals $\exp(\mu)$, so we can estimate $\mu = \log(m)$. The lower quartile is $\exp(\mu+z_{0.25}\sigma)$ and the upper is $\exp(\mu+z_{0.75}\sigma)$. We can relate the IQR to $\sigma$, $\mu$, and $m$ as follows:
+
+$$
+\begin{align}
+IQR = \exp(\mu+z_{0.75}\sigma) - \exp(\mu+z_{0.25}\sigma) \\
+IQR = \exp(\mu+z_{0.75}\sigma) - \exp(\mu-z_{0.75}\sigma) \\
+IQR = \exp(\mu)(\exp(z_{0.75}\sigma) - \exp(-z_{0.75}\sigma)) \\
+IQR = m(\exp(z_{0.75}\sigma) - \exp(-z_{0.75}\sigma)) \\
+IQR = 2m\sinh(z_{0.75}\sigma) \\
+IQR/(2m) = \sinh(z_{0.75}\sigma) \\
+\sinh^{-1}(IQR/(2m)) = z_{0.75}\sigma \\
+\sinh^{-1}(IQR/(2m))/z_{0.75} = \sigma \\
+\end{align}
+$$
+
+The following code chunk performs the calculations based on the expressions derived above.
+
+```{r}
+delay_dist_df <- read.csv("../input/symptom_delay_median_iqr.csv")
+
+# restrict to values for "All" ages or "Age65Plus"
+delay_dist_df <- delay_dist_df[
+  delay_dist_df$symptom_age_category %in% c("Age65Plus", "All"),
+]
+
+# calculate IQR
+delay_dist_df <- cbind(
+  delay_dist_df,
+  "iqr" = delay_dist_df$upper_quartile - delay_dist_df$lower_quartile
+)
+
+# a log-normal distribution cannot have median 0, so need to make
+# somewhat arbitrary adjustment
+non_zero_adj <- 0.5
+delay_dist_df <- cbind(
+  delay_dist_df,
+  "non_zero_median" = delay_dist_df$median
+)
+delay_dist_df[delay_dist_df$median == 0, "non_zero_median"] <-
+  delay_dist_df[delay_dist_df$median == 0, "median"] + non_zero_adj
+
+# calculate mu and sigma based on median and IQR
+delay_dist_df <- cbind(
+  delay_dist_df,
+  "mu" = log(delay_dist_df$non_zero_median),
+  "sigma" = asinh(delay_dist_df$iqr / (2 * delay_dist_df$non_zero_median)) /
+    qnorm(p = 0.75)
+)
+
+# for completeness, the values for mu and sigma for infect_to_mild_delay
+# from McAloon et al. 2020 are added to this dataframe.
+
+infect_to_mild_delay_df <- data.frame(
+  "symptom_transition" = "infect_to_mild_delay",
+  "symptom_age_category" = "All",
+  "median" = NA, "lower_quartile" = NA, "upper_quartile" = NA,
+  "iqr" = NA, "non_zero_median" = NA,
+  "mu" = 1.63, "sigma" = 0.50
+)
+
+delay_dist_df <- rbind(infect_to_mild_delay_df, delay_dist_df)
+```
+
+### Log-normal distribution values and plots
+
+We get the following table of values:
+```{r, echo=FALSE}
+knitr::kable(delay_dist_df)
+```
+
+
+Finally, we plot each distribution. The thick red vertical line marks the observed median and the thinner vertical red lines mark the first and third quartiles. Analogously, the thick dashed black line marks the log-normal distribution's median and the thin dashed black lines mark the first and third quartiles.
+
+For `infect_to_mild_delay`, we use the values from [McAloon et al. 2020](https://pubmed.ncbi.nlm.nih.gov/32801208/). Here the values for $\mu$ and $\sigma$ are taken from the meta-analysis, so we do not plot "observed" median or quartile values.
+
+For `severe_to_critical_delay`, the observed median is 0, so we make an adjustment of 0.5 days to be able to obtain a log-normal distribution. But, otherwise, the parameterized log-normal distribution always is set to have a median that matches the observed median. Similarly, the parameterized inter-quartile range exactly replicates the observed interquartile range (but where the median falls within the IQR is not part of the parameterization, so the parameterized first and third quartiles do not exactly match the observed values of the first and third quartiles).
+```{r, echo=FALSE}
+for (i in seq_len(nrow(delay_dist_df))) {
+  delay_dist <- delay_dist_df[i, ]
+  x_range <- seq(0, 30, by = 0.1)
+  plot(x_range,
+    dlnorm(x = x_range, meanlog = delay_dist$mu, sdlog = delay_dist$sigma),
+    type = "l", main = delay_dist$symptom_transition,
+    xlab = "days", ylab = "density"
+  )
+  abline(
+    v = delay_dist[c("lower_quartile", "median", "upper_quartile")],
+    lwd = c(1, 3, 1), col = "red"
+  )
+  abline(
+    v = qlnorm(
+      p = c(0.25, 0.5, 0.75),
+      meanlog = delay_dist$mu, sdlog = delay_dist$sigma
+    ),
+    lwd = c(1, 3, 1), lty = 2
+  )
+}
+```

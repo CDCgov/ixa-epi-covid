@@ -1,4 +1,4 @@
-use ixa::{HashMap, HashMapExt, prelude::*};
+use ixa::{HashMap, HashMapExt, HashSet, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, path::PathBuf};
 
@@ -6,7 +6,7 @@ use crate::error::ModelError;
 use crate::infection_importation::ImportCasesFromFile;
 use crate::reports::ReportParams;
 use crate::settings::SettingCategory;
-use crate::symptom_status_manager::SymptomDelayDistLogNormParams;
+use crate::symptom_status_manager::{SymptomAgeGroup, SymptomDelayDistLogNormParams};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub enum ItinerarySpecificationType {
@@ -40,24 +40,26 @@ pub struct Params {
     pub imported_cases_timeseries: ImportCasesFromFile,
     /// A library of infection rates to assign to infected people.
     pub infectiousness_rate_fn: RateFnType,
+    /// age thresholds
+    pub symptom_age_groups: Vec<SymptomAgeGroup>,
     /// Probability an infected person develops mild illness
     pub probability_mild_given_infect: f64,
     /// Parameters for log normal delay distribution from infection to mild illness
     pub infect_to_mild_delay: SymptomDelayDistLogNormParams,
     /// Probability a person with mild illness develops severe illness
-    pub probability_severe_given_mild: f64,
+    pub probability_severe_given_mild: HashMap<String, f64>,
     /// Parameters for log normal delay distribution from mild to severe illness
     pub mild_to_severe_delay: SymptomDelayDistLogNormParams,
     /// Parameters for log normal delay distribution from mild illness to resolution
     pub mild_to_resolved_delay: SymptomDelayDistLogNormParams,
     /// Probability a person with severe illness develops critical illness
-    pub probability_critical_given_severe: f64,
+    pub probability_critical_given_severe: HashMap<String, f64>,
     /// Parameters for log normal delay distribution from severe to critical illness
     pub severe_to_critical_delay: SymptomDelayDistLogNormParams,
     /// Parameters for log normal delay distribution from severe illness to resolution
     pub severe_to_resolved_delay: SymptomDelayDistLogNormParams,
     /// Probability a person with critical illness dies
-    pub probability_dead_given_critical: f64,
+    pub probability_dead_given_critical: HashMap<String, f64>,
     /// Parameters for log normal delay distribution from critical illness to death
     pub critical_to_dead_delay: SymptomDelayDistLogNormParams,
     /// Parameters for log normal delay distribution from critical illness to resolution
@@ -103,13 +105,48 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error>
         }
     }
 
-    // Validate the symptom status parameters
+    // create version of symptom_age_groups sorted by minimum age thresholds
+    let mut sorted_symptom_age_groups = parameters.symptom_age_groups.clone();
+    sorted_symptom_age_groups.sort();
 
+    // check that lowest symptom age group threshold is zero
+    if sorted_symptom_age_groups[0].min != 0 {
+        return Err(Box::new(ModelError::ModelError(
+            "lowest age threshold in symptom_age_groups must be zero".to_string(),
+        )));
+    }
+
+    // check that the max threshold is >= the min threshold in each age group
+    // (age is defined as a u8 and we do want to allow for a single-year group where max == min)
+    for symptom_age_group in &sorted_symptom_age_groups {
+        if symptom_age_group.max < symptom_age_group.min {
+            return Err(Box::new(ModelError::ModelError(format!(
+                "max threshold is less than min threshold for {:?}",
+                symptom_age_group.label
+            ))));
+        }
+    }
+
+    // check that the max of each symptom age group is 1 year less than the min of the next highest symptom age group
+    for i in 1..sorted_symptom_age_groups.len() {
+        if sorted_symptom_age_groups[i].min - sorted_symptom_age_groups[i - 1].max != 1 {
+            return Err(Box::new(ModelError::ModelError(format!(
+                "difference between min threshold of {:?} and max threshold of {:?} is not 1",
+                sorted_symptom_age_groups[i].label,
+                sorted_symptom_age_groups[i - 1].label
+            ))));
+        }
+    }
+
+    // check probability_mild_given_infect
+    if !(0.0..=1.0).contains(&parameters.probability_mild_given_infect) {
+        return Err(Box::new(ModelError::ModelError(
+            "probability_mild_given_infect is not a valid transition probability; probabilities must be between 0 and 1, inclusive.".to_string(),
+        )));
+    }
+
+    // check age-specific symptom probabilities
     let symptom_probability_params = [
-        (
-            "probability_mild_given_infect",
-            &parameters.probability_mild_given_infect,
-        ),
         (
             "probability_severe_given_mild",
             &parameters.probability_severe_given_mild,
@@ -124,15 +161,40 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error>
         ),
     ];
 
+    let symptom_age_group_labels: HashSet<String> = parameters
+        .symptom_age_groups
+        .iter()
+        .map(|age_group| age_group.label.clone())
+        .collect();
+
     for (param_name, param_value) in symptom_probability_params {
-        if !(0.0..=1.0).contains(param_value) {
-            return Err(Box::new(ModelError::ModelError(format!(
-                "{} = {} is not a valid transition probability; probabilities must be between 0 and 1, inclusive.",
-                param_name, param_value
-            ))));
+        for age_group_label in &symptom_age_group_labels {
+            if !param_value.contains_key(age_group_label) {
+                return Err(Box::new(ModelError::ModelError(format!(
+                    "{} is missing a value for symptom age group {:?}",
+                    param_name, age_group_label
+                ))));
+            }
+        }
+
+        for (age_group, probability) in param_value {
+            if !symptom_age_group_labels.contains(age_group) {
+                return Err(Box::new(ModelError::ModelError(format!(
+                    "{} includes an unknown symptom age group key {:?}",
+                    param_name, age_group
+                ))));
+            }
+
+            if !(0.0..=1.0).contains(probability) {
+                return Err(Box::new(ModelError::ModelError(format!(
+                    "{} is not a valid {} for age group {:?}; probabilities must be between 0 and 1, inclusive.",
+                    probability, param_name, age_group
+                ))));
+            }
         }
     }
 
+    // check the symptom status delay distributions
     parameters
         .infect_to_mild_delay
         .validate("infect_to_mild_delay")?;
@@ -215,6 +277,7 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error>
 }
 
 define_global_property!(GlobalParams, Params, validate_inputs);
+define_global_property!(OrderedAgeGroupsParam, Vec<SymptomAgeGroup>);
 
 pub trait ContextParametersExt: PluginContext + ContextGlobalPropertiesExt {
     fn get_params(&self) -> &Params {
@@ -223,6 +286,17 @@ pub trait ContextParametersExt: PluginContext + ContextGlobalPropertiesExt {
     }
 }
 impl ContextParametersExt for Context {}
+
+pub fn init(context: &mut Context) -> Result<(), IxaError> {
+    let Params {
+        symptom_age_groups, ..
+    } = context.get_params();
+
+    let mut ordered_symptom_age_groups = symptom_age_groups.clone();
+    ordered_symptom_age_groups.sort();
+    let _ = context.set_global_property_value(OrderedAgeGroupsParam, ordered_symptom_age_groups);
+    Ok(())
+}
 
 impl Default for Params {
     fn default() -> Self {
@@ -239,12 +313,17 @@ impl Default for Params {
                 rate: 1.0,
                 duration: 5.0,
             },
+            symptom_age_groups: vec![SymptomAgeGroup {
+                label: "Age0To120".to_string(),
+                min: 0,
+                max: 120,
+            }],
             probability_mild_given_infect: 0.0,
             infect_to_mild_delay: SymptomDelayDistLogNormParams {
                 mu: 0.0,
                 sigma: 0.0,
             },
-            probability_severe_given_mild: 0.0,
+            probability_severe_given_mild: HashMap::from_iter([("Age0To120".to_string(), 0.0)]),
             mild_to_severe_delay: SymptomDelayDistLogNormParams {
                 mu: 0.0,
                 sigma: 0.0,
@@ -253,7 +332,7 @@ impl Default for Params {
                 mu: 0.0,
                 sigma: 0.0,
             },
-            probability_critical_given_severe: 0.0,
+            probability_critical_given_severe: HashMap::from_iter([("Age0To120".to_string(), 0.0)]),
             severe_to_critical_delay: SymptomDelayDistLogNormParams {
                 mu: 0.0,
                 sigma: 0.0,
@@ -262,7 +341,7 @@ impl Default for Params {
                 mu: 0.0,
                 sigma: 0.0,
             },
-            probability_dead_given_critical: 0.0,
+            probability_dead_given_critical: HashMap::from_iter([("Age0To120".to_string(), 0.0)]),
             critical_to_dead_delay: SymptomDelayDistLogNormParams {
                 mu: 0.0,
                 sigma: 0.0,
@@ -453,6 +532,87 @@ mod tests {
                 rate: 1.0,
                 duration: 5.0
             }
+        );
+    }
+
+    #[test]
+    fn test_sort_age_groups_in_init() {
+        let age_groups = vec![
+            SymptomAgeGroup {
+                label: "Age18To49".to_string(),
+                min: 18,
+                max: 49,
+            },
+            SymptomAgeGroup {
+                label: "Age0To17".to_string(),
+                min: 0,
+                max: 17,
+            },
+            SymptomAgeGroup {
+                label: "Age50To64".to_string(),
+                min: 50,
+                max: 64,
+            },
+            SymptomAgeGroup {
+                label: "Age65Plus".to_string(),
+                min: 65,
+                max: 120,
+            },
+        ];
+        let mut context = Context::new();
+        let parameters = Params {
+            symptom_age_groups: age_groups.clone(),
+            probability_severe_given_mild: ixa::HashMap::from_iter([
+                ("Age0To17".to_string(), 0.0),
+                ("Age18To49".to_string(), 1.0),
+                ("Age50To64".to_string(), 1.0),
+                ("Age65Plus".to_string(), 1.0),
+            ]),
+            probability_critical_given_severe: ixa::HashMap::from_iter([
+                ("Age0To17".to_string(), 0.0),
+                ("Age18To49".to_string(), 0.0),
+                ("Age50To64".to_string(), 1.0),
+                ("Age65Plus".to_string(), 1.0),
+            ]),
+            probability_dead_given_critical: ixa::HashMap::from_iter([
+                ("Age0To17".to_string(), 0.0),
+                ("Age18To49".to_string(), 0.0),
+                ("Age50To64".to_string(), 0.0),
+                ("Age65Plus".to_string(), 1.0),
+            ]),
+            ..Default::default()
+        };
+        context
+            .set_global_property_value(GlobalParams, parameters)
+            .unwrap();
+        init(&mut context).unwrap();
+        let ordered_age_groups = context
+            .get_global_property_value(OrderedAgeGroupsParam)
+            .unwrap();
+        assert_eq!(
+            *ordered_age_groups,
+            vec![
+                SymptomAgeGroup {
+                    label: "Age0To17".to_string(),
+                    min: 0,
+                    max: 17,
+                },
+                SymptomAgeGroup {
+                    label: "Age18To49".to_string(),
+                    min: 18,
+                    max: 49,
+                },
+                SymptomAgeGroup {
+                    label: "Age50To64".to_string(),
+                    min: 50,
+                    max: 64,
+                },
+                SymptomAgeGroup {
+                    label: "Age65Plus".to_string(),
+                    min: 65,
+                    max: 120,
+                },
+            ]
         );
     }
 }

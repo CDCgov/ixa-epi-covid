@@ -171,11 +171,12 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), M
 mod test {
     use crate::{
         infectiousness_manager::InfectionContextExt,
-        parameters::{ContextParametersExt, GlobalParams, Params},
+        parameters::{ContextParametersExt, GlobalParams, OrderedAgeGroupsParam, Params},
         population_loader::{Age, Person, PersonId},
         rate_fns::load_rate_fns,
         reports::ReportParams,
         settings::{SettingCategory, SettingCode, SettingId},
+        symptom_status_manager::SymptomAgeGroup,
     };
     use ixa::{csv, prelude::*};
     use std::path::PathBuf;
@@ -193,6 +194,17 @@ mod test {
                 },
             )
             .unwrap();
+        context
+            .set_global_property_value(
+                OrderedAgeGroupsParam,
+                vec![SymptomAgeGroup {
+                    label: "Age0To120".to_string(),
+                    min: 0,
+                    max: 120,
+                }],
+            )
+            .unwrap();
+
         context.init_random(context.get_params().seed);
         load_rate_fns(&mut context).unwrap();
         context
