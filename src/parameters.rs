@@ -1,4 +1,4 @@
-use ixa::{HashMap, HashMapExt, prelude::*};
+use ixa::{HashMap, HashMapExt, HashSet, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, path::PathBuf};
 
@@ -161,8 +161,30 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error>
         ),
     ];
 
+    let symptom_age_group_labels: HashSet<String> = parameters
+        .symptom_age_groups
+        .iter()
+        .map(|age_group| age_group.label.clone())
+        .collect();
+
     for (param_name, param_value) in symptom_probability_params {
+        for age_group_label in &symptom_age_group_labels {
+            if !param_value.contains_key(age_group_label) {
+                return Err(Box::new(ModelError::ModelError(format!(
+                    "{} is missing a value for symptom age group {:?}",
+                    param_name, age_group_label
+                ))));
+            }
+        }
+
         for (age_group, probability) in param_value {
+            if !symptom_age_group_labels.contains(age_group) {
+                return Err(Box::new(ModelError::ModelError(format!(
+                    "{} includes an unknown symptom age group key {:?}",
+                    param_name, age_group
+                ))));
+            }
+
             if !(0.0..=1.0).contains(probability) {
                 return Err(Box::new(ModelError::ModelError(format!(
                     "{} is not a valid {} for age group {:?}; probabilities must be between 0 and 1, inclusive.",
@@ -301,7 +323,7 @@ impl Default for Params {
                 mu: 0.0,
                 sigma: 0.0,
             },
-            probability_severe_given_mild: HashMap::new(),
+            probability_severe_given_mild: HashMap::from_iter([("Age0To120".to_string(), 0.0)]),
             mild_to_severe_delay: SymptomDelayDistLogNormParams {
                 mu: 0.0,
                 sigma: 0.0,
@@ -310,7 +332,7 @@ impl Default for Params {
                 mu: 0.0,
                 sigma: 0.0,
             },
-            probability_critical_given_severe: HashMap::new(),
+            probability_critical_given_severe: HashMap::from_iter([("Age0To120".to_string(), 0.0)]),
             severe_to_critical_delay: SymptomDelayDistLogNormParams {
                 mu: 0.0,
                 sigma: 0.0,
@@ -319,7 +341,7 @@ impl Default for Params {
                 mu: 0.0,
                 sigma: 0.0,
             },
-            probability_dead_given_critical: HashMap::new(),
+            probability_dead_given_critical: HashMap::from_iter([("Age0To120".to_string(), 0.0)]),
             critical_to_dead_delay: SymptomDelayDistLogNormParams {
                 mu: 0.0,
                 sigma: 0.0,
@@ -540,6 +562,24 @@ mod tests {
         let mut context = Context::new();
         let parameters = Params {
             symptom_age_groups: age_groups.clone(),
+            probability_severe_given_mild: ixa::HashMap::from_iter([
+                ("Age0To17".to_string(), 0.0),
+                ("Age18To49".to_string(), 1.0),
+                ("Age50To64".to_string(), 1.0),
+                ("Age65Plus".to_string(), 1.0),
+            ]),
+            probability_critical_given_severe: ixa::HashMap::from_iter([
+                ("Age0To17".to_string(), 0.0),
+                ("Age18To49".to_string(), 0.0),
+                ("Age50To64".to_string(), 1.0),
+                ("Age65Plus".to_string(), 1.0),
+            ]),
+            probability_dead_given_critical: ixa::HashMap::from_iter([
+                ("Age0To17".to_string(), 0.0),
+                ("Age18To49".to_string(), 0.0),
+                ("Age50To64".to_string(), 0.0),
+                ("Age65Plus".to_string(), 1.0),
+            ]),
             ..Default::default()
         };
         context

@@ -463,6 +463,28 @@ mod test {
         let critical_to_resolved_duration: f64 = 6.0;
         let mut context = Context::new();
         let parameters = Params {
+            symptom_age_groups: vec![
+                SymptomAgeGroup {
+                    label: "Age0To17".to_string(),
+                    min: 0,
+                    max: 17,
+                },
+                SymptomAgeGroup {
+                    label: "Age18To49".to_string(),
+                    min: 18,
+                    max: 49,
+                },
+                SymptomAgeGroup {
+                    label: "Age50To64".to_string(),
+                    min: 50,
+                    max: 64,
+                },
+                SymptomAgeGroup {
+                    label: "Age65Plus".to_string(),
+                    min: 65,
+                    max: 120,
+                },
+            ],
             probability_severe_given_mild: ixa::HashMap::from_iter([
                 ("Age0To17".to_string(), 0.0),
                 ("Age18To49".to_string(), 1.0),
