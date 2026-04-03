@@ -219,31 +219,18 @@ mod test {
         Age,
         infectiousness_manager::{InfectionData, InfectionStatus},
         parameters::{GlobalParams, Params, SettingProperties},
-        population_loader::{CommunityId, Person, PersonId},
+        population_loader::{Person, PersonId},
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
-        settings::{Setting, SettingCategory, SettingCode},
+        settings::{ContextSettingExt, Setting, SettingCategory, SettingCode},
     };
     use ixa::{HashMap, assert_almost_eq, prelude::*};
 
     fn set_homogeneous_mixing_itinerary(
         context: &mut Context,
         person_id: PersonId,
-    ) -> Result<(), IxaError> {
-        let community_id = context
-            .query_result_iterator::<Setting, _>((SettingCode(0), SettingCategory::Community))
-            .next();
-        if community_id.is_some() {
-            context.set_property::<Person, CommunityId>(person_id, CommunityId(community_id));
-        } else {
-            context
-                .add_entity::<Setting, _>((SettingCode(0), SettingCategory::Community))
-                .map(|community_id| {
-                    context.set_property::<Person, CommunityId>(
-                        person_id,
-                        CommunityId(Some(community_id)),
-                    );
-                })?;
-        }
+    ) -> Result<(), crate::error::ModelError> {
+        context.add_person_to_settings(person_id, None, None, None, Some(0))?;
+        context.initialize_setting_size()?;
         Ok(())
     }
 
