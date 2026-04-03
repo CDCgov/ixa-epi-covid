@@ -74,8 +74,8 @@ mod test {
     use crate::Age;
     use crate::infection_propagation_loop::InfectionRng;
     use crate::infectiousness_manager::InfectionData;
-    use crate::population_loader::{CommunityId, HomeId, PersonId, WorkId};
-    use crate::settings::{Setting, SettingCategory, SettingCode};
+    use crate::population_loader::PersonId;
+    use crate::settings::{ContextSettingExt, SettingCategory};
     use crate::{
         infection_propagation_loop::{
             InfectionStatus, init, schedule_next_forecasted_infection, schedule_recovery,
@@ -89,22 +89,9 @@ mod test {
     fn set_homogeneous_mixing_itinerary(
         context: &mut Context,
         person_id: PersonId,
-    ) -> Result<(), IxaError> {
-        let community_id = context
-            .query_result_iterator::<Setting, _>((SettingCode(0), SettingCategory::Community))
-            .next();
-        if community_id.is_some() {
-            context.set_property::<Person, CommunityId>(person_id, CommunityId(community_id));
-        } else {
-            context
-                .add_entity::<Setting, _>((SettingCode(0), SettingCategory::Community))
-                .map(|community_id| {
-                    context.set_property::<Person, CommunityId>(
-                        person_id,
-                        CommunityId(Some(community_id)),
-                    );
-                })?;
-        }
+    ) -> Result<(), crate::error::ModelError> {
+        context.add_person_to_settings(person_id, None, None, None, Some(0))?;
+        context.initialize_setting_size()?;
         Ok(())
     }
 
@@ -411,30 +398,19 @@ mod test {
                 let person_censustract: PersonId = context.add_entity((Age(30),)).unwrap();
                 let person_workplace: PersonId = context.add_entity((Age(30),)).unwrap();
 
-                let home_id = context
-                    .add_entity::<Setting, _>((SettingCode(0), SettingCategory::Home))
-                    .unwrap();
-                let workplace_id = context
-                    .add_entity::<Setting, _>((SettingCode(0), SettingCategory::Work))
-                    .unwrap();
-                let census_tract_id = context
-                    .add_entity::<Setting, _>((SettingCode(0), SettingCategory::Community))
-                    .unwrap();
-                context.set_property::<Person, HomeId>(person_home, HomeId(Some(home_id)));
                 context
-                    .set_property::<Person, WorkId>(person_workplace, WorkId(Some(workplace_id)));
-                context.set_property::<Person, CommunityId>(
-                    person_censustract,
-                    CommunityId(Some(census_tract_id)),
-                );
-
-                context.set_property::<Person, HomeId>(infectious_person, HomeId(Some(home_id)));
+                    .add_person_to_settings(person_home, Some(0), None, None, None)
+                    .unwrap();
                 context
-                    .set_property::<Person, WorkId>(infectious_person, WorkId(Some(workplace_id)));
-                context.set_property::<Person, CommunityId>(
-                    infectious_person,
-                    CommunityId(Some(census_tract_id)),
-                );
+                    .add_person_to_settings(person_workplace, None, Some(0), None, None)
+                    .unwrap();
+                context
+                    .add_person_to_settings(person_censustract, None, None, None, Some(0))
+                    .unwrap();
+                context
+                    .add_person_to_settings(infectious_person, Some(0), Some(0), None, Some(0))
+                    .unwrap();
+                context.initialize_setting_size().unwrap();
 
                 // We don't want infectious people beyond our index case to be able to transmit, so we
                 // have to do setup on our own since just calling `init` will trigger a watcher for

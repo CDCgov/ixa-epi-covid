@@ -1,11 +1,11 @@
-use ixa::{csv, prelude::*};
+use ixa::{csv, impl_derived_property, prelude::*};
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::error::ModelError;
 use crate::parameters::ContextParametersExt;
-use crate::settings::{ContextSettingExt, SettingCategory, SettingCode, SettingId};
+use crate::settings::{ContextSettingExt, SETTING_COUNT, SettingCategory, SettingId};
 use ixa::profiling::open_span;
 
 define_entity!(Person);
@@ -27,85 +27,76 @@ impl_property!(Age, Person);
 pub struct Alive(pub bool);
 impl_property!(Alive, Person, default_const = Alive(true));
 
-impl_property!(HomeId, Person, default_const = HomeId(None));
-impl_property!(WorkId, Person, default_const = WorkId(None));
-impl_property!(SchoolId, Person, default_const = SchoolId(None));
-impl_property!(CommunityId, Person, default_const = CommunityId(None));
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+pub struct SettingIds {
+    pub setting_ids: [Option<SettingId>; SETTING_COUNT],
+}
+impl_property!(
+    SettingIds,
+    Person,
+    default_const = SettingIds {
+        setting_ids: [None; SETTING_COUNT]
+    }
+);
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash)]
+#[derive(Debug, PartialEq, Clone, Copy, Serialize)]
+pub struct ItineraryRatios {
+    pub itinerary_ratios: [f64; SETTING_COUNT],
+}
+impl_property!(
+    ItineraryRatios,
+    Person,
+    default_const = ItineraryRatios {
+        itinerary_ratios: [0.0; SETTING_COUNT]
+    }
+);
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
 pub struct HomeId(pub Option<SettingId>);
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash)]
-pub struct WorkId(pub Option<SettingId>);
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
 pub struct SchoolId(pub Option<SettingId>);
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+pub struct WorkId(pub Option<SettingId>);
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
 pub struct CommunityId(pub Option<SettingId>);
 
-pub trait GenericSetting {
-    fn get_setting_id(&self) -> Option<SettingId>;
-}
+impl_derived_property!(HomeId, Person, [SettingIds], [], |setting_ids| HomeId(
+    setting_ids.setting_ids[SettingCategory::Home]
+));
 
-impl GenericSetting for HomeId {
-    fn get_setting_id(&self) -> Option<SettingId> {
-        self.0
-    }
-}
-impl GenericSetting for WorkId {
-    fn get_setting_id(&self) -> Option<SettingId> {
-        self.0
-    }
-}
-impl GenericSetting for SchoolId {
-    fn get_setting_id(&self) -> Option<SettingId> {
-        self.0
-    }
-}
-impl GenericSetting for CommunityId {
-    fn get_setting_id(&self) -> Option<SettingId> {
-        self.0
-    }
-}
+impl_derived_property!(SchoolId, Person, [SettingIds], [], |setting_ids| SchoolId(
+    setting_ids.setting_ids[SettingCategory::School]
+));
+
+impl_derived_property!(WorkId, Person, [SettingIds], [], |setting_ids| WorkId(
+    setting_ids.setting_ids[SettingCategory::Work]
+));
+
+impl_derived_property!(CommunityId, Person, [SettingIds], [], |setting_ids| {
+    CommunityId(setting_ids.setting_ids[SettingCategory::Community])
+});
 
 fn create_person_from_record(
     context: &mut Context,
     person_record: &PeopleRecord,
 ) -> Result<(), ModelError> {
     // Create itinerary entries for all setting memberships in input file
-    let tract: String = String::from_utf8(person_record.homeId[..11].to_owned())?;
-    let home_id: String = String::from_utf8(person_record.homeId.to_owned())?;
-    let school_string: String = String::from_utf8(person_record.schoolId.to_owned())?;
-    let workplace_string: String = String::from_utf8(person_record.workplaceId.to_owned())?;
+    let community_id: Option<usize> = String::from_utf8(person_record.homeId[..11].to_owned())?
+        .parse::<usize>()
+        .ok();
+    let home_id: Option<usize> = String::from_utf8(person_record.homeId.to_owned())?
+        .parse::<usize>()
+        .ok();
+    let school_id: Option<usize> = String::from_utf8(person_record.schoolId.to_owned())?
+        .parse::<usize>()
+        .ok();
+    let work_id: Option<usize> = String::from_utf8(person_record.workplaceId.to_owned())?
+        .parse::<usize>()
+        .ok();
 
     // Add person to context
     let person_id: PersonId = context.add_entity((Age(person_record.age),)).unwrap();
-    context.add_person_to_setting(
-        person_id,
-        SettingCategory::Home,
-        SettingCode(home_id.parse()?),
-    )?;
-
-    context.add_person_to_setting(
-        person_id,
-        SettingCategory::Community,
-        SettingCode(tract.parse()?),
-    )?;
-
-    if !school_string.is_empty() {
-        context.add_person_to_setting(
-            person_id,
-            SettingCategory::School,
-            SettingCode(school_string.parse()?),
-        )?;
-    }
-
-    if !workplace_string.is_empty() {
-        context.add_person_to_setting(
-            person_id,
-            SettingCategory::Work,
-            SettingCode(workplace_string.parse()?),
-        )?;
-    }
-
+    context.add_person_to_settings(person_id, home_id, work_id, school_id, community_id)?;
     Ok(())
 }
 
@@ -128,15 +119,15 @@ pub fn init(
     context: &mut Context,
     synth_population_override: Option<PathBuf>,
 ) -> Result<(), ModelError> {
-    context.index_property::<Person, HomeId>();
-    context.index_property::<Person, SchoolId>();
-    context.index_property::<Person, WorkId>();
-    context.index_property::<Person, CommunityId>();
-
     let _span = open_span("load_synth_population");
     let file = synth_population_override
         .unwrap_or_else(|| context.get_params().synth_population_file.clone());
     load_synth_population(context, file)?;
+    context.index_property::<Person, HomeId>();
+    context.index_property::<Person, SchoolId>();
+    context.index_property::<Person, WorkId>();
+    context.index_property::<Person, CommunityId>();
+    context.initialize_setting_size()?;
     Ok(())
 }
 
@@ -144,7 +135,7 @@ pub fn init(
 mod test {
     use super::*;
     use crate::parameters::{GlobalParams, Params, SettingProperties};
-    use crate::settings::{Setting, SettingCategory};
+    use crate::settings::{Setting, SettingCategory, SettingCode};
     use ixa::HashMap;
     use std::io::Write;
     use std::path::PathBuf;
@@ -184,6 +175,7 @@ mod test {
         context
             .set_global_property_value(GlobalParams, parameters)
             .unwrap();
+        crate::settings::init(&mut context).unwrap();
         context
     }
 
@@ -195,6 +187,7 @@ mod test {
         );
         let synth_file = persist_tmp_csv(&input);
         load_synth_population(&mut context, synth_file).unwrap();
+        context.initialize_setting_size().unwrap();
         let age = [43, 42];
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
         let census_tract_id = 36_093_033_102;
@@ -250,6 +243,7 @@ mod test {
         );
         let synth_file = persist_tmp_csv(&input);
         load_synth_population(&mut context, synth_file).unwrap();
+        context.initialize_setting_size().unwrap();
         let age = [43, 42];
         let school_id = [1, 2];
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
@@ -317,6 +311,7 @@ mod test {
         );
         let synth_file = persist_tmp_csv(&input);
         load_synth_population(&mut context, synth_file).unwrap();
+        context.initialize_setting_size().unwrap();
         let age = [43, 42];
         let workplace_id = [1, 2];
         let home_id = [360_930_331_020_001, 360_930_331_020_002];
