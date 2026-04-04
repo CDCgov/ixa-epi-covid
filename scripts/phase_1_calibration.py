@@ -121,7 +121,6 @@ def main(
         output_dir,
         outputs_to_read=["aggregated_deaths_report"],
     )
-
     # Make the output directory -----------------------------------------------------------------
     # Use the default output directory in config inputs as the base output directory for all outputs
     # Create the output directory, handling the case where it already exists based on the force_overwrite flag
