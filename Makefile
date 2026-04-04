@@ -68,7 +68,7 @@ bench: input/synth_pop_people_WY_10_000.csv input/synth_pop_people_WY_100_000.cs
 BASE ?= HEAD
 bench-compare: input/synth_pop_people_WY_10_000.csv input/synth_pop_people_WY_100_000.csv
 	uv run scripts/bench_compare.py $(BASE)
-	
+
 calibrate-phase-1: ./experiments/phase1/input/priors.json ./experiments/phase1/input/default_params.json
 	uv run cargo build -r
 	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/prod-config.yaml

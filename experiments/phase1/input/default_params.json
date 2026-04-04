@@ -13,43 +13,49 @@
                 "duration": 12.0
             }
         },
+        "symptom_age_groups": [
+            {"label": "Age0To17", "min": 0, "max": 17},
+            {"label": "Age18To49", "min": 18, "max": 49},
+            {"label": "Age50To64", "min": 50, "max": 64},
+            {"label": "Age65Plus", "min": 65, "max": 120}
+        ],
         "probability_mild_given_infect": 0.7,
         "infect_to_mild_delay": {
-            "mu": 0.1,
-            "sigma": 0.1
+            "mu": 1.63,
+            "sigma": 0.50
         },
-        "probability_severe_given_mild": 0.2,
+        "probability_severe_given_mild": {"Age0To17": 0.004, "Age18To49": 0.034, "Age50To64": 0.108, "Age65Plus": 0.684},
         "mild_to_severe_delay": {
-            "mu": 0.1,
-            "sigma": 0.1
+            "mu": 1.386,
+            "sigma": 1.307
         },
         "mild_to_resolved_delay": {
-            "mu": 0.1,
-            "sigma": 0.1
+            "mu": 2.079,
+            "sigma": 0.544
         },
-        "probability_critical_given_severe": 0.2,
+        "probability_critical_given_severe": {"Age0To17": 0.275, "Age18To49": 0.189, "Age50To64": 0.271, "Age65Plus": 0.269},
         "severe_to_critical_delay": {
-            "mu": 0.1,
-            "sigma": 0.1
+            "mu": -0.693,
+            "sigma": 1.307
         },
         "severe_to_resolved_delay": {
-            "mu": 0.1,
-            "sigma": 0.1
+            "mu": 1.609,
+            "sigma": 0.843
         },
-        "probability_dead_given_critical": 0.2,
+        "probability_dead_given_critical": {"Age0To17": 0.026, "Age18To49": 0.111, "Age50To64": 0.292, "Age65Plus": 0.699},
         "critical_to_dead_delay": {
-            "mu": 0.1,
-            "sigma": 0.1
+            "mu": 2.565,
+            "sigma": 0.814
         },
         "critical_to_resolved_delay": {
-            "mu": 0.1,
-            "sigma": 0.1
+            "mu": 2.565,
+            "sigma": 0.814
         },
         "settings_properties": {"Home": {"alpha": 0.0},
-                            "Workplace": {"alpha": 0.0},
+                            "Work": {"alpha": 0.0},
                             "School": {"alpha": 0.0},
-                            "CensusTract": {"alpha": 0.0}},
-        "itinerary_ratios": {"Home": 0.25, "Workplace": 0.25, "School": 0.25, "CensusTract": 0.25},
+                            "Community": {"alpha": 0.0}},
+        "itinerary_ratios": {"Home": 0.25, "Work": 0.25, "School": 0.25, "Community": 0.25},
         "prevalence_report": {
             "write": false,
             "filename": "person_property_count.csv",

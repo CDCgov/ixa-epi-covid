@@ -28,16 +28,29 @@ class CovidModel(MRPModel):
 
         ## Generate the importation time series from relevant ixa parameters --------------
         # Calculate the probability that an inidivdual will die given that they are symptomatic
+        # This calculation assumes that individuals are evenly distributed by age group
+        n_age_groups = len(
+            ixa_inputs["epimodel.GlobalParams"]["symptom_age_groups"]
+        )
         case_fatality_ratio = (
-            ixa_inputs["epimodel.GlobalParams"][
-                "probability_severe_given_mild"
-            ]
-            * ixa_inputs["epimodel.GlobalParams"][
-                "probability_critical_given_severe"
-            ]
-            * ixa_inputs["epimodel.GlobalParams"][
-                "probability_dead_given_critical"
-            ]
+            sum(
+                ixa_inputs["epimodel.GlobalParams"][
+                    "probability_severe_given_mild"
+                ].values()
+            )
+            / n_age_groups
+            * sum(
+                ixa_inputs["epimodel.GlobalParams"][
+                    "probability_critical_given_severe"
+                ].values()
+            )
+            / n_age_groups
+            * sum(
+                ixa_inputs["epimodel.GlobalParams"][
+                    "probability_dead_given_critical"
+                ].values()
+            )
+            / n_age_groups
         )
 
         proportion_asymptomatic = ixa_inputs["epimodel.GlobalParams"][

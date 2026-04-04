@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use ixa::{ExecutionPhase, prelude::*};
 
 use crate::{
-    abort_run, error::ModelError, infection_importation, infection_propagation_loop,
-    parameters, population_loader, reports, settings, symptom_status_manager,
+    abort_run, error::ModelError, infection_importation, infection_propagation_loop, parameters,
+    population_loader, reports, settings, symptom_status_manager,
 };
 
 pub fn initialize_model(
