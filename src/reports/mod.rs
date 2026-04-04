@@ -5,6 +5,7 @@ use crate::{
 use ixa::prelude::*;
 use serde::{Deserialize, Serialize};
 
+pub mod aggregated_deaths_report;
 pub mod incidence_report;
 pub mod prevalence_report;
 pub mod transmission_report;
@@ -60,6 +61,7 @@ pub fn init(context: &mut Context) -> Result<(), ModelError> {
         prevalence_report,
         incidence_report,
         transmission_report,
+        aggregated_deaths_report,
         ..
     } = context.get_params().clone();
     let mut report_count = 0;
@@ -77,6 +79,11 @@ pub fn init(context: &mut Context) -> Result<(), ModelError> {
     if let Some(name) = get_report_name(&transmission_report)? {
         transmission_report::init(context, name)?;
         info!("Generating the transmission report.");
+        report_count += 1;
+    }
+    if let Some((name, period)) = get_period_report_name(&aggregated_deaths_report)? {
+        aggregated_deaths_report::init(context, name, period)?;
+        info!("Generating the aggregated deaths incidence report.");
         report_count += 1;
     }
 
@@ -159,7 +166,13 @@ mod test {
                     "transmission_report": {
                         "write": true,
                         "filename": "transmission.csv"
-                    }
+                    },
+                    "aggregated_deaths_report": {
+                        "write": true,
+                        "filename": "aggregated_deaths.csv",
+                        "period": 3.0
+                    },
+                    "first_death_terminates_run": false
                 }
             }
         "#;
@@ -168,6 +181,7 @@ mod test {
             prevalence_report,
             incidence_report,
             transmission_report,
+            aggregated_deaths_report,
             ..
         } = context.get_params().clone();
 
@@ -188,6 +202,13 @@ mod test {
             Some("transmission.csv".to_string())
         );
         assert_eq!(transmission_report.period, None);
+
+        assert!(aggregated_deaths_report.write);
+        assert_eq!(
+            aggregated_deaths_report.filename,
+            Some("aggregated_deaths.csv".to_string())
+        );
+        assert_eq!(aggregated_deaths_report.period, Some(3.0));
     }
 
     #[test]

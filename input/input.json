@@ -67,6 +67,12 @@
         "transmission_report": {
             "write": true,
             "filename": "transmission_report.csv"
-        }
+        },
+        "aggregated_deaths_report": {
+            "write": true,
+            "filename": "aggregated_deaths_report.csv",
+            "period": 1.0
+        },
+        "first_death_terminates_run": false
     }
 }

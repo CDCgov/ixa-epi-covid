@@ -1,4 +1,5 @@
 **/profiling.json
+experiments/**/output/
 
 # IDE and Platform
 .vscode
