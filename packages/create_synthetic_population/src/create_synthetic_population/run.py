@@ -359,7 +359,7 @@ def build_outputs(synth_pop_region_df):
     return people_df, region_df
 
 
-def main(argv=None):
+def run(argv=None):
     args = parse_args(argv)
 
     state_synth = args.state
@@ -446,4 +446,4 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    main()
+    run()

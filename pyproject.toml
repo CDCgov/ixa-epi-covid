@@ -1,5 +1,5 @@
 [project]
-name = "ixa-epi-covid"
+name = "ixa_epi_covid"
 version = "0.1.0"
 description = "Epidemiological models for COVID-19 developed in ixa"
 readme = "README.md"
@@ -7,7 +7,6 @@ requires-python = ">=3.12"
 dependencies = [
     "census>=0.8.25",
     "dotenv>=0.9.9",
-    "geopandas>=1.1.3",
     "jupyter>=1.1.1",
     "matplotlib>=3.10.8",
     "numpy>=2.3.4",
@@ -19,14 +18,19 @@ dependencies = [
     "scipy>=1.16.3",
     "seaborn>=0.13.2",
     "us>=3.2.0",
+    "cfa-mrp",
+    "calibrationtools"
 ]
 
 [build-system]
-requires = ["uv-build>=0.8.13,<0.9.0"]
-build-backend = "uv-build"
+requires = ["uv_build>=0.8.13,<0.9.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+calibrationtools = { git = "https://github.com/CDCgov/cfa-calibration-tools.git" }
 
 [tool.uv]
-package = false
+package = true
 
 [tool.uv.workspace]
 members = [

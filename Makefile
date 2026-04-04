@@ -13,7 +13,7 @@ uv-sync:
 
 # Generate a synthetic population (configure with STATE and SIZE)
 synthetic-population:
-	uv run scripts/create_synthetic_population.py --state $(STATE) --size $(NORMALIZED_SIZE)
+	uv run python -m create_synthetic_population.run --state $(STATE) --size $(NORMALIZED_SIZE)
 
 input/synth_pop_people_%.csv:
 	uv run scripts/create_synthetic_population.py --state $(shell echo "$*" | sed 's/_.*//')  --size $(shell echo "$*" | sed 's/^[A-Z]*_//')
@@ -57,3 +57,11 @@ bench: input/synth_pop_people_WY_10_000.csv input/synth_pop_people_WY_100_000.cs
 BASE ?= HEAD
 bench-compare: input/synth_pop_people_WY_10_000.csv input/synth_pop_people_WY_100_000.csv
 	uv run scripts/bench_compare.py $(BASE)
+	
+calibrate-phase-1: ./experiments/phase1/input/priors.json ./experiments/phase1/input/default_params.json
+	uv run cargo build -r
+	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/prod-config.yaml
+
+calibrate-phase-1-dev: ./experiments/phase1/input/priors.json ./experiments/phase1/input/default_params.json
+	uv run cargo build -r
+	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/dev-config.yaml

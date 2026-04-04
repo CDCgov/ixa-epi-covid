@@ -1,3 +1,4 @@
+pub mod abort_run;
 pub mod error;
 pub mod infection_importation;
 pub mod infection_propagation_loop;
