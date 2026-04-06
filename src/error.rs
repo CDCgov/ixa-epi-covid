@@ -1,4 +1,5 @@
 use ixa::IxaError;
+use strum::ParseError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -17,4 +18,7 @@ pub enum ModelError {
 
     #[error(transparent)]
     IxaCsvError(#[from] ixa::csv::Error),
+
+    #[error(transparent)]
+    ParseError(#[from] ParseError),
 }

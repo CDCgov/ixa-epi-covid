@@ -34,6 +34,8 @@ pub struct Params {
     pub max_time: f64,
     /// The path to the synthetic population file loaded in `population_loader`
     pub synth_population_file: PathBuf,
+    /// The path to the settings file loaded in `settings`
+    pub settings_file: PathBuf,
     /// The proportion of initial people who are infectious when we seed the population.
     pub initial_prevalence: f64,
     /// A flag to indicate whether to import cases from a file.
@@ -304,6 +306,7 @@ impl Default for Params {
             seed: 0,
             max_time: 0.0,
             synth_population_file: PathBuf::new(),
+            settings_file: PathBuf::new(),
             initial_prevalence: 0.0,
             imported_cases_timeseries: ImportCasesFromFile {
                 include: false,

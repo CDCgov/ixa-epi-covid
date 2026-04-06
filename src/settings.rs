@@ -1,12 +1,12 @@
-use ixa::prelude::*;
+use ixa::{csv, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::Debug,
-    ops::{Index, IndexMut},
+    ops::{Index, IndexMut}, path::PathBuf,
 };
 use strum::{EnumCount, IntoEnumIterator};
-use strum_macros::{EnumCount as EnumCountMacro, EnumIter};
-
+use strum_macros::{EnumCount as EnumCountMacro, EnumIter, EnumString};
+use std::str::FromStr;
 use core::f64;
 
 use crate::{
@@ -22,13 +22,17 @@ define_rng!(SettingRng);
 define_entity!(Setting);
 
 #[derive(
-    Serialize, Deserialize, PartialEq, Debug, Clone, Copy, Hash, Eq, EnumCountMacro, EnumIter,
+    Serialize, Deserialize, PartialEq, Debug, Clone, Copy, Hash, Eq, EnumCountMacro, EnumIter, EnumString
 )]
 #[repr(u8)]
 pub enum SettingCategory {
+    #[strum(serialize = "homeId")]
     Home = 0,
+    #[strum(serialize = "workplaceId")]
     Work,
+    #[strum(serialize = "schoolId")]
     School,
+    #[strum(serialize = "censustractId")]
     Community,
 }
 
@@ -66,6 +70,14 @@ define_multi_property!((SettingCategory, SettingCode), Setting);
 define_global_property!(SettingAlphas, [f64; SETTING_COUNT]);
 define_global_property!(SettingRatios, [f64; SETTING_COUNT]);
 
+
+#[derive(Deserialize, Debug)]
+#[allow(non_snake_case)]
+pub struct SettingRecord<'a> {
+    setting_category: &'a str,
+    setting_code: &'a [u8],
+}
+
 trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextParametersExt {
     fn get_setting_ratio(&self, setting_category: SettingCategory) -> Result<f64, ModelError> {
         let ratios = self.get_global_property_value(SettingRatios).unwrap();
@@ -100,6 +112,34 @@ impl ContextSettingExtPrivate for Context {}
 pub trait ContextSettingExt:
     PluginContext + ContextEntitiesExt + ContextSettingExtPrivate + ContextParametersExt
 {
+
+    fn load_settings(
+        &mut self,
+        synth_input_file: PathBuf,
+    ) -> Result<(), ModelError> {
+        let mut reader = csv::Reader::from_path(synth_input_file)?;
+        let mut raw_record = csv::ByteRecord::new();
+        let headers = reader.byte_headers()?.clone();
+
+        while reader.read_byte_record(&mut raw_record)? {
+            let record: SettingRecord = raw_record.deserialize(Some(&headers))?;
+            self.create_setting_from_record(&record)?;
+        }
+        Ok(())
+    }
+
+    fn create_setting_from_record(&mut self, record: &SettingRecord) -> Result<(), ModelError> {
+        let setting_category = SettingCategory::from_str(record.setting_category)?;
+        let setting_code = SettingCode(String::from_utf8(record.setting_code.to_owned())?
+        .parse::<usize>()
+        .ok()
+        .unwrap());
+        let _setting_id = self
+                .add_entity::<Setting, _>((setting_category, setting_code))
+                .unwrap();
+        Ok(())
+    }
+
     fn register_setting_global_properties(&mut self) {
         let Params {
             settings_properties,
@@ -297,8 +337,7 @@ pub trait ContextSettingExt:
             return;
         }
         let setting_id = self
-            .add_index_setting(setting_category, SettingCode(setting_id_parsed.unwrap()))
-            .unwrap();
+            .get_setting_id(setting_category, SettingCode(setting_id_parsed.unwrap())).unwrap();
         setting_ids[setting_category] = Some(setting_id);
         itinerary_ratios[setting_category] = self.get_setting_ratio(setting_category).unwrap();
     }
@@ -348,32 +387,34 @@ pub trait ContextSettingExt:
         );
         Ok(())
     }
-    fn add_index_setting(
+    fn get_setting_id(
         &mut self,
         setting_category: SettingCategory,
         setting_code: SettingCode,
-    ) -> Result<SettingId, IxaError> {
+    ) -> Result<SettingId, ModelError> {
         if let Some(setting_id) = self
             .query_result_iterator::<Setting, _>(((setting_category, setting_code),))
             .next()
         {
             Ok(setting_id)
         } else {
-            let setting_id = self
-                .add_entity::<Setting, _>((setting_category, setting_code))
-                .unwrap();
-            Ok(setting_id)
+            Err(ModelError::ModelError(format!(
+                "Setting not found for category: {:?} and code: {:?}",
+                setting_category, setting_code
+            )))
         }
     }
 }
 
 impl ContextSettingExt for Context {}
 
-pub fn init(context: &mut Context) -> Result<(), IxaError> {
+pub fn init(context: &mut Context) -> Result<(), ModelError> {
+    let file = context.get_params().settings_file.clone();
+    context.register_setting_global_properties();
+    context.load_settings(file)?;
     context.index_property::<Setting, SettingCode>();
     context.index_property::<Setting, SettingCategory>();
     context.index_property::<Setting, (SettingCategory, SettingCode)>();
-    context.register_setting_global_properties();
     Ok(())
 }
 
