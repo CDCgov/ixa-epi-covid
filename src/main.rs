@@ -8,6 +8,7 @@ use ixa::{prelude::*, profiling::ProfilingContextExt, run_with_custom_args};
 struct CustomArgs {
     #[arg(long)]
     synth_population: Option<PathBuf>,
+    setting_file: Option<PathBuf>,
 }
 
 fn main() {
@@ -18,10 +19,11 @@ fn main() {
                 "No config file provided, must follow `cargo run -- --config path/to/filename.json`"
             );
 
-            let synth_population_override = custom.and_then(|c| c.synth_population);
+            let synth_population_override = custom.as_ref().and_then(|c| c.synth_population.clone());
+            let setting_file_override = custom.and_then(|c| c.setting_file);
 
             let &Params { seed, max_time, .. } = context.get_params();
-            initialize_model(context, seed, max_time, synth_population_override)
+            initialize_model(context, seed, max_time, synth_population_override, setting_file_override)
                 .expect("Model initialization failed");
 
             Ok(())

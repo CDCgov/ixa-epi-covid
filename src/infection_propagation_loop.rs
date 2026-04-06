@@ -132,7 +132,7 @@ mod test {
             .set_global_property_value(GlobalParams, parameters)
             .unwrap();
 
-        crate::settings::init(&mut context).unwrap();
+        crate::settings::init(&mut context, None).unwrap();
         context
     }
 

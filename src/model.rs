@@ -12,6 +12,7 @@ pub fn initialize_model(
     seed: u64,
     max_time: f64,
     synth_population_override: Option<PathBuf>,
+    setting_file_override: Option<PathBuf>,
 ) -> Result<(), ModelError> {
     // Initialize the random number generator with the provided seed
     context.init_random(seed);
@@ -27,7 +28,7 @@ pub fn initialize_model(
         ExecutionPhase::Last,
     );
     context.set_start_time(-1000.);
-    settings::init(context)?;
+    settings::init(context, setting_file_override)?;
     info!("Settings initialized");
     population_loader::init(context, synth_population_override)?;
     info!("Population loaded");

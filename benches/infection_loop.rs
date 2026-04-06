@@ -19,6 +19,13 @@ type SettingType = CoreSettingsTypes;
 #[cfg(not(feature = "bench_old_settings"))]
 type SettingType = SettingCategory;
 fn make_params(synth_file: PathBuf) -> Params {
+    let settings_file = synth_file.with_file_name(
+        synth_file
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| format!("{}_settings.csv", s))
+            .unwrap_or_default(),
+    );
     let delay = SymptomDelayDistLogNormParams {
         mu: 0.1,
         sigma: 0.1,
@@ -42,6 +49,7 @@ fn make_params(synth_file: PathBuf) -> Params {
         max_time: 10.0,
         initial_prevalence: 0.01,
         synth_population_file: synth_file,
+        settings_file: settings_file,
         infectiousness_rate_fn: RateFnType::Constant {
             rate: 1.5,
             duration: 5.0,
@@ -74,7 +82,7 @@ fn setup_model(synth_file: &Path) -> Context {
         .set_global_property_value(GlobalParams, params)
         .unwrap();
     let &Params { seed, max_time, .. } = context.get_params();
-    initialize_model(&mut context, seed, max_time, None).unwrap();
+    initialize_model(&mut context, seed, max_time, None, None).unwrap();
     context
 }
 

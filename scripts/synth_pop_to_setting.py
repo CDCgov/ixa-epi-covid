@@ -1,7 +1,10 @@
 import polars as pl
 import argparse
 
-def main(input_file: str, output_file: str) -> None:
+def main(input_file: str) -> None:
+    input_path = "/".join(input_file.split("/")[:-1])
+    input_file_string = input_file.split("/")[-1].split(".")[0]
+    output_file = f"{input_path}/{input_file_string}_settings.csv"
     df = (
         pl.read_csv(input_file)
         .with_columns(
@@ -19,7 +22,5 @@ def main(input_file: str, output_file: str) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert synthetic population to settings")
     parser.add_argument("--input", default="input/people_test.csv", help="Input CSV file")
-    parser.add_argument("--output", default="input/synth_pop_to_settings.csv", help="Output CSV file")
     args = parser.parse_args()
-    
-    main(args.input, args.output)
+    main(args.input)
