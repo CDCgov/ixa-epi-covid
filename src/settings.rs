@@ -412,8 +412,6 @@ pub fn init(context: &mut Context, setting_file_override: Option<PathBuf>) -> Re
     let file = setting_file_override.unwrap_or_else(|| context.get_params().settings_file.clone());
     context.register_setting_global_properties();
     context.load_settings(file)?;
-    context.index_property::<Setting, SettingCode>();
-    context.index_property::<Setting, SettingCategory>();
     context.index_property::<Setting, (SettingCategory, SettingCode)>();
     Ok(())
 }
