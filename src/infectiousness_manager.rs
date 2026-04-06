@@ -13,6 +13,22 @@ use crate::population_loader::Person;
 use ixa::profiling::{increment_named_count, open_span};
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
+pub struct MaxInfectiousnessMultiplier(pub f64);
+impl_property!(
+    MaxInfectiousnessMultiplier,
+    Person,
+    default_const = MaxInfectiousnessMultiplier(0.0)
+);
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
+pub struct CurrentInfectiousnessMultiplier(pub f64);
+impl_property!(
+    CurrentInfectiousnessMultiplier,
+    Person,
+    default_const = CurrentInfectiousnessMultiplier(0.0)
+);
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
 pub enum InfectionData {
     Susceptible,
     Infectious {
@@ -105,7 +121,7 @@ pub fn get_forecast(context: &Context, person_id: PersonId) -> Option<Forecast> 
     // Get the person's individual infectiousness
     let rate_fn = context.get_person_rate_fn(person_id);
     // This scales infectiousness by the maximum possible infectiousness across all settings
-    let scale = max_total_infectiousness_multiplier(context, person_id);
+    let scale = context.get_property::<Person,MaxInfectiousnessMultiplier>(person_id).0;
     let elapsed = context.get_elapsed_infection_time(person_id);
     let total_rate_fn = ScaledRateFn::new(rate_fn, scale, elapsed);
 
@@ -133,7 +149,7 @@ pub fn evaluate_forecast(
 ) -> bool {
     let rate_fn = context.get_person_rate_fn(person_id);
 
-    let total_multiplier = calc_total_infectiousness_multiplier(context, person_id);
+    let total_multiplier = context.get_property::<Person, CurrentInfectiousnessMultiplier>(person_id).0;
     let total_rate_fn = ScaledRateFn::new(rate_fn, total_multiplier, 0.0);
 
     let elapsed_t = context.get_elapsed_infection_time(person_id);
@@ -161,7 +177,8 @@ pub fn evaluate_forecast(
     true
 }
 
-pub trait InfectionContextExt: PluginContext + InfectiousnessRateExt {
+pub trait InfectionContextExt: PluginContext + InfectiousnessRateExt + ContextSettingExt
+ {
     // This function should be called from the main loop whenever
     // someone is first infected. It assigns all their properties needed to
     // calculate intrinsic infectiousness
@@ -182,6 +199,18 @@ pub trait InfectionContextExt: PluginContext + InfectiousnessRateExt {
                 infected_by: source_id,
                 infection_setting_id: setting_id,
             },
+        );
+        let current_infectiousness_multiplier =
+            self.calculate_current_infectiousness_multiplier_for_person(target_id);
+        self.set_property::<Person, CurrentInfectiousnessMultiplier>(
+            target_id,
+            CurrentInfectiousnessMultiplier(current_infectiousness_multiplier),
+        );
+
+        let max_multiplier = self.calculate_max_infectiousness_multiplier_for_person(target_id);
+        self.set_property::<Person, MaxInfectiousnessMultiplier>(
+            target_id,
+            MaxInfectiousnessMultiplier(max_multiplier),
         );
     }
     fn recover_person(&mut self, person_id: PersonId) {
