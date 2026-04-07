@@ -1,0 +1,10 @@
+exe_file: ./target/release/ixa-epi-covid
+force_overwrite: true
+state: Indiana
+year: 2020
+symptomatic_reporting_prob: 0.5
+priors_file: ./experiments/phase1/input/priors.json
+generation_particle_count: 400
+tolerance_values: [2.0]
+use_env_synth_pop_file: true
+ixa_default_params_file: ./experiments/phase1/input/default_params.json
