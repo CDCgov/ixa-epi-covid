@@ -370,8 +370,6 @@ pub trait ContextSettingExt:
 impl ContextSettingExt for Context {}
 
 pub fn init(context: &mut Context) -> Result<(), IxaError> {
-    context.index_property::<Setting, SettingCode>();
-    context.index_property::<Setting, SettingCategory>();
     context.index_property::<Setting, (SettingCategory, SettingCode)>();
     context.register_setting_global_properties();
     Ok(())
