@@ -269,7 +269,7 @@ mod test {
             // Get the total infectiousness multiplier for comparison to total number of infections.
             if total_infectiousness_multiplier.is_none() {
                 total_infectiousness_multiplier = Some(max_total_infectiousness_multiplier(
-                    &context,
+                    &mut context,
                     infectious_person,
                 ));
             }
@@ -421,7 +421,7 @@ mod test {
                 // Get the total infectiousness multiplier for comparison to total number of infections.
                 if total_infectiousness_multiplier.is_none() {
                     total_infectiousness_multiplier = Some(max_total_infectiousness_multiplier(
-                        &context,
+                        &mut context,
                         infectious_person,
                     ));
                 }

@@ -49,10 +49,10 @@
             "mu": 2.565,
             "sigma": 0.814
         },
-        "settings_properties": {"Home": {"alpha": 0.0},
-                            "Work": {"alpha": 0.0},
-                            "School": {"alpha": 0.0},
-                            "Community": {"alpha": 0.0}},
+        "settings_properties": {"Home": {"alpha": 0.3},
+                            "Work": {"alpha": 0.2},
+                            "School": {"alpha": 0.2},
+                            "Community": {"alpha": 0.01}},
         "itinerary_ratios": {"Home": 0.25, "Work": 0.25, "School": 0.25, "Community": 0.25},
         "prevalence_report": {
             "write": true,

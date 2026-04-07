@@ -13,19 +13,19 @@ use crate::population_loader::Person;
 use ixa::profiling::{increment_named_count, open_span};
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
-pub struct MaxInfectiousnessMultiplier(pub f64);
+pub struct MaxInfectiousnessMultiplier(pub Option<f64>);
 impl_property!(
     MaxInfectiousnessMultiplier,
     Person,
-    default_const = MaxInfectiousnessMultiplier(0.0)
+    default_const = MaxInfectiousnessMultiplier(None)
 );
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
-pub struct CurrentInfectiousnessMultiplier(pub f64);
+pub struct CurrentInfectiousnessMultiplier(pub Option<f64>);
 impl_property!(
     CurrentInfectiousnessMultiplier,
     Person,
-    default_const = CurrentInfectiousnessMultiplier(0.0)
+    default_const = CurrentInfectiousnessMultiplier(None)
 );
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
@@ -72,16 +72,36 @@ impl_derived_property!(
 /// they come in contact with or how close they are.
 /// This is used to scale the intrinsic infectiousness function of that person.
 /// There are no modifiers on intrinsic infectiousness
-pub fn calc_total_infectiousness_multiplier(context: &Context, person_id: PersonId) -> f64 {
-    context.calculate_current_infectiousness_multiplier_for_person(person_id)
+pub fn calc_total_infectiousness_multiplier(context: &mut Context, person_id: PersonId) -> f64 {
+    if let CurrentInfectiousnessMultiplier(Some(multiplier)) =
+        context.get_property::<Person, CurrentInfectiousnessMultiplier>(person_id)
+    {
+        return multiplier;
+    }
+    let multiplier = context.calculate_current_infectiousness_multiplier_for_person(person_id);
+    context.set_property::<Person, CurrentInfectiousnessMultiplier>(
+        person_id,
+        CurrentInfectiousnessMultiplier(Some(multiplier)),
+    );
+    multiplier
 }
 
 /// Calculate the maximum possible scaling factor for total infectiousness
 /// for a person, given information we know at the time of a forecast.
 /// The modifier used for intrinsic infectiousness is ignored because all modifiers must
 /// be less than or equal to one.
-pub fn max_total_infectiousness_multiplier(context: &Context, person_id: PersonId) -> f64 {
-    context.calculate_max_infectiousness_multiplier_for_person(person_id)
+pub fn max_total_infectiousness_multiplier(context: &mut Context, person_id: PersonId) -> f64 {
+    if let MaxInfectiousnessMultiplier(Some(max_multiplier)) =
+        context.get_property::<Person, MaxInfectiousnessMultiplier>(person_id)
+    {
+        return max_multiplier;
+    }
+    let max_multiplier = context.calculate_max_infectiousness_multiplier_for_person(person_id);
+    context.set_property::<Person, MaxInfectiousnessMultiplier>(
+        person_id,
+        MaxInfectiousnessMultiplier(Some(max_multiplier)),
+    );
+    max_multiplier
 }
 
 define_rng!(ForecastRng);
@@ -117,11 +137,12 @@ pub struct Forecast {
 
 /// Forecast of the next expected infection time, and the expected rate of
 /// infection at that time.
-pub fn get_forecast(context: &Context, person_id: PersonId) -> Option<Forecast> {
+pub fn get_forecast(context: &mut Context, person_id: PersonId) -> Option<Forecast> {
+    
+    // This scales infectiousness by the maximum possible infectiousness across all settings
+    let scale = max_total_infectiousness_multiplier(context, person_id);
     // Get the person's individual infectiousness
     let rate_fn = context.get_person_rate_fn(person_id);
-    // This scales infectiousness by the maximum possible infectiousness across all settings
-    let scale = context.get_property::<Person,MaxInfectiousnessMultiplier>(person_id).0;
     let elapsed = context.get_elapsed_infection_time(person_id);
     let total_rate_fn = ScaledRateFn::new(rate_fn, scale, elapsed);
 
@@ -147,9 +168,9 @@ pub fn evaluate_forecast(
     person_id: PersonId,
     forecasted_total_infectiousness: f64,
 ) -> bool {
+    let total_multiplier = calc_total_infectiousness_multiplier(context, person_id);
     let rate_fn = context.get_person_rate_fn(person_id);
 
-    let total_multiplier = context.get_property::<Person, CurrentInfectiousnessMultiplier>(person_id).0;
     let total_rate_fn = ScaledRateFn::new(rate_fn, total_multiplier, 0.0);
 
     let elapsed_t = context.get_elapsed_infection_time(person_id);
@@ -199,18 +220,6 @@ pub trait InfectionContextExt: PluginContext + InfectiousnessRateExt + ContextSe
                 infected_by: source_id,
                 infection_setting_id: setting_id,
             },
-        );
-        let current_infectiousness_multiplier =
-            self.calculate_current_infectiousness_multiplier_for_person(target_id);
-        self.set_property::<Person, CurrentInfectiousnessMultiplier>(
-            target_id,
-            CurrentInfectiousnessMultiplier(current_infectiousness_multiplier),
-        );
-
-        let max_multiplier = self.calculate_max_infectiousness_multiplier_for_person(target_id);
-        self.set_property::<Person, MaxInfectiousnessMultiplier>(
-            target_id,
-            MaxInfectiousnessMultiplier(max_multiplier),
         );
     }
     fn recover_person(&mut self, person_id: PersonId) {
@@ -356,7 +365,7 @@ mod test {
         let mut context = setup_context();
         let p1: PersonId = context.add_entity((Age(30),)).unwrap();
 
-        assert_almost_eq!(max_total_infectiousness_multiplier(&context, p1), 0.0, 0.0);
+        assert_almost_eq!(max_total_infectiousness_multiplier(&mut context, p1), 0.0, 0.0);
     }
 
     #[test]
@@ -367,8 +376,8 @@ mod test {
         let p2: PersonId = context.add_entity((Age(30),)).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p2).unwrap();
 
-        assert_almost_eq!(max_total_infectiousness_multiplier(&context, p1), 1.0, 0.0);
-        assert_almost_eq!(max_total_infectiousness_multiplier(&context, p2), 1.0, 0.0);
+        assert_almost_eq!(max_total_infectiousness_multiplier(&mut context, p1), 1.0, 0.0);
+        assert_almost_eq!(max_total_infectiousness_multiplier(&mut context, p2), 1.0, 0.0);
     }
 
     #[test]
@@ -385,7 +394,7 @@ mod test {
 
         context.infect_person(p1, None, None);
 
-        let f = get_forecast(&context, p1).expect("Forecast should be returned");
+        let f = get_forecast(&mut context, p1).expect("Forecast should be returned");
         // The expected rate is 2.0, because intrinsic is 1.0 and there are 2 contacts.
         assert_almost_eq!(f.forecasted_total_infectiousness, 2.0, 0.0);
     }
