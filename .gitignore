@@ -1,5 +1,10 @@
 **/profiling.json
 
+# IDE and Platform
+.vscode
+.idea
+.DS_Store
+
 # Data
 *.csv
 *.tsv

@@ -3,8 +3,10 @@ SIZE ?= 1000
 
 # Normalize SIZE to use underscores (e.g., 1000 -> 1_000, 1000000 -> 1_000_000)
 NORMALIZED_SIZE := $(shell python3 -c "print(f'{int(\"$(SIZE)\".replace(\"_\",\"\")):_}')")
+CLEAN_STATE_PATTERN := $(if $(filter command line environment environment override,$(origin STATE)),$(STATE),*)
+CLEAN_SIZE_PATTERN := $(if $(filter command line environment environment override,$(origin SIZE)),$(NORMALIZED_SIZE),*)
 
-.PHONY: all uv-sync synthetic-population run profile
+.PHONY: all uv-sync synthetic-population test-syn-pop clean-synthetic-population run profile
 all: uv-sync
 
 # Initialize the uv environment for Python scripts
@@ -14,6 +16,15 @@ uv-sync:
 # Generate a synthetic population (configure with STATE and SIZE)
 synthetic-population:
 	uv run scripts/create_synthetic_population.py --state $(STATE) --size $(NORMALIZED_SIZE)
+
+# Run synthetic population generator tests
+test-syn-pop:
+	uv run pytest scripts/test_create_synthetic_population.py
+
+# Remove generated synthetic population CSVs. Optionally narrow with STATE and/or SIZE.
+clean-synthetic-population:
+	rm -f input/synth_pop_people_$(CLEAN_STATE_PATTERN)_$(CLEAN_SIZE_PATTERN).csv
+	rm -f input/synth_pop_region_$(CLEAN_STATE_PATTERN)_$(CLEAN_SIZE_PATTERN).csv
 
 input/synth_pop_people_%.csv:
 	uv run scripts/create_synthetic_population.py --state $(shell echo "$*" | sed 's/_.*//')  --size $(shell echo "$*" | sed 's/^[A-Z]*_//')

@@ -24,7 +24,7 @@ cargo run -- -c input/input.json -o output
 
 ### Synthetic Population
 
-The model requires a synthetic population CSV. A small test file is included at `input/people_test.csv`. To generate larger populations, first install R dependencies and set up a [Census Bureau API key](https://api.census.gov/data/key_signup.html) in `.env` as `CENSUS_API_KEY`:
+The model requires an ASPR-compatible synthetic population CSV. A small test file is included at `input/people_test.csv`. To generate larger populations, first install R dependencies and set up a [Census Bureau API key](https://api.census.gov/data/key_signup.html) in `.env` as `CENSUS_API_KEY`:
 
 ```bash
 make setup-r

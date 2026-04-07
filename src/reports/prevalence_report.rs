@@ -111,6 +111,7 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), M
 mod test {
     use crate::{
         Age,
+        pop_reader::parser::parse_fips_home_id,
         infectiousness_manager::{InfectionContextExt, InfectionStatus},
         parameters::{ContextParametersExt, GlobalParams, Params},
         population_loader::PersonId,
@@ -121,6 +122,11 @@ mod test {
     use ixa::{csv, prelude::*};
     use std::path::PathBuf;
     use tempfile::tempdir;
+
+
+    fn make_home_id(home_id: &[u8]) -> SettingCode {
+        SettingCode(parse_fips_home_id(home_id).unwrap().1)
+    }
 
     fn setup_context_with_report(prevalence_report: ReportParams) -> Context {
         let mut context = Context::new();
@@ -155,7 +161,7 @@ mod test {
         let source: PersonId = context.add_entity((Age(42),)).unwrap();
         let target: PersonId = context.add_entity((Age(43),)).unwrap();
         let home: SettingId = context
-            .add_entity((SettingCode(0), SettingCategory::Home))
+            .add_entity((make_home_id(b"160379602000001"), SettingCategory::Home))
             .unwrap();
         let setting = Some(home);
         let infection_time = 1.0;

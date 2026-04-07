@@ -12,6 +12,7 @@ dependencies = [
     "matplotlib>=3.10.8",
     "numpy>=2.3.4",
     "pandas>=3.0.0",
+    "pandas-stubs~=3.0.0",
     "pyarrow>=23.0.0",
     "pygris>=0.2.1",
     "pytest>=9.0.2",

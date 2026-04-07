@@ -201,6 +201,67 @@ class TestCreatePlaces:
         df = create_places(tracts_gdf, 3, "school_id", rng)
         assert df["lat"].notna().all() and df["lon"].notna().all()
 
+    def test_school_ids_reset_within_tract(self, tracts_gdf, rng):
+        sampled = tracts_gdf.iloc[[0, 1, 0, 1]].copy().reset_index(drop=True)
+        with patch.object(
+            gpd.GeoDataFrame,
+            "sample",
+            autospec=True,
+            return_value=sampled,
+        ):
+            df = create_places(tracts_gdf, 4, "school_id", rng)
+
+        assert df["school_id"].tolist() == [
+            "56001000100001",
+            "56001000200001",
+            "56001000100002",
+            "56001000200002",
+        ]
+
+    def test_workplace_ids_reset_within_tract(self, tracts_gdf, rng):
+        sampled = tracts_gdf.iloc[[0, 1, 0, 1]].copy().reset_index(drop=True)
+        with patch.object(
+            gpd.GeoDataFrame,
+            "sample",
+            autospec=True,
+            return_value=sampled,
+        ):
+            df = create_places(tracts_gdf, 4, "workplace_id", rng)
+
+        assert df["workplace_id"].tolist() == [
+            "5600100010000001",
+            "5600100020000001",
+            "5600100010000002",
+            "5600100020000002",
+        ]
+
+    @pytest.mark.parametrize(
+        ("id_col", "setting_type"),
+        [("school_id", "school"), ("workplace_id", "workplace")],
+    )
+    def test_place_id_overflow_raises(
+        self, tracts_gdf, rng, id_col, setting_type
+    ):
+        sampled = (
+            tracts_gdf.iloc[np.zeros(32_768, dtype=int)]
+            .copy()
+            .reset_index(drop=True)
+        )
+        with patch.object(
+            gpd.GeoDataFrame,
+            "sample",
+            autospec=True,
+            return_value=sampled,
+        ):
+            with pytest.raises(
+                ValueError,
+                match=(
+                    rf"{setting_type} sequence overflow for tract 56001000100: "
+                    r"maximum sequence 32768 exceeds FIPSCode limit 32767"
+                ),
+            ):
+                create_places(tracts_gdf, 32_768, id_col, rng)
+
 
 class TestSamplePopulation:
     def test_produces_at_least_target(self, household_pums, sample_pums, rng):
@@ -229,6 +290,63 @@ class TestAssignGeography:
         assert "home_id" in geo_df.columns
         assert "tract_id" in geo_df.columns
         assert geo_df["home_id"].notna().all()
+
+    def test_home_ids_reset_within_tract_and_households_share_home(
+        self, tracts_gdf, rng
+    ):
+        synth_pop_df = pd.DataFrame(
+            {
+                "person_id": [1, 2, 3, 4, 5],
+                "house_number": [1, 1, 2, 3, 3],
+                "STATE": ["56"] * 5,
+                "PUMA": ["00100", "00100", "00200", "00300", "00300"],
+            }
+        )
+        tracts_by_puma = pd.DataFrame(
+            {
+                "puma_id": ["5600100", "5600200", "5600300"],
+                "tracts": [
+                    ["56001000100"],
+                    ["56001000200"],
+                    ["56001000100"],
+                ],
+            }
+        )
+
+        geo_df = assign_geography(synth_pop_df, tracts_by_puma, tracts_gdf, rng)
+        households = (
+            geo_df[["house_number", "home_id"]]
+            .drop_duplicates()
+            .sort_values("house_number")
+        )
+
+        assert households["home_id"].tolist() == [
+            "560010001000001",
+            "560010002000001",
+            "560010001000002",
+        ]
+        assert geo_df.groupby("house_number")["home_id"].nunique().eq(1).all()
+
+    def test_home_id_overflow_raises(self, tracts_gdf, rng):
+        synth_pop_df = pd.DataFrame(
+            {
+                "house_number": np.arange(1, 32_769),
+                "STATE": ["56"] * 32_768,
+                "PUMA": ["00100"] * 32_768,
+            }
+        )
+        tracts_by_puma = pd.DataFrame(
+            {"puma_id": ["5600100"], "tracts": [["56001000100"]]}
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=(
+                r"home sequence overflow for tract 56001000100: "
+                r"maximum sequence 32768 exceeds FIPSCode limit 32767"
+            ),
+        ):
+            assign_geography(synth_pop_df, tracts_by_puma, tracts_gdf, rng)
 
 
 class TestBuildOutputs:

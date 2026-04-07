@@ -10,20 +10,18 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 anyhow = "1.0.102"
-dyn-clone = "1.0.20"
-dyn-eq = "0.1.3"
-dyn-hash = "1.0.0"
-indexmap = "2.13.0"
 clap = { version = "4", features = ["derive"] }
-ixa = { version = "2.0.0-beta2", default-features = false, features = ["logging", "debugger", "progress_bar"] }
-ixa-fips = "0.1.4"
+ixa = { git = "https://github.com/CDCgov/ixa", branch = "main", default-features = false, features = ["logging"] }
 rand_distr = "0.5.1"
 serde = "1.0.217"
 serde_json = "1.0.139"
 tempfile = "3.25.0"
 thiserror = "2.0.18"
-strum = "0.28.0"
-strum_macros = "0.28.0"
+memchr = "2.7.6"
+zip = { version = "8.5" }
+once_cell = { version = "1" }
+ouroboros = { version = "0.18.5" }
+strum = { version = "0.28.0", features = ["derive"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -33,8 +31,21 @@ name = "infection_loop"
 harness = false
 
 [features]
+default = ["profiling", "aspr_archive"]
+
 profiling = ["ixa/profiling"]
 bench_old_settings = []
+
+# Runs tests that assume the existence of ASPR Synthetic Population files from ZIP archives
+aspr_tests = ["aspr_dataset_tests", "aspr_zip_tests"]
+# Just (unzipped) dataset tests
+aspr_dataset_tests = ["aspr_archive"]
+# Just zipped dataset tests
+aspr_zip_tests = ["aspr_archive"]
+
+# Historical compatibility feature; archive-backed ASPR loading is now always enabled.
+# Keep this: We will want this feature gate again when we backport the code to `ixa-fips`.
+aspr_archive = []
 
 [profile.release]
 opt-level = 3
