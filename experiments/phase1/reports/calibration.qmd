@@ -139,34 +139,31 @@ imported_cases_timeseries_list = []
 prevalence_report_list = []
 for particle_dir in projections_path.iterdir():
     if particle_dir.is_dir():
-        try:
-            imported_cases_timeseries = pl.read_csv(particle_dir / "imported_cases_timeseries.csv")
-            aggregated_deaths_report = pl.read_csv(particle_dir / "aggregated_deaths_report.csv")
-            imported_cases_timeseries = imported_cases_timeseries.with_columns(
-                pl.col("imported_infections").cum_sum().over(order_by="time").alias("cumulative_imported_infections"),
-                pl.lit(particle_dir.name).alias("seed")
-            )
-            aggregated_deaths_report = aggregated_deaths_report.with_columns(
-                pl.col("count").cum_sum().over(order_by="t_upper").alias("cumulative_count"),
-                pl.lit(particle_dir.name).alias("seed")
-            )
-            prevalence_report = pl.read_csv(particle_dir / "person_property_count.csv").with_columns(
-                pl.when(pl.col('age') < 18).then(pl.lit("Age0To17"))
-                .when((pl.col('age') >= 18) & (pl.col('age') < 50)).then(pl.lit("Age18to49"))
-                .when((pl.col('age') >= 50) & (pl.col('age') < 65)).then(pl.lit("Age50to64"))
-                .otherwise(pl.lit("Age65Plus")).alias("age_group")
-            ).group_by(
-                't', 'age_group', 'symptom_status', 'infection_status'
-            ).agg(
-                pl.sum('count').alias('count')
-            ).sort(['t', 'age_group', 'symptom_status', 'infection_status']).with_columns(
-                pl.lit(particle_dir.name).alias("seed")
-            )
-            imported_cases_timeseries_list.append(imported_cases_timeseries)
-            aggregated_deaths_report_list.append(aggregated_deaths_report)
-            prevalence_report_list.append(prevalence_report)
-        except (pl.exceptions.NoDataError, FileNotFoundError) as e:
-            print(f"No data found for particle directory: {particle_dir}, skipping.")
+        imported_cases_timeseries = pl.read_csv(particle_dir / "imported_cases_timeseries.csv")
+        aggregated_deaths_report = pl.read_csv(particle_dir / "aggregated_deaths_report.csv")
+        imported_cases_timeseries = imported_cases_timeseries.with_columns(
+            pl.col("imported_infections").cum_sum().over(order_by="time").alias("cumulative_imported_infections"),
+            pl.lit(particle_dir.name).alias("seed")
+        )
+        aggregated_deaths_report = aggregated_deaths_report.with_columns(
+            pl.col("count").cum_sum().over(order_by="t_upper").alias("cumulative_count"),
+            pl.lit(particle_dir.name).alias("seed")
+        )
+        prevalence_report = pl.read_csv(particle_dir / "person_property_count.csv").with_columns(
+            pl.when(pl.col('age') < 18).then(pl.lit("Age0To17"))
+            .when((pl.col('age') >= 18) & (pl.col('age') < 50)).then(pl.lit("Age18to49"))
+            .when((pl.col('age') >= 50) & (pl.col('age') < 65)).then(pl.lit("Age50to64"))
+            .otherwise(pl.lit("Age65Plus")).alias("age_group")
+        ).group_by(
+            't', 'age_group', 'symptom_status', 'infection_status'
+        ).agg(
+            pl.sum('count').alias('count')
+        ).sort(['t', 'age_group', 'symptom_status', 'infection_status']).with_columns(
+            pl.lit(particle_dir.name).alias("seed")
+        )
+        imported_cases_timeseries_list.append(imported_cases_timeseries)
+        aggregated_deaths_report_list.append(aggregated_deaths_report)
+        prevalence_report_list.append(prevalence_report)
 
 
 death_data = pl.concat(aggregated_deaths_report_list)
@@ -299,7 +296,7 @@ g = sns.relplot(
 g.set(ylim=(0,1))
 
 g.figure.suptitle(
-    f"Observing symptomatic cases in simulations",
+    "Observing symptomatic cases in simulations",
     fontsize='x-large',
     fontweight='bold'
 )
