@@ -151,8 +151,9 @@ async def simulate_particles(
 
     with reporter.create_task_progress() as progress:
         assert executor is not None
+        start = time.time()
         handle = reporter.start_task(
-            description="Simulating results from model",
+            description="Simulating results from model... ",
             progress=progress,
             total=len(particles),
         )
@@ -175,23 +176,25 @@ async def simulate_particles(
             for task, _ in tasks:
                 task.cancel()
 
+        end = time.time()
+        reporter.print_run_summary(end - start, process_name="Simulations")
 
-start = time.time()
 
 if parallel:
     run_coroutine_from_sync(
         lambda: simulate_particles(
             executor=ThreadPoolExecutor(max_workers=max_workers),
             chunksize=1,
-            reporter=SamplerReporter(),
+            reporter=SamplerReporter(verbose=True),
             particles=particles,
         )
     )
 else:
-    reporter = SamplerReporter()
+    reporter = SamplerReporter(verbose=True)
     with reporter.create_task_progress() as progress:
+        start = time.time()
         handle = reporter.start_task(
-            description="Simulating results from model",
+            description="Simulating results from model... ",
             progress=progress,
             total=len(particles),
         )
@@ -199,5 +202,5 @@ else:
             run_particle(particle=particle)
             reporter.advance(handle)
 
-end = time.time()
-print(f"Total execution time: {end - start:.2f} seconds")
+        end = time.time()
+        reporter.print_run_summary(end - start, process_name="Simulations")
