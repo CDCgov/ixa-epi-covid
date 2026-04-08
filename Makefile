@@ -69,10 +69,16 @@ BASE ?= HEAD
 bench-compare: input/synth_pop_people_WY_10_000.csv input/synth_pop_people_WY_100_000.csv
 	uv run scripts/bench_compare.py $(BASE)
 
-calibrate-phase-1: ./experiments/phase1/input/priors.json ./experiments/phase1/input/default_params.json
+TARGET_RESULTS = ./experiments/phase1/calibration/output_indiana/results.pkl
+calibrate-phase-1: $(TARGET_RESULTS)
+$(TARGET_RESULTS): ./experiments/phase1/input/priors.json ./experiments/phase1/input/default_params.json
 	uv run cargo build -r
-	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/prod-config.yaml
+	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/prod-config.yaml -o ./experiments/phase1/calibration/output_indiana
+
+calibrate-phase-1-smc: ./experiments/phase1/input/priors.json ./experiments/phase1/input/default_params.json
+	uv run cargo build -r
+	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/prod-smc-config.yaml -o ./experiments/phase1/calibration/smc
 
 calibrate-phase-1-dev: ./experiments/phase1/input/priors.json ./experiments/phase1/input/default_params.json
 	uv run cargo build -r
-	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/dev-config.yaml
+	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/dev-config.yaml -o ./experiments/phase1/calibration/dev_$(SIZE) --default-population-size-dev $(SIZE)
