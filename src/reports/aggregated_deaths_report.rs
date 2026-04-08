@@ -79,7 +79,7 @@ mod test {
         population_loader::{Age, Person, PersonId},
         rate_fns::load_rate_fns,
         reports::ReportParams,
-        symptom_status_manager::SymptomStatus,
+        symptom_status_manager::SymptomData,
     };
     use ixa::{csv, prelude::*};
     use std::path::PathBuf;
@@ -122,7 +122,15 @@ mod test {
         let time_of_death = 1.0;
 
         context.add_plan(time_of_death, move |context| {
-            context.set_property::<Person, SymptomStatus>(target, SymptomStatus::Dead);
+            context.set_property::<Person, SymptomData>(
+                target,
+                SymptomData::Dead {
+                    mild_time: 0.0,
+                    severe_time: 0.0,
+                    critical_time: 0.0,
+                    dead_time: time_of_death,
+                },
+            );
         });
         context.execute();
 

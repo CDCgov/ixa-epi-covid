@@ -13,7 +13,7 @@ projections_path = Path(
 figures_path = Path(
     "experiments", "phase1", "projection", directory_name, "figures"
 )
-os.makedirs(figures_path, exist_ok = True)
+os.makedirs(figures_path, exist_ok=True)
 show_plots = False
 
 # Reading in the projection data ------------------------------------------------------
