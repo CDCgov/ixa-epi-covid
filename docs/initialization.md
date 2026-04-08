@@ -8,7 +8,9 @@ Seeded infections are allowed to vary in their remaining duration of infection a
 ## Synthetic populations
 A synthetic population is a structured `.csv` file which defines the population that will be simulated. Each row corresponds to an individual with the properties defined by the columns of the file: `age`, `homeId`, `schoolId`, `workplaceId`. `age` corresponds to the age of the individual. `homeId`, `schoolId`, and `workplaceId` correspond to the home, school, and workplace settings an individual belongs to. An individual must belong to a home setting, but does not need to belong to a school or workplace (this is indicated by an empty entry). An individual's community or census tract group is derived from the individual's `homeId`. The implementation in `population_loader.rs` adds all people to the model, assigns the age person property and setting itinerary to each individual.
 
-The model now expects ASPR-compatible setting identifiers. The geographic prefix remains fixed-width, but the observed ASPR data sometimes uses one extra decimal digit in the sequential suffix when the sequence value exceeds the originally documented width:
+The model now expects setting identifiers compatible with the population record format handled by `pop_reader`. The
+geographic prefix remains fixed-width, but the observed data in commonly used datasets sometimes uses one extra decimal
+digit in the sequential suffix when the sequence value exceeds the originally documented width:
 
 - `homeId`: 11-digit tract + within-tract id
   - published ASPR description: 4-digit suffix

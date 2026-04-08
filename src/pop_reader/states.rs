@@ -76,7 +76,7 @@ impl USState {
     /// Returns true if the given state code is a state or District of Columbia
     #[must_use]
     pub fn is_state_code(value: StateCode) -> bool {
-        value <= 56u8 && ![3u8, 7, 14, 43, 52].contains(&value)
+        value <= 56u8 && ![0u8, 3, 7, 14, 43, 52].contains(&value)
     }
 
     /// Returns the numeric FIPS code for this state.

@@ -73,7 +73,7 @@ mod test {
 
     use crate::Age;
     use crate::pop_reader::{
-        ASPRSettingCategory, FIPSCode,
+        PopulationReaderSettingCategory, FIPSCode,
         parser::{parse_fips_home_id, parse_fips_workplace_id},
     };
     use crate::infection_propagation_loop::InfectionRng;
@@ -104,7 +104,7 @@ mod test {
             home_id.state_code(),
             home_id.county_code(),
             home_id.census_tract_code(),
-            ASPRSettingCategory::CensusTract.into(),
+            PopulationReaderSettingCategory::CensusTract.encode(),
         )
             .unwrap()
         )

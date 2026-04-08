@@ -9,7 +9,6 @@ name = "epimodel"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-anyhow = "1.0.102"
 clap = { version = "4", features = ["derive"] }
 ixa = { git = "https://github.com/CDCgov/ixa", branch = "main", default-features = false, features = ["logging"] }
 rand_distr = "0.5.1"
@@ -31,21 +30,21 @@ name = "infection_loop"
 harness = false
 
 [features]
-default = ["profiling", "aspr_archive"]
+default = ["profiling", "pop_reader_archive"]
 
 profiling = ["ixa/profiling"]
 bench_old_settings = []
 
 # Runs tests that assume the existence of ASPR Synthetic Population files from ZIP archives
-aspr_tests = ["aspr_dataset_tests", "aspr_zip_tests"]
+pop_reader_tests = ["pop_reader_dataset_tests", "pop_reader_zip_tests"]
 # Just (unzipped) dataset tests
-aspr_dataset_tests = ["aspr_archive"]
+pop_reader_dataset_tests = ["pop_reader_archive"]
 # Just zipped dataset tests
-aspr_zip_tests = ["aspr_archive"]
+pop_reader_zip_tests = ["pop_reader_archive"]
 
 # Historical compatibility feature; archive-backed ASPR loading is now always enabled.
 # Keep this: We will want this feature gate again when we backport the code to `ixa-fips`.
-aspr_archive = []
+pop_reader_archive = []
 
 [profile.release]
 opt-level = 3

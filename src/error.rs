@@ -1,7 +1,7 @@
 use ixa::IxaError;
 use thiserror::Error;
 
-use crate::pop_reader::errors::ASPRError;
+use crate::pop_reader::errors::PopulationReaderError;
 
 #[derive(Error, Debug)]
 pub enum ModelError {
@@ -21,5 +21,5 @@ pub enum ModelError {
     IxaCsvError(#[from] ixa::csv::Error),
 
     #[error(transparent)]
-    ASPRError(#[from] ASPRError),
+    PopulationReaderError(#[from] PopulationReaderError),
 }

@@ -1,14 +1,13 @@
 /*!
 
-This module provides routines to make it easier to work with the ASPR synthetic population dataset.
-It provides basic parsing functionality for parsing the codes found in the dataset. The `archive`
-submodule additionally allows for reading CSV files in this format, including files within zipped
-archives. That submodule addresses source files using a configured data path plus file paths that
-are interpreted relative to that data path; see [`archive`] for the detailed path semantics and
-examples.
+This module provides routines for working with a compatible population person-record format.
+It includes parsing functionality for the setting identifiers found in that format. The `archive`
+submodule additionally reads CSV files in this format, including files within zipped archives.
+That submodule addresses source files using a configured data path plus file paths interpreted
+relative to that data path; see [`archive`] for the detailed path semantics and examples.
 
-This dataset encodes `homeId`, `schoolId`, and `workplaceId` using a FIPS geographic region code
-prefix. The published ASPR description says that each row has a single entry for each person with:
+This format encodes `homeId`, `schoolId`, and `workplaceId` using a FIPS geographic region code
+prefix. Compatible rows have a single entry for each person with:
 
 1. **Age** as an integer by single year
 2. **Home ID** as an 11-digit tract plus a 4-digit within-tract sequential id
@@ -17,7 +16,7 @@ prefix. The published ASPR description says that each row has a single entry for
     - Private: 5-digit county + “xprvx” + 4-digit within-county sequential id
 4. **Work ID** as an 11-digit tract plus a 5-digit within-tract sequential id
 
-However, the observed ASPR synthetic population data is slightly wider in some categories:
+However, observed data in commonly used datasets is slightly wider in some categories:
 
 - home IDs may use a 5-digit suffix when the within-tract sequence exceeds 9,999
 - public-school IDs may use a 4-digit suffix when the within-tract sequence exceeds 999
@@ -35,6 +34,7 @@ This type is re-exported for convenience.
 
 use std::fmt::{Display, Write};
 
+use strum::FromRepr;
 
 pub use fips_code::FIPSCode;
 
@@ -61,16 +61,16 @@ pub type IdCode = u16;
 pub type DataCode = u16;
 
 
-/// A record representing a person in the ASPR synthetic population dataset.
+/// A parsed person record from the supported CSV format.
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Default, Debug)]
-pub struct ASPRPersonRecord {
+pub struct PersonRecord {
     pub age: u8,
     pub home_id: Option<FIPSCode>,
     pub school_id: Option<FIPSCode>,
     pub work_id: Option<FIPSCode>,
 }
 
-impl Display for ASPRPersonRecord {
+impl Display for PersonRecord {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Age: {}", self.age)?;
 
@@ -88,10 +88,10 @@ impl Display for ASPRPersonRecord {
     }
 }
 
-/// A `ASPRSettingCategory` is not a FIPS code but is implicit in the ASPR synthetic population dataset
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Default, Debug)]
+/// A `PopulationReaderSettingCategory` is not itself a FIPS code, but it is implicit in this population record format.
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Default, Debug, FromRepr)]
 #[repr(u8)]
-pub enum ASPRSettingCategory {
+pub enum PopulationReaderSettingCategory {
     // We expect applications that do not use `SettingCategory` to have this field zeroed out.
     #[default]
     Unspecified = 0,
@@ -102,18 +102,7 @@ pub enum ASPRSettingCategory {
     CensusTract,
 }
 
-impl ASPRSettingCategory {
-    /// Decode a numeric value to a `SettingCategory`
-    #[inline(always)]
-    pub fn decode(value: SettingCategoryCode) -> Option<Self> {
-        // ToDo: This isn't great, as we need to keep this limit updated with the number of variants in `SettingCategory`.
-        if value <= 5 {
-            Some(unsafe { std::mem::transmute(value) })
-        } else {
-            None
-        }
-    }
-
+impl PopulationReaderSettingCategory {
     /// Encode a `SettingCategory` as a `u8`
     #[inline(always)]
     pub fn encode(self) -> SettingCategoryCode {
@@ -121,62 +110,56 @@ impl ASPRSettingCategory {
     }
 }
 
-impl From<ASPRSettingCategory> for SettingCategoryCode {
-    fn from(category: ASPRSettingCategory) -> Self {
-        category.encode()
-    }
-}
-
-impl Display for ASPRSettingCategory {
+impl Display for PopulationReaderSettingCategory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ASPRSettingCategory::Unspecified => write!(f, "Unspecified"),
-            ASPRSettingCategory::Home => write!(f, "Home"),
-            ASPRSettingCategory::Workplace => write!(f, "Workplace"),
-            ASPRSettingCategory::PublicSchool => write!(f, "Public School"),
-            ASPRSettingCategory::PrivateSchool => write!(f, "Private School"),
-            ASPRSettingCategory::CensusTract => write!(f, "Census Tract"),
+            PopulationReaderSettingCategory::Unspecified => write!(f, "Unspecified"),
+            PopulationReaderSettingCategory::Home => write!(f, "Home"),
+            PopulationReaderSettingCategory::Workplace => write!(f, "Workplace"),
+            PopulationReaderSettingCategory::PublicSchool => write!(f, "Public School"),
+            PopulationReaderSettingCategory::PrivateSchool => write!(f, "Private School"),
+            PopulationReaderSettingCategory::CensusTract => write!(f, "Census Tract"),
         }
     }
 }
 
-/// This formats the FIPS code as a string according to the ASPR format, which augments FIPS region
-/// codes with setting IDs. The category code and "data" field are not represented in this format.
-/// However, this function should round-trip for IDs from the ASPR synthetic population dataset.
+/// Serializes a `FIPSCode` value to the same string format expected by the population file
+/// reader and parser code. The category code and "data" field are not represented in this format.
+/// This should round-trip for supported IDs, including ASPR-compatible dataset values.
 fn format_as_fips_code<W: Write>(f: &mut W, fips_code: FIPSCode) -> std::fmt::Result {
     write!(f, "{:02}", fips_code.state_code())?;
     write!(f, "{:03}", fips_code.county_code())?;
 
-    match ASPRSettingCategory::decode(fips_code.category_code()) {
-        Some(ASPRSettingCategory::Home) => {
+    match PopulationReaderSettingCategory::from_repr(fips_code.category_code()) {
+        Some(PopulationReaderSettingCategory::Home) => {
             // Published form: 11-digit tract + 4-digit within-tract sequential id.
             // The width is a minimum, so observed 5-digit suffixes are preserved.
             write!(f, "{:06}", fips_code.census_tract_code())?;
             write!(f, "{:04}", fips_code.id())
         }
 
-        Some(ASPRSettingCategory::Workplace) => {
+        Some(PopulationReaderSettingCategory::Workplace) => {
             // Published form: 11-digit tract + 5-digit within-tract sequential id.
             write!(f, "{:06}", fips_code.census_tract_code())?;
             write!(f, "{:05}", fips_code.id())
         }
 
-        Some(ASPRSettingCategory::PublicSchool) => {
+        Some(PopulationReaderSettingCategory::PublicSchool) => {
             // Published form: 11-digit tract + 3-digit within-tract sequential id.
             // The width is a minimum, so observed 4-digit suffixes are preserved.
             write!(f, "{:06}", fips_code.census_tract_code())?;
             write!(f, "{:03}", fips_code.id())
         }
 
-        Some(ASPRSettingCategory::PrivateSchool) => {
+        Some(PopulationReaderSettingCategory::PrivateSchool) => {
             // Published form: 5-digit county + “xprvx” + 4-digit within-county sequential id
             write!(f, "xprvx")?;
             write!(f, "{:04}", fips_code.id())
         }
 
         // ToDo: Give a reasonable representation for these categories.
-        Some(ASPRSettingCategory::Unspecified)
-        | Some(ASPRSettingCategory::CensusTract)
+        Some(PopulationReaderSettingCategory::Unspecified)
+        | Some(PopulationReaderSettingCategory::CensusTract)
         | None => Err(std::fmt::Error),
     }
     // The category code and "data" field are not represented in this format.
@@ -184,6 +167,8 @@ fn format_as_fips_code<W: Write>(f: &mut W, fips_code: FIPSCode) -> std::fmt::Re
     // write!(f, "{:03}", fips_code.data())?;
 }
 
+/// Serializes a `FIPSCode` value to a `String` in the same format expected by the population
+/// file reader and parser code.
 fn format_as_fips_code_string(fips_code: FIPSCode) -> String {
     let mut buf = String::new();
     format_as_fips_code(&mut buf, fips_code).unwrap();

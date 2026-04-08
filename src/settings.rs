@@ -385,7 +385,7 @@ mod test {
     use super::*;
     use crate::{
         Age, Params,
-        pop_reader::{ASPRSettingCategory, FIPSCode, parser::{parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id}},
+        pop_reader::{PopulationReaderSettingCategory, FIPSCode, parser::{parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id}},
         parameters::{GlobalParams, SettingProperties},
     };
     use ixa::{HashMap, assert_almost_eq};
@@ -408,7 +408,7 @@ mod test {
             home_id.state_code(),
             home_id.county_code(),
             home_id.census_tract_code(),
-            ASPRSettingCategory::CensusTract.into(),
+            PopulationReaderSettingCategory::CensusTract.encode(),
         )
         .unwrap()
         )

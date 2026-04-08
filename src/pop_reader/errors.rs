@@ -5,16 +5,16 @@ use super::{CountyCode, DataCode, IdCode, SettingCategoryCode, StateCode, TractC
 use zip::result::ZipError;
 
 #[derive(Debug, Error)]
-pub enum ASPRError {
-    #[error("ASPR IO error: {0}")]
+pub enum PopulationReaderError {
+    #[error("population reader IO error: {0}")]
     Io(#[source] IoError),
-    #[error("ASPR file error for {path:?}: {source}")]
+    #[error("population reader file error for {path:?}: {source}")]
     FileError {
         path: PathBuf,
         #[source]
-        source: Box<ASPRError>,
+        source: Box<PopulationReaderError>,
     },
-    #[error("ASPR parse error in {field_name} on line {line_number}: {source}")]
+    #[error("population reader parse error in {field_name} on line {line_number}: {source}")]
     Parse {
         field_name: &'static str,
         line_number: usize,
@@ -22,16 +22,16 @@ pub enum ASPRError {
         source: FIPSParserError,
     },
     #[error(
-        "ASPR wrong field count on line {line_number}: expected {expected}, found {found}"
+        "population reader wrong field count on line {line_number}: expected {expected}, found {found}"
     )]
     WrongFieldCount {
         expected: usize,
         found: usize,
         line_number: usize,
     },
-    #[error("ASPR data file is empty: {0}")]
+    #[error("population reader data file is empty: {0}")]
     EmptyFile(PathBuf),
-    #[error("ASPR Zip error: {0}")]
+    #[error("population reader zip error: {0}")]
     ZipError(#[source] ZipError),
 }
 

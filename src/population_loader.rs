@@ -4,8 +4,8 @@ use serde::{Serialize};
 use std::path::PathBuf;
 
 use crate::pop_reader::{
-    ASPRPersonRecord, ASPRSettingCategory, FIPSCode,
-    archive::{ASPRRecordIterator, set_aspr_data_path},
+    PersonRecord, PopulationReaderSettingCategory, FIPSCode,
+    archive::{PersonRecordIterator, set_data_path},
 };
 use crate::error::ModelError;
 use crate::parameters::ContextParametersExt;
@@ -78,16 +78,16 @@ fn community_code_from_home(home_id: SettingCode) -> SettingCode {
         home_id.state_code(),
         home_id.county_code(),
         home_id.census_tract_code(),
-        ASPRSettingCategory::CensusTract.into(),
+        PopulationReaderSettingCategory::CensusTract.encode(),
     ).unwrap())
 }
 
 fn create_person_from_record(
     context: &mut Context,
-    person_record: ASPRPersonRecord,
+    person_record: PersonRecord,
 ) -> Result<(), ModelError> {
     let home_id = person_record.home_id.ok_or_else(|| {
-        ModelError::ModelError("ASPR person record is missing required home_id".to_string())
+        ModelError::ModelError("person record is missing required home_id".to_string())
     })?;
     let home_id = SettingCode(home_id);
     let community_id = community_code_from_home(home_id);
@@ -107,9 +107,9 @@ fn load_synth_population(
     context: &mut Context,
     synth_input_file: PathBuf,
 ) -> Result<(), ModelError> {
-    set_aspr_data_path(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
+    set_data_path(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
 
-    let records = ASPRRecordIterator::from_path(synth_input_file)?;
+    let records = PersonRecordIterator::from_path(synth_input_file)?;
     for record in records {
         create_person_from_record(context, record?)?;
     }
@@ -136,7 +136,7 @@ pub fn init(
 mod test {
     use super::*;
     use crate::pop_reader::{
-        errors::ASPRError,
+        errors::PopulationReaderError,
         parser::{parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id},
     };
     use crate::parameters::{GlobalParams, Params, SettingProperties};
@@ -258,7 +258,7 @@ mod test {
 
         assert!(matches!(
             error,
-            ModelError::ASPRError(ASPRError::Parse {
+            ModelError::PopulationReaderError(PopulationReaderError::Parse {
                 field_name: "homeId",
                 line_number: 2,
                 ..
@@ -271,7 +271,7 @@ mod test {
         let mut context = setup();
         let home_code = make_home_id(b"160379602000001");
         let school_code = make_home_id(b"16037960200002");
-        let record = ASPRPersonRecord{
+        let record = PersonRecord{
             age: 43,
             home_id: Some(home_code.0),
             school_id: Some(school_code.0),

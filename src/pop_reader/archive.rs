@@ -1,9 +1,9 @@
 /*!
-This module provides facilities to read CSV files in the ASPR person record format.
+This module provides facilities to read CSV files in the supported person record format.
 
 Throughout this module, source data files are addressed using two paths:
 
-- the **data path**, configured with [`set_aspr_data_path`] and retrieved with [`get_aspr_data_path`]
+- the **data path**, configured with [`set_data_path`] and retrieved with [`get_data_path`]
 - the **file path**, which is always interpreted relative to that data path
 
 The data path can have one of two forms:
@@ -16,40 +16,32 @@ The same file path is interpreted differently depending on which kind of data pa
 - if the data path is a directory, the final source file is `data_path.join(file_path)`
 - if the data path is a zip archive, the file path is the name of the file inside the archive
 
-For example, when reading the ASPR synthetic population dataset itself, if the file path is
-`all_states/ak.csv`, then:
+For example, when reading a dataset, if the file path is `all_states/ak.csv`, then:
 
 - with data path `/path/to/ASPR_Synthetic_Population`, the source file is
   `/path/to/ASPR_Synthetic_Population/all_states/ak.csv`
 - with data path `/path/to/ASPR_Synthetic_Population.zip`, the source file is the archive member
   named `all_states/ak.csv`
 
-Set and get the ASPR data path with the `set_aspr_data_path` and `get_aspr_data_path` functions:
+Set and get the data path with the `set_data_path` and `get_data_path` functions:
 
 ```rust,ignore
-let current_path = get_aspr_data_path();
-println!("The current ASPR data path: {:?}", current_path);
+let current_path = get_data_path();
+println!("The current data path: {:?}", current_path);
 
-set_aspr_data_path(PathBuf::from("../CDC/data/ASPR_Synthetic_Population.zip"));
-let new_path = get_aspr_data_path();
-println!("The new ASPR data path: {:?}", new_path);
+set_data_path(PathBuf::from("../CDC/data/ASPR_Synthetic_Population.zip"));
+let new_path = get_data_path();
+println!("The new data path: {:?}", new_path);
 ```
 
-For ASPR-specific conveniences such as [`ALL_STATES_DIR`], [`CBSA_ALL_DIR`],
-[`CBSA_ONLY_RESIDENTS_DIR`], [`NON_CBSA_RESIDENTS_DIR`], and [`MULTI_STATE_DIR`], the assumption is
-that the data path is either:
-
-- `path/to/root/of/unzipped/aspr/dataset`
-- `path/to/ASPR_Synthetic_Population.zip`
-
 You can iterate over the records in a CSV file by passing a file path relative to the configured
-data path to [`ASPRRecordIterator::from_path`]:
+data path to [`PersonRecordIterator::from_path`]:
 
 ```ignore
-# use ixa_aspr::archive::{CBSA_ALL_DIR, ASPRRecordIterator};
+# use crate::pop_reader::archive::PersonRecordIterator;
 # use std::path::PathBuf;
-let file_path = PathBuf::from(CBSA_ALL_DIR).join("AK/Ketchikan AK.csv");
-let records = ASPRRecordIterator::from_path(file_path);
+let file_path = PathBuf::from("cbsa_all_work_school_household").join("AK/Ketchikan AK.csv");
+let records = PersonRecordIterator::from_path(file_path);
 // Do something with the records...
 ```
 
@@ -57,25 +49,16 @@ If the data path is the root of an unzipped dataset, that file path refers to
 `cbsa_all_work_school_household/AK/Ketchikan AK.csv` under that directory. If the data path is a zip
 archive, the same file path refers to the archive member with that name.
 
-The [`ASPRRecordIterator::state_population`] convenience method reads the file whose file path is
-`all_states/{state}.csv` relative to the configured data path. This is an ASPR-specific convenience
-and therefore assumes the data path points at either the root of the unzipped ASPR synthetic
-population dataset or the corresponding zip archive.
-
-```ignore
-# use ixa_aspr::archive::{ASPRRecordIterator};
-# use ixa_fips::USState;
-let records = ASPRRecordIterator::state_population(USState::AK);
-// Do something with the records...
-```
-
 You can get a list of CSV file paths in a given subdirectory with [`iter_csv_files`]. The returned
 paths are always relative to the configured data path, so they can be passed directly to
-[`ASPRRecordIterator::from_path`] or [`ASPRRecordIterator::from_file_iterator`]:
+[`PersonRecordIterator::from_path`] or [`PersonRecordIterator::from_file_iterator`]:
 
 ```ignore
-# use ixa_aspr::archive::{iter_csv_files, ALL_STATES_DIR, ASPRRecordIterator};
-let records = ASPRRecordIterator::from_file_iterator(iter_csv_files(ALL_STATES_DIR).unwrap());
+# use crate::pop_reader::archive::PersonRecordIterator;
+# use crate::pop_reader::archive::iter_csv_files;
+let records = PersonRecordIterator::from_file_iterator(
+    iter_csv_files("all_states").unwrap(),
+);
 // Do something with the records...
 ```
 */
@@ -92,60 +75,43 @@ use ouroboros::self_referencing;
 use zip::{read::ZipFile, ZipArchive};
 
 use super::{
-    errors::{ASPRError, FIPSParserError},
+    errors::{PopulationReaderError, FIPSParserError},
     parser::{
         parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id, parse_integer,
     },
-    states::USState,
-    ASPRPersonRecord,
+    PersonRecord,
 };
 
 /// The size of the buffer used to read lines from source data files in the expected format. This is
 /// chosen to be large enough to keep rebuffering to a minimum, which in turn minimizes the
 /// probability that a line spans a buffer window boundary and thus has to be copied to scratch
 /// memory for processing.
-const ASPR_READER_CAPACITY: usize = 256 * 1024;
-/// The number of fields in each ASPR record: age, homeId, schoolId, workplaceId.
-const ASPR_EXPECTED_FIELD_COUNT: usize = 4;
+const READER_CAPACITY: usize = 256 * 1024;
+/// The number of fields in each record: age, homeId, schoolId, workplaceId.
+const EXPECTED_FIELD_COUNT: usize = 4;
 
-/// ASPR synthetic population dataset directory name, relative to the dataset root or zip archive
-/// root, containing one CSV file per state.
-pub const ALL_STATES_DIR: &str = "all_states";
-/// ASPR synthetic population dataset directory name, relative to the dataset root or zip archive
-/// root, containing CBSA files with all work, school, and household assignments.
-pub const CBSA_ALL_DIR: &str = "cbsa_all_work_school_household";
-/// ASPR synthetic population dataset directory name, relative to the dataset root or zip archive
-/// root, containing CBSA files restricted to residents.
-pub const CBSA_ONLY_RESIDENTS_DIR: &str = "cbsa_only_residents";
-/// ASPR synthetic population dataset directory name, relative to the dataset root or zip archive
-/// root, used beneath either CBSA directory for non-CBSA residents.
-pub const NON_CBSA_RESIDENTS_DIR: &str = "non_CBSA_residents";
-/// ASPR synthetic population dataset directory name, relative to the dataset root or zip archive
-/// root, used beneath either CBSA directory for multi-state areas.
-pub const MULTI_STATE_DIR: &str = "Multi-state";
+/// Default data path. By default this points at the root of a local unzipped dataset.
+const DEFAULT_DATA_PATH: &str = "../CDC/data/ASPR_Synthetic_Population";
+// ToDo: Get the data path from an environment variable.
+static DATA_PATH: Lazy<RwLock<PathBuf>> =
+    Lazy::new(|| RwLock::new(PathBuf::from(DEFAULT_DATA_PATH)));
 
-/// Default ASPR data path. By default this points at the root of a local unzipped ASPR dataset.
-const DEFAULT_ASPR_DATA_PATH: &str = "../CDC/data/ASPR_Synthetic_Population";
-// ToDo: Get the ASPR data path from an environment variable.
-static ASPR_DATA_PATH: Lazy<RwLock<PathBuf>> =
-    Lazy::new(|| RwLock::new(PathBuf::from(DEFAULT_ASPR_DATA_PATH)));
-
-/// Sets the ASPR data path.
+/// Sets the data path.
 ///
 /// The data path may be either a directory containing source files in the expected format or the
 /// path to a zip archive containing such files. File paths accepted elsewhere in this module are
 /// always interpreted relative to this data path.
-pub fn set_aspr_data_path(path: PathBuf) {
-    *ASPR_DATA_PATH.write().unwrap() = path;
+pub fn set_data_path(path: PathBuf) {
+    *DATA_PATH.write().unwrap() = path;
 }
 
-/// Returns the current ASPR data path.
+/// Returns the current data path.
 ///
 /// The returned path is interpreted either as a directory containing source files in the expected
 /// format or as the path to a zip archive containing such files. File paths accepted elsewhere in
 /// this module are always interpreted relative to this data path.
-pub fn get_aspr_data_path() -> PathBuf {
-    ASPR_DATA_PATH.read().unwrap().clone()
+pub fn get_data_path() -> PathBuf {
+    DATA_PATH.read().unwrap().clone()
 }
 
 /// Byte-oriented line reader over a particular source data file.
@@ -157,7 +123,7 @@ struct FileLineSource {
 impl FileLineSource {
     fn from_file(file: File) -> Self {
         Self {
-            reader: BufReader::with_capacity(ASPR_READER_CAPACITY, file),
+            reader: BufReader::with_capacity(READER_CAPACITY, file),
             scratch: Vec::new(),
         }
     }
@@ -180,19 +146,19 @@ struct ZipLineSource {
 impl ZipLineSource {
     /// Constructs a `ZipLineSource` over the lines of the file whose file path is `path` inside the
     /// zip archive at `archive_path`.
-    fn from_path(archive_path: PathBuf, path: PathBuf) -> Result<Self, ASPRError> {
-        let file = File::open(archive_path).map_err(ASPRError::Io)?;
-        let reader = BufReader::with_capacity(ASPR_READER_CAPACITY, file);
-        let mut maybe_error: Option<ASPRError> = None;
+    fn from_path(archive_path: PathBuf, path: PathBuf) -> Result<Self, PopulationReaderError> {
+        let file = File::open(archive_path).map_err(PopulationReaderError::Io)?;
+        let reader = BufReader::with_capacity(READER_CAPACITY, file);
+        let mut maybe_error: Option<PopulationReaderError> = None;
 
         let zip_line_source = ZipLineSourceBuilder {
-            _archive: ZipArchive::new(reader).map_err(ASPRError::ZipError)?,
+            _archive: ZipArchive::new(reader).map_err(PopulationReaderError::ZipError)?,
             scratch: Vec::new(),
             line_reader_builder: |archive: &mut ZipArchive<BufReader<File>>| {
                 match archive.by_name(path.to_str().unwrap()) {
-                    Ok(zipped_file) => Some(BufReader::with_capacity(ASPR_READER_CAPACITY, zipped_file)),
+                    Ok(zipped_file) => Some(BufReader::with_capacity(READER_CAPACITY, zipped_file)),
                     Err(error) => {
-                        maybe_error = Some(ASPRError::ZipError(error));
+                        maybe_error = Some(PopulationReaderError::ZipError(error));
                         None
                     }
                 }
@@ -217,12 +183,12 @@ enum LineIterator {
 
 impl LineIterator {
     /// Returns a line reader over the file whose file path is `file_path` relative to the current
-    /// ASPR data path.
+    /// data path.
     ///
-    /// If the ASPR data path is a directory, the source file is `data_path.join(file_path)`. If the
-    /// ASPR data path is a zip archive, `file_path` is the name of the file inside the archive.
-    fn from_path(file_path: PathBuf) -> Result<Self, ASPRError> {
-        let path = get_aspr_data_path();
+    /// If the data path is a directory, the source file is `data_path.join(file_path)`. If the
+    /// data path is a zip archive, `file_path` is the name of the file inside the archive.
+    fn from_path(file_path: PathBuf) -> Result<Self, PopulationReaderError> {
+        let path = get_data_path();
 
         if path
             .extension()
@@ -231,15 +197,15 @@ impl LineIterator {
         {
             Ok(Self::Zip(ZipLineSource::from_path(path, file_path)?))
         } else {
-            let file = File::open(path.join(file_path)).map_err(ASPRError::Io)?;
+            let file = File::open(path.join(file_path)).map_err(PopulationReaderError::Io)?;
             Ok(Self::File(FileLineSource::from_file(file)))
         }
     }
 
     fn with_next_line<R>(
         &mut self,
-        process_line: impl FnOnce(&[u8]) -> Result<R, ASPRError>,
-    ) -> Result<Option<R>, ASPRError> {
+        process_line: impl FnOnce(&[u8]) -> Result<R, PopulationReaderError>,
+    ) -> Result<Option<R>, PopulationReaderError> {
         match self {
 
             Self::File(source) => {
@@ -268,15 +234,15 @@ impl LineIterator {
 fn with_next_line_from_reader<R, Reader>(
     reader: &mut Reader,
     scratch: &mut Vec<u8>,
-    process_line: impl FnOnce(&[u8]) -> Result<R, ASPRError>,
-) -> Result<Option<R>, ASPRError>
+    process_line: impl FnOnce(&[u8]) -> Result<R, PopulationReaderError>,
+) -> Result<Option<R>, PopulationReaderError>
 where
     Reader: BufRead,
 {
     scratch.clear();
 
     loop {
-        let buf = reader.fill_buf().map_err(ASPRError::Io)?;
+        let buf = reader.fill_buf().map_err(PopulationReaderError::Io)?;
 
         if buf.is_empty() {
             if scratch.is_empty() {
@@ -315,24 +281,24 @@ where
     }
 }
 
-/// Returns an iterator over CSV file paths in the given subdirectory of the current ASPR data path.
+/// Returns an iterator over CSV file paths in the given subdirectory of the current data path.
 ///
-/// `subdirectory` is itself interpreted as a file path relative to the configured ASPR data path. The returned paths
-/// are always relative to the configured ASPR data path as well, regardless of whether the data path is a directory or
+/// `subdirectory` is itself interpreted as a file path relative to the configured data path. The returned paths
+/// are always relative to the configured data path as well, regardless of whether the data path is a directory or
 /// a zip archive.
 pub fn iter_csv_files(
     subdirectory: &'static str,
-) -> Result<std::vec::IntoIter<PathBuf>, ASPRError> {
-    let mut path = get_aspr_data_path();
+) -> Result<std::vec::IntoIter<PathBuf>, PopulationReaderError> {
+    let mut path = get_data_path();
 
     if path
         .extension()
         .and_then(|ext| ext.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"))
     {
-        let file = File::open(path).map_err(ASPRError::Io)?;
-        let reader = BufReader::with_capacity(ASPR_READER_CAPACITY, file);
-        let archive = ZipArchive::new(reader).map_err(ASPRError::ZipError)?;
+        let file = File::open(path).map_err(PopulationReaderError::Io)?;
+        let reader = BufReader::with_capacity(READER_CAPACITY, file);
+        let archive = ZipArchive::new(reader).map_err(PopulationReaderError::ZipError)?;
 
         let file_names: Vec<PathBuf> = archive
             .file_names()
@@ -343,11 +309,11 @@ pub fn iter_csv_files(
         Ok(file_names.into_iter())
     } else {
         path.push(subdirectory);
-        let entries = path.read_dir().map_err(ASPRError::Io)?;
+        let entries = path.read_dir().map_err(PopulationReaderError::Io)?;
         let mut files = vec![];
 
         for entry in entries {
-            let entry = entry.map_err(ASPRError::Io)?;
+            let entry = entry.map_err(PopulationReaderError::Io)?;
             if entry.path().is_file() {
                 files.push(PathBuf::from(subdirectory).join(entry.file_name()));
             }
@@ -357,25 +323,25 @@ pub fn iter_csv_files(
     }
 }
 
-/// Iterator over ASPR records in a particular data file in the expected ASPR person record format.
+/// Iterator over person records in a particular data file in the supported person record format.
 ///
-/// The constructors on this type interpret file paths relative to the current ASPR data path.
-pub struct ASPRRecordIterator {
+/// The constructors on this type interpret file paths relative to the current data path.
+pub struct PersonRecordIterator {
     line_iter: LineIterator,
     line_number: usize,
     failed: bool,
 }
 
-/// Used internally by `ASPRRecordIterator::from_file_iterator`, FileRecordIterator exists to unify
+/// Used internally by `PersonRecordIterator::from_file_iterator`, FileRecordIterator exists to unify
 /// “many records from a file” and “one file-level error for a failed file” into a single iterator
 /// type that from_file_iterator can flatten lazily.
 enum FileRecordIterator {
-    Records(ASPRRecordIterator),
-    Error(Option<ASPRError>),
+    Records(PersonRecordIterator),
+    Error(Option<PopulationReaderError>),
 }
 
 impl Iterator for FileRecordIterator {
-    type Item = Result<ASPRPersonRecord, ASPRError>;
+    type Item = Result<PersonRecord, PopulationReaderError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -385,31 +351,18 @@ impl Iterator for FileRecordIterator {
     }
 }
 
-impl ASPRRecordIterator {
-    /// Returns an iterator over the records in the file whose file path is `all_states/{state}.csv` relative to the
-    /// current ASPR data path.
-    ///
-    /// This is an ASPR-specific convenience method and assumes the current ASPR data path points at either the root of
-    /// the unzipped ASPR synthetic population dataset or the corresponding zip archive.
-    pub fn state_population(state: USState) -> Result<Self, ASPRError> {
-        let file_name = format!("{}.csv", state.to_static_str().to_lowercase());
-        let mut path = PathBuf::from(ALL_STATES_DIR);
-        path.push(file_name);
-
-        Self::from_path(path)
-    }
-
-    /// Returns an iterator over the records in the file whose file path is `file_path` relative to the current ASPR
+impl PersonRecordIterator {
+    /// Returns an iterator over the records in the file whose file path is `file_path` relative to the current
     /// data path.
     ///
-    /// If the current ASPR data path is a directory, the source file is `data_path.join(file_path)`. If the current
-    /// ASPR data path is a zip archive, `file_path` is the name of the file inside the archive. This function is
+    /// If the current data path is a directory, the source file is `data_path.join(file_path)`. If the current
+    /// data path is a zip archive, `file_path` is the name of the file inside the archive. This function is
     /// intended to be used with [`iter_csv_files`].
-    pub fn from_path(file_path: PathBuf) -> Result<Self, ASPRError> {
+    pub fn from_path(file_path: PathBuf) -> Result<Self, PopulationReaderError> {
         let mut line_iter = LineIterator::from_path(file_path.clone())?;
 
         if line_iter.with_next_line(|_| Ok(()))?.is_none() {
-            return Err(ASPRError::EmptyFile(file_path));
+            return Err(PopulationReaderError::EmptyFile(file_path));
         }
 
         Ok(Self {
@@ -421,21 +374,23 @@ impl ASPRRecordIterator {
 
     /// Returns an iterator over all the rows of all the files in the iterator.
     ///
-    /// Each path yielded by `files` is interpreted as a file path relative to the current ASPR data path. If a file
-    /// cannot be opened as an [`ASPRRecordIterator`], this iterator yields [`ASPRError::FileError`] for that path.
-    /// This function is intended to be used with [`iter_csv_files`]:
+    /// Each path yielded by `files` is interpreted as a file path relative to the current data
+    /// path. If a file cannot be opened as a [`PersonRecordIterator`], this iterator yields
+    /// [`PopulationReaderError::FileError`] for that path. This function is intended to be used
+    /// with [`iter_csv_files`]:
     ///
     /// ```ignore
-    /// # use ixa_aspr::archive::{iter_csv_files, ALL_STATES_DIR, ASPRRecordIterator};
-    /// let records = ASPRRecordIterator::from_file_iterator(iter_csv_files(ALL_STATES_DIR).unwrap());
+    /// # use crate::pop_reader::archive::PersonRecordIterator;
+    /// # use crate::pop_reader::archive::iter_csv_files;
+    /// let records = PersonRecordIterator::from_file_iterator(iter_csv_files("all_states").unwrap());
     /// ```
     pub fn from_file_iterator(
         files: impl Iterator<Item = PathBuf>,
-    ) -> impl Iterator<Item = Result<ASPRPersonRecord, ASPRError>> {
+    ) -> impl Iterator<Item = Result<PersonRecord, PopulationReaderError>> {
         files
             .map(|path| match Self::from_path(path.clone()) {
                 Ok(records) => FileRecordIterator::Records(records),
-                Err(source) => FileRecordIterator::Error(Some(ASPRError::FileError {
+                Err(source) => FileRecordIterator::Error(Some(PopulationReaderError::FileError {
                     path,
                     source: Box::new(source),
                 })),
@@ -444,8 +399,8 @@ impl ASPRRecordIterator {
     }
 }
 
-impl Iterator for ASPRRecordIterator {
-    type Item = Result<ASPRPersonRecord, ASPRError>;
+impl Iterator for PersonRecordIterator {
+    type Item = Result<PersonRecord, PopulationReaderError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.failed {
@@ -459,14 +414,14 @@ impl Iterator for ASPRRecordIterator {
 
             let field = fields.next_field()?;
             let age = parse_optional_field(field, parse_integer)
-                .map_err(|source| ASPRError::Parse {
+                .map_err(|source| PopulationReaderError::Parse {
                     field_name: "age",
                     line_number,
                     source,
                 })?
                 .ok_or(
                     // The case of an empty `age` field, which is an error.
-                    ASPRError::Parse {
+                    PopulationReaderError::Parse {
                         field_name: "age",
                         line_number,
                         source: FIPSParserError::InvalidLength {
@@ -477,7 +432,7 @@ impl Iterator for ASPRRecordIterator {
                 )?;
             let age = u8::try_from(age).map_err(
                 // The case of an `age` field that is too large.
-                |_| ASPRError::Parse {
+                |_| PopulationReaderError::Parse {
                     field_name: "age",
                     line_number,
                     source: FIPSParserError::ValueExceedsCapacity {
@@ -488,27 +443,27 @@ impl Iterator for ASPRRecordIterator {
             )?;
 
             let home_id = parse_optional_field(fields.next_field()?, parse_fips_home_id)
-                .map_err(|source| ASPRError::Parse {
+                .map_err(|source| PopulationReaderError::Parse {
                     field_name: "homeId",
                     line_number,
                     source,
                 })?;
 
             let school_id = parse_optional_field(fields.next_field()?, parse_fips_school_id)
-                .map_err(|source| ASPRError::Parse {
+                .map_err(|source| PopulationReaderError::Parse {
                     field_name: "schoolId",
                     line_number,
                     source,
                 })?;
 
             let work_id = parse_optional_field(fields.final_field()?, parse_fips_workplace_id)
-                .map_err(|source| ASPRError::Parse {
+                .map_err(|source| PopulationReaderError::Parse {
                     field_name: "workplaceId",
                     line_number,
                     source,
                 })?;
 
-            Ok(ASPRPersonRecord {
+            Ok(PersonRecord {
                 age,
                 home_id,
                 school_id,
@@ -521,7 +476,7 @@ impl Iterator for ASPRRecordIterator {
             Err(error) => {
                 if !matches!(
                     error,
-                    ASPRError::Parse { .. } | ASPRError::WrongFieldCount { .. }
+                    PopulationReaderError::Parse { .. } | PopulationReaderError::WrongFieldCount { .. }
                 ) {
                     self.failed = true;
                 }
@@ -567,9 +522,9 @@ impl<'a> FieldCursor<'a> {
 
     /// Returns the next comma-delimited field before the final field, and errors if there are
     /// not enough fields.
-    fn next_field(&mut self) -> Result<&'a [u8], ASPRError> {
-        let comma = memchr(b',', self.rest).ok_or(ASPRError::WrongFieldCount {
-            expected: ASPR_EXPECTED_FIELD_COUNT,
+    fn next_field(&mut self) -> Result<&'a [u8], PopulationReaderError> {
+        let comma = memchr(b',', self.rest).ok_or(PopulationReaderError::WrongFieldCount {
+            expected: EXPECTED_FIELD_COUNT,
             found: self.found + 1,
             line_number: self.line_number,
         })?;
@@ -581,11 +536,11 @@ impl<'a> FieldCursor<'a> {
     }
 
     /// Returns the remaining final field and errors if extra commas remain.
-    fn final_field(self) -> Result<&'a [u8], ASPRError> {
+    fn final_field(self) -> Result<&'a [u8], PopulationReaderError> {
         let extra_commas = self.rest.iter().filter(|&&b| b == b',').count();
         if extra_commas != 0 {
-            return Err(ASPRError::WrongFieldCount {
-                expected: ASPR_EXPECTED_FIELD_COUNT,
+            return Err(PopulationReaderError::WrongFieldCount {
+                expected: EXPECTED_FIELD_COUNT,
                 found: self.found + 1 + extra_commas,
                 line_number: self.line_number,
             });
@@ -595,37 +550,37 @@ impl<'a> FieldCursor<'a> {
     }
 }
 
-#[cfg(all(any(feature = "aspr_tests", feature = "aspr_dataset_tests", feature = "aspr_zip_tests"), test))]
+#[cfg(all(any(feature = "pop_reader_tests", feature = "pop_reader_dataset_tests", feature = "pop_reader_zip_tests"), test))]
 mod tests {
-    //! These tests assume the existence of data at the default ASPR data path and, separately, the existence of the
+    //! These tests assume the existence of data at the default data path and, separately, the existence of the
     //! corresponding zip archive beside it.
     use super::*;
     use std::io::Write;
     use tempfile::tempdir;
     use zip::write::SimpleFileOptions;
 
-    // Enforce serial execution of tests because the "zip" tests mutate the process-global ASPR data path.
+    // Enforce serial execution of tests because the "zip" tests mutate the process-global data path.
     static TEST_MUTEX: Lazy<std::sync::Mutex<()>> = Lazy::new(|| std::sync::Mutex::new(()));
 
-    #[cfg(feature = "aspr_zip_tests")]
+    #[cfg(feature = "pop_reader_zip_tests")]
     fn test_zip_data_path() -> PathBuf {
         let dataset_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join(DEFAULT_ASPR_DATA_PATH)
+            .join(DEFAULT_DATA_PATH)
             .with_extension("zip");
         assert!(dataset_path.exists());
         dataset_path
     }
 
-    #[cfg(feature = "aspr_dataset_tests")]
+    #[cfg(feature = "pop_reader_dataset_tests")]
     fn test_data_path() -> PathBuf {
-        let dataset_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEFAULT_ASPR_DATA_PATH);
+        let dataset_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEFAULT_DATA_PATH);
         assert!(dataset_path.exists());
         dataset_path
     }
 
     fn count_ok_records(
-        mut records: impl Iterator<Item = Result<ASPRPersonRecord, ASPRError>>,
-    ) -> Result<usize, ASPRError> {
+        mut records: impl Iterator<Item = Result<PersonRecord, PopulationReaderError>>,
+    ) -> Result<usize, PopulationReaderError> {
         records.try_fold(0usize, |count, record| record.map(|_| count + 1))
     }
 
@@ -637,7 +592,7 @@ mod tests {
         std::fs::create_dir(&csv_dir).unwrap();
         std::fs::write(csv_dir.join("people.csv"), b"age,homeId,schoolId,workplaceId\n").unwrap();
 
-        set_aspr_data_path(temp_dir.path().to_path_buf());
+        set_data_path(temp_dir.path().to_path_buf());
 
         let files: Vec<PathBuf> = iter_csv_files("subdir").unwrap().collect();
         assert_eq!(files, vec![PathBuf::from("subdir").join("people.csv")]);
@@ -658,7 +613,7 @@ mod tests {
             .unwrap();
         zip_writer.finish().unwrap();
 
-        set_aspr_data_path(zip_path);
+        set_data_path(zip_path);
 
         let files: Vec<PathBuf> = iter_csv_files("subdir").unwrap().collect();
         assert_eq!(files, vec![PathBuf::from("subdir").join("people.csv")]);
@@ -680,14 +635,14 @@ mod tests {
         )
         .unwrap();
 
-        set_aspr_data_path(temp_dir.path().to_path_buf());
+        set_data_path(temp_dir.path().to_path_buf());
 
-        let mut records = ASPRRecordIterator::from_path(PathBuf::from("people.csv")).unwrap();
+        let mut records = PersonRecordIterator::from_path(PathBuf::from("people.csv")).unwrap();
 
         assert_eq!(records.next().unwrap().unwrap().age, 35);
         assert!(matches!(
             records.next().unwrap(),
-            Err(ASPRError::Parse {
+            Err(PopulationReaderError::Parse {
                 field_name: "age",
                 line_number: 3,
                 ..
@@ -720,15 +675,15 @@ mod tests {
             .unwrap();
         zip_writer.finish().unwrap();
 
-        set_aspr_data_path(zip_path);
+        set_data_path(zip_path);
 
-        let mut records = ASPRRecordIterator::from_path(PathBuf::from("people.csv")).unwrap();
+        let mut records = PersonRecordIterator::from_path(PathBuf::from("people.csv")).unwrap();
 
         assert_eq!(records.next().unwrap().unwrap().age, 40);
         assert!(matches!(
             records.next().unwrap(),
-            Err(ASPRError::WrongFieldCount {
-                expected: ASPR_EXPECTED_FIELD_COUNT,
+            Err(PopulationReaderError::WrongFieldCount {
+                expected: EXPECTED_FIELD_COUNT,
                 found: 3,
                 line_number: 3,
             })
@@ -737,38 +692,29 @@ mod tests {
         assert!(records.next().is_none());
     }
 
-    #[cfg(feature = "aspr_dataset_tests")]
+    #[cfg(feature = "pop_reader_dataset_tests")]
     #[test]
-    fn test_record_iterator_state_population() {
+    fn test_record_iterator_reads_real_directory_backed_file() {
         let _guard = TEST_MUTEX.lock();
-        set_aspr_data_path(test_data_path());
+        set_data_path(test_data_path());
 
-        let records = ASPRRecordIterator::state_population(USState::WY).unwrap();
-        assert_eq!(count_ok_records(records).unwrap(), 583200);
-    }
-
-    #[cfg(feature = "aspr_dataset_tests")]
-    #[test]
-    fn test_record_iterator_from_path() {
-        let _guard = TEST_MUTEX.lock();
-        set_aspr_data_path(test_data_path());
-
-        let path = PathBuf::from(CBSA_ALL_DIR).join("AK/Ketchikan AK.csv");
-        let records = match ASPRRecordIterator::from_path(path) {
+        let path = PathBuf::from("cbsa_all_work_school_household").join("AK/Ketchikan AK.csv");
+        let records = match PersonRecordIterator::from_path(path) {
             Ok(records) => records,
             Err(error) => panic!("{error:?}"),
         };
+        // This count is specific to the local ASPR-compatible dataset fixture.
         assert_eq!(count_ok_records(records).unwrap(), 14132);
     }
 
-    #[cfg(feature = "aspr_dataset_tests")]
+    #[cfg(feature = "pop_reader_dataset_tests")]
     #[test]
-    fn test_record_iterator_from_files() {
+    fn test_record_iterator_reads_real_directory_backed_files() {
         let _guard = TEST_MUTEX.lock();
-        set_aspr_data_path(test_data_path());
+        set_data_path(test_data_path());
 
-        let all_path = PathBuf::from(CBSA_ALL_DIR);
-        let only_residents_path = PathBuf::from(CBSA_ONLY_RESIDENTS_DIR);
+        let all_path = PathBuf::from("cbsa_all_work_school_household");
+        let only_residents_path = PathBuf::from("cbsa_only_residents");
         let paths = vec![
             all_path.join("AK/Ketchikan AK.csv"),
             all_path.join("TX/Vernon TX.csv"),
@@ -777,61 +723,32 @@ mod tests {
         ]
         .into_iter();
 
-        let records = ASPRRecordIterator::from_file_iterator(paths);
+        let records = PersonRecordIterator::from_file_iterator(paths);
 
+        // This count is specific to the local ASPR-compatible dataset fixture.
         assert_eq!(count_ok_records(records).unwrap(), 57454);
     }
 
-    #[cfg(feature = "aspr_dataset_tests")]
+    #[cfg(feature = "pop_reader_zip_tests")]
     #[test]
-    fn test_state_row_iter() {
+    fn test_record_iterator_reads_real_zip_backed_file() {
         let _guard = TEST_MUTEX.lock();
-        set_aspr_data_path(test_data_path());
+        set_data_path(test_zip_data_path());
 
-        let state = USState::AL;
-        let state_records = ASPRRecordIterator::state_population(state).unwrap();
-
-        for (idx, record) in state_records.enumerate() {
-            if idx == 10 {
-                break;
-            }
-            println!("{}", record.unwrap());
-        }
-    }
-
-    #[cfg(feature = "aspr_zip_tests")]
-    #[test]
-    fn test_zip_record_iterator_state_population() {
-        let _guard = TEST_MUTEX.lock();
-        set_aspr_data_path(test_zip_data_path());
-
-        let records = match ASPRRecordIterator::state_population(USState::WY) {
-            Ok(records) => records,
-            Err(error) => panic!("{error:?}"),
-        };
-
-        assert_eq!(count_ok_records(records).unwrap(), 583200);
-    }
-
-    #[cfg(feature = "aspr_zip_tests")]
-    #[test]
-    fn test_zip_record_iterator_from_path() {
-        let _guard = TEST_MUTEX.lock();
-        set_aspr_data_path(test_zip_data_path());
-
-        let path = PathBuf::from(CBSA_ALL_DIR).join("AK/Ketchikan AK.csv");
-        let records = ASPRRecordIterator::from_path(path).unwrap();
+        let path = PathBuf::from("cbsa_all_work_school_household").join("AK/Ketchikan AK.csv");
+        let records = PersonRecordIterator::from_path(path).unwrap();
+        // This count is specific to the local ASPR-compatible dataset fixture.
         assert_eq!(count_ok_records(records).unwrap(), 14132);
     }
 
-    #[cfg(feature = "aspr_zip_tests")]
+    #[cfg(feature = "pop_reader_zip_tests")]
     #[test]
-    fn test_zip_record_iterator_from_files() {
+    fn test_record_iterator_reads_real_zip_backed_files() {
         let _guard = TEST_MUTEX.lock();
-        set_aspr_data_path(test_zip_data_path());
+        set_data_path(test_zip_data_path());
 
-        let all_path = PathBuf::from(CBSA_ALL_DIR);
-        let only_residents_path = PathBuf::from(CBSA_ONLY_RESIDENTS_DIR);
+        let all_path = PathBuf::from("cbsa_all_work_school_household");
+        let only_residents_path = PathBuf::from("cbsa_only_residents");
         let paths = vec![
             all_path.join("AK/Ketchikan AK.csv"),
             all_path.join("TX/Vernon TX.csv"),
@@ -840,25 +757,9 @@ mod tests {
         ]
         .into_iter();
 
-        let records = ASPRRecordIterator::from_file_iterator(paths);
+        let records = PersonRecordIterator::from_file_iterator(paths);
 
+        // This count is specific to the local ASPR-compatible dataset fixture.
         assert_eq!(count_ok_records(records).unwrap(), 57454);
-    }
-
-    #[cfg(feature = "aspr_zip_tests")]
-    #[test]
-    fn test_zip_state_row_iter() {
-        let _guard = TEST_MUTEX.lock();
-        set_aspr_data_path(test_zip_data_path());
-
-        let state = USState::AL;
-        let state_records = ASPRRecordIterator::state_population(state).unwrap();
-
-        for (idx, record) in state_records.enumerate() {
-            if idx == 10 {
-                break;
-            }
-            println!("{}", record.unwrap());
-        }
     }
 }

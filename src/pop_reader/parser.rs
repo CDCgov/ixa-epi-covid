@@ -8,7 +8,7 @@ use super::{
     IdCode,
     TractCode,
     FIPSCode,
-    ASPRSettingCategory,
+    PopulationReaderSettingCategory,
     StateCode
 };
 
@@ -115,14 +115,14 @@ pub fn parse_fips_home_id(input: &[u8]) -> FIPSParseResult<FIPSCode> {
         state,
         county,
         tract,
-        ASPRSettingCategory::Home.into(),
+        PopulationReaderSettingCategory::Home.encode(),
         home_id,
         0,
     );
     match fips_code {
         Ok(fips_code) => Ok((rest, fips_code)),
         Err(_) => {
-            panic!("FIPS code is invalid. This is a bug in the ASPR parser.");
+            panic!("FIPS code is invalid. This is a bug in the population ID parser.");
         }
     }
 }
@@ -140,14 +140,14 @@ pub fn parse_fips_school_id(input: &[u8]) -> FIPSParseResult<FIPSCode> {
             state,
             county,
             0,
-            ASPRSettingCategory::PrivateSchool.into(),
+            PopulationReaderSettingCategory::PrivateSchool.encode(),
             school_id,
             0,
         );
         match fips_code {
             Ok(fips_code) => Ok((rest, fips_code)),
             Err(_) => {
-                panic!("FIPS code is invalid. This is a bug in the ASPR parser.");
+                panic!("FIPS code is invalid. This is a bug in the population ID parser.");
             }
         }
     } else {
@@ -159,14 +159,14 @@ pub fn parse_fips_school_id(input: &[u8]) -> FIPSParseResult<FIPSCode> {
             state,
             county,
             tract,
-            ASPRSettingCategory::PublicSchool.into(),
+            PopulationReaderSettingCategory::PublicSchool.encode(),
             school_id,
             0,
         );
         match fips_code {
             Ok(fips_code) => Ok((rest, fips_code)),
             Err(_) => {
-                panic!("FIPS code is invalid. This is a bug in the ASPR parser.");
+                panic!("FIPS code is invalid. This is a bug in the population ID parser.");
             }
         }
     }
@@ -184,14 +184,14 @@ pub fn parse_fips_workplace_id(input: &[u8]) -> FIPSParseResult<FIPSCode> {
         state,
         county,
         tract,
-        ASPRSettingCategory::Workplace.into(),
+        PopulationReaderSettingCategory::Workplace.encode(),
         workplace_id,
         0,
     );
     match fips_code {
         Ok(fips_code) => Ok((rest, fips_code)),
         Err(_) => {
-            panic!("FIPS code is invalid. This is a bug in the ASPR parser.");
+            panic!("FIPS code is invalid. This is a bug in the population ID parser.");
         }
     }
 }
@@ -212,7 +212,7 @@ fn parse_tract_code(input: &[u8]) -> FIPSParseResult<TractCode> {
 /// parsed value fits in the 15-bit `FIPSCode` id field. Unlike many other `parse_*` functions,
 /// this function consumes all remaining decimal digits of the input.
 // ToDo: Is it an error if we do not parse the minimum number of digits described in the description
-//       of the ASPR dataset? Right now: an empty string is an error, but any nonempty string of
+//       for this population format? Right now: an empty string is an error, but any nonempty string of
 //       digits is allowed as long as it fits in the 15-bit id field.
 fn parse_setting_id(input: &[u8]) -> FIPSParseResult<IdCode> {
     let (rest, value) = parse_integer(input)?;
@@ -474,7 +474,7 @@ mod tests {
         let state_code: StateCode = USState::ID.into();
         let county_code: CountyCode = 1;
         let tract_code: TractCode = 10401;
-        let setting_cat_code: SettingCategoryCode = ASPRSettingCategory::Home.into();
+        let setting_cat_code: SettingCategoryCode = PopulationReaderSettingCategory::Home.encode();
         let home_id_code = 10000;
 
         let (_, parsed_home_id) = parse_fips_home_id(home_id).unwrap();
@@ -540,7 +540,7 @@ mod tests {
         let state_code: StateCode = USState::ID.into();
         let county_code: CountyCode = 1;
         let tract_code: TractCode = 10401;
-        let setting_cat_code: SettingCategoryCode = ASPRSettingCategory::PublicSchool.into();
+        let setting_cat_code: SettingCategoryCode = PopulationReaderSettingCategory::PublicSchool.encode();
         let public_school_id_code = 2789;
 
         let (_, parsed_public_school_id) = parse_fips_school_id(public_school_id).unwrap();
@@ -558,7 +558,7 @@ mod tests {
         let state_code: StateCode = 24;
         let county_code: CountyCode = 31;
         let tract_code: TractCode = 0;
-        let setting_cat_code: SettingCategoryCode = ASPRSettingCategory::PrivateSchool.into();
+        let setting_cat_code: SettingCategoryCode = PopulationReaderSettingCategory::PrivateSchool.encode();
         let private_school_id_code = 1722;
 
         let (_, parsed_private_school_id) = parse_fips_school_id(private_school_id).unwrap();
@@ -576,7 +576,7 @@ mod tests {
         let state_code: StateCode = USState::ID.into();
         let county_code: CountyCode = 1;
         let tract_code: TractCode = 10401;
-        let setting_cat_code: SettingCategoryCode = ASPRSettingCategory::Workplace.into();
+        let setting_cat_code: SettingCategoryCode = PopulationReaderSettingCategory::Workplace.encode();
         let workplace_id_code = 14938;
 
         let (_, parsed_workplace_id) = parse_fips_workplace_id(workplace_id).unwrap();

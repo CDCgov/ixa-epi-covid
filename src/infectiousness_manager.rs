@@ -217,7 +217,7 @@ mod test {
     };
     use crate::{
         Age,
-        pop_reader::{ASPRSettingCategory, FIPSCode, parser::parse_fips_home_id},
+        pop_reader::{PopulationReaderSettingCategory, FIPSCode, parser::parse_fips_home_id},
         infectiousness_manager::{InfectionData, InfectionStatus},
         parameters::{GlobalParams, Params, SettingProperties},
         population_loader::{Person, PersonId},
@@ -237,7 +237,7 @@ mod test {
             home_id.state_code(),
             home_id.county_code(),
             home_id.census_tract_code(),
-            ASPRSettingCategory::CensusTract.into(),
+            PopulationReaderSettingCategory::CensusTract.encode(),
         )
             .unwrap()
         )
