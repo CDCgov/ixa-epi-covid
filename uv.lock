@@ -165,7 +165,7 @@ css = [
 [[package]]
 name = "calibrationtools"
 version = "0.1.1"
-source = { git = "https://github.com/CDCgov/cfa-calibration-tools.git?branch=wtk-store-distances#fb5d0cd5095263fdeec6e81e12c38910a32d1d3f" }
+source = { git = "https://github.com/CDCgov/cfa-calibration-tools.git?branch=wtk-store-distances#90abacdb50fd84713cf4dd0746bc34c393a91cd3" }
 dependencies = [
     { name = "cfa-mrp" },
     { name = "jsonschema" },

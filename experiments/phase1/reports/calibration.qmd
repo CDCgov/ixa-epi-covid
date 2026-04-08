@@ -33,12 +33,17 @@ import shutil
 os.chdir('../../../')
 
 wd = Path("experiments", "phase1")
+results_name = "output_indiana"
+
+calibration_dir = wd / "calibration" / results_name
+projection_dir = wd / "projection" / results_name
 
 # Load results object from the calibration directory
-with open(wd / "calibration" / "output" / "results.pkl", "rb") as fp:
+with open(calibration_dir / "results.pkl", "rb") as fp:
     results: CalibrationResults = pickle.load(fp)
 ```
 
+## Parameters
 
 Quantiles for each fitted parameter
 ```{python}
@@ -55,7 +60,7 @@ print(
 )
 ```
 
-Histograms of posterior samples compared to the probability density of each prior. For each plot, the prior is plotted as a blue line and the histogram of the posterior samples is plotted in orange with a kernel density estimator overlay. To generate the histogram, we sample $n$ particles from the posterior population, where $n$ is the effective sample size of the population. Re-sampling particles in this manner reflects the posterior weight distribution, the probability mass function over accepted particles determined by the ABC-SMC algorithm perturbation kernel and prior distributions.
+Histograms of posterior samples compared to the probability density of each prior. For each plot, the prior is plotted as a blue line and the histogram of the posterior samples is plotted in orange with a kernel density estimator overlay. To generate the histogram, we sample $n$ particles from the posterior population, where $n$ is the effective sample size of the population. Re-sampling particles in this manner reflects the posterior weight distribution, the probability mass function over accepted particles determined by the ABC-SMC algorithm perturbation kernel and prior distributions. We can see that the posteriors do not storngly diverge from the priors, indicating the expected result that limited data does not provide much information when priors are well-specified.
 
 ```{python}
 #| echo: false
@@ -121,263 +126,217 @@ for param in results.fitted_params:
     plt.show()
 
 ```
+
+
+## Infection imprtation and local transmission
 ```{python}
 #| echo: false
-## Obtaining the importation time series and death incidence data frames for a random smaple form the posterior
-# Re-generating a random sample of parameter sets from posterior
-particle_count = int(min(100, results.ess))
-particles = results.sample_posterior_particles(n=particle_count)
 
-default_params_file = wd / 'input' / 'default_params.json'
+# Load the data from the projection directory
+projections_path = projection_dir / "simulations"
+aggregated_deaths_report_list = []
+imported_cases_timeseries_list = []
+prevalence_report_list = []
+for particle_dir in projections_path.iterdir():
+    if particle_dir.is_dir():
+        try:
+            imported_cases_timeseries = pl.read_csv(particle_dir / "imported_cases_timeseries.csv")
+            aggregated_deaths_report = pl.read_csv(particle_dir / "aggregated_deaths_report.csv")
+            imported_cases_timeseries = imported_cases_timeseries.with_columns(
+                pl.col("imported_infections").cum_sum().over(order_by="time").alias("cumulative_imported_infections"),
+                pl.lit(particle_dir.name).alias("seed")
+            )
+            aggregated_deaths_report = aggregated_deaths_report.with_columns(
+                pl.col("count").cum_sum().over(order_by="t_upper").alias("cumulative_count"),
+                pl.lit(particle_dir.name).alias("seed")
+            )
+            prevalence_report = pl.read_csv(particle_dir / "person_property_count.csv").with_columns(
+                pl.when(pl.col('age') < 18).then(pl.lit("Age0To17"))
+                .when((pl.col('age') >= 18) & (pl.col('age') < 50)).then(pl.lit("Age18to49"))
+                .when((pl.col('age') >= 50) & (pl.col('age') < 65)).then(pl.lit("Age50to64"))
+                .otherwise(pl.lit("Age65Plus")).alias("age_group")
+            ).group_by(
+                't', 'age_group', 'symptom_status', 'infection_status'
+            ).agg(
+                pl.sum('count').alias('count')
+            ).sort(['t', 'age_group', 'symptom_status', 'infection_status']).with_columns(
+                pl.lit(particle_dir.name).alias("seed")
+            )
+            imported_cases_timeseries_list.append(imported_cases_timeseries)
+            aggregated_deaths_report_list.append(aggregated_deaths_report)
+            prevalence_report_list.append(prevalence_report)
+        except (pl.exceptions.NoDataError, FileNotFoundError) as e:
+            print(f"No data found for particle directory: {particle_dir}, skipping.")
 
-with open(default_params_file, "rb") as fp:
-    default_params = json.load(fp)
 
-ixa_overrides = {
-    "synth_population_file": "./input/in.csv",
-    "imported_cases_timeseries": {
-        "filename": "./experiments/phase1/projection/imported_cases_timeseries.csv"
-    },
-    "max_time": 200,
-    "first_death_terminates_run": False
-}
-default_params = apply_dict_overrides(default_params, {'epimodel.GlobalParams': ixa_overrides})
-
-mrp_defaults = {
-    'ixa_inputs': default_params,
-    "config_inputs": {
-        "exe_file": "./target/release/ixa-epi-covid",
-        "output_dir": "./experiments/phase1/projection/output",
-        "force_overwrite": True,
-        "outputs_to_read": ['aggregated_deaths_report', 'imported_cases_timeseries']
-    },
-    "importation_inputs": {
-        "state": "Indiana",
-        "year": 2020,
-        "symptomatic_reporting_prob": 0.5
-    },
-}
-
-
-importation_curves = []
-death_data = []
-for i, p in enumerate(particles):
-    seed = p['seed']
-    output_path = Path(wd, "calibration", "output", f"{seed}")
-    importation_curves.append(
-        pl.read_csv(output_path / "imported_cases_timeseries.csv").with_columns(
-            pl.lit(i).alias("id"),
-            pl.col('imported_infections').cum_sum().over(order_by='time').alias('cumulative_imported_infections')
-        )
-    )
-    death_data.append(
-        pl.read_csv(
-            output_path / default_params['epimodel.GlobalParams']['aggregated_deaths_report']['filename']
-        ).with_columns(
-            pl.lit(i).alias("id"),
-            pl.col('count').cum_sum().over(order_by='t_upper').alias('cumulative_deaths')
-        )
-    )
-
-importations = pl.concat(importation_curves)
-deaths = pl.concat(death_data)
+death_data = pl.concat(aggregated_deaths_report_list)
+imported_data = pl.concat(imported_cases_timeseries_list)
+prevalence_data = pl.concat(prevalence_report_list)
 ```
 
+When we inspect the infections that are imported, we see that the posterior estimate of earliest infection importation is in late January, or day 20 in the simulation. Cumulative imported infections tended to grow exponsentially by the beginning of MArch, or day 60 in the simulation.
 ```{python}
-#| eval: false
-#| echo: false
-default_params_file = wd / 'input' / 'default_params.json'
 
-with open(default_params_file, "rb") as fp:
-    default_params = json.load(fp)
-
-ixa_overrides = {
-    "synth_population_file": "./input/in.csv",
-    "imported_cases_timeseries": {
-        "filename": "./experiments/phase1/projection/imported_cases_timeseries.csv"
-    },
-    "max_time": 200,
-    "first_death_terminates_run": False
-}
-default_params = apply_dict_overrides(default_params, {'epimodel.GlobalParams': ixa_overrides})
-
-mrp_defaults = {
-    'ixa_inputs': default_params,
-    "config_inputs": {
-        "exe_file": "./target/release/ixa-epi-covid",
-        "output_dir": "./experiments/phase1/projection/output",
-        "force_overwrite": True,
-        "outputs_to_read": ['prevalence_report', 'imported_cases_timeseries']
-    },
-    "importation_inputs": {
-        "state": "Indiana",
-        "year": 2020,
-        "symptomatic_reporting_prob": 0.5
-    },
-}
-
-if os.path.exists(mrp_defaults["config_inputs"]["output_dir"]):
-    shutil.rmtree(mrp_defaults["config_inputs"]["output_dir"])
-
-def update_epimodel_output_dir(
-    particle_params: dict[str, Any], output_dir: str
-) -> dict[str, Any]:
-    """
-    Updates the output directory in the epimodel parameters to point to the particle-specific output directory.
-    Args:
-        particle_params (dict[str, Any]): The parameters for a specific particle, which includes the default
-        parameters merged with the particle-specific parameters.
-        output_dir (str): The path to the particle-specific output directory.
-    Returns:
-        dict[str, Any]: The updated parameters with the output directory in the epimodel parameters updated to the particle-specific output directory.
-    """
-    params = apply_dict_overrides(
-        particle_params,
-        {
-            "config_inputs": {"output_dir": str(output_dir)},
-            "ixa_inputs": {
-                "epimodel.GlobalParams": {
-                    "imported_cases_timeseries": {
-                        "filename": str(
-                            Path(output_dir, "imported_cases_timeseries.csv")
-                        )
-                    }
-                }
-            },
-        },
-    )
-    return params
-
-reader = ParticleReader(results.fitted_params + ['seed'], mrp_defaults)
-def particles_to_params(particle: Particle, reader: ParticleReader = reader):
-    particle_params = reader.read_particle(particle=particle)
-    # Make particle-specific output directory and update the output path in the parameters accordingly
-    output_dir = Path(
-        particle_params["config_inputs"]["output_dir"],
-        str(particle_params["ixa_inputs"]["epimodel.GlobalParams"]["seed"]),
-    )
-    try:
-        output_dir.mkdir(parents=True, exist_ok=False)
-
-        updated_params = update_epimodel_output_dir(particle_params, output_dir)
-        return updated_params
-    except FileExistsError:
-        return {}
-
-uniq_id = 0
-model = CovidModel()
-importation_curves = []
-prevalence_data = []
-os.makedirs(mrp_defaults["config_inputs"]["output_dir"], exist_ok=True)
-parallel_executor = ThreadPoolExecutor(max_workers=mp.cpu_count())
-
-def simulate_particle(p):
-    model_inputs = particles_to_params(p)
-    if not model_inputs:
-        return model_inputs["config_inputs"]["output_dir"]
-    model.simulate(model_inputs)
-    return model_inputs["config_inputs"]["output_dir"]
-
-dirs = []
-for dir in parallel_executor.map(simulate_particle, particles):
-    dirs.append(dir)
-
-for dir in dirs:
-    importation_curves.append(
-        pl.read_csv(Path(dir, "imported_cases_timeseries.csv")).with_columns(pl.lit(uniq_id).alias("id"))
-    )
-    prevalence_data.append(
-        pl.read_csv(Path(dir, "prevalence_report.csv")).with_columns(pl.lit(uniq_id).alias("id"))
-    )
-    uniq_id += 1
-
-importations = pl.concat(importation_curves)
-all_prevalence_data = pl.concat(prevalence_data)
-deaths = (
-    all_prevalence_data
-    .filter(pl.col("symptom_status") == "Dead")
-    .group_by("t", "id")
-    .agg(pl.sum("count"))
-)
-parallel_executor.shutdown()
-```
-
-We can show the posterior variance in the imported infections time series by overlaying samples from the simulated particles. Blue points on the plot represent the count of imported infections for a given day in a given simulation if the number of importations was above zero. Black line show the median and 95% credible interval of the number of imported infections on each day from January 1st to March 12th.
-```{python}
-#| echo: false
 sns.scatterplot(
-    data=importations.filter(pl.col('imported_infections') > 0),
+    data=imported_data.filter(pl.col('imported_infections') > 0),
     x="time",
     y="cumulative_imported_infections",
-    alpha=0.05,
+    alpha=0.2,
 )
 sns.lineplot(
-    data=importations,
+    data=imported_data,
     x="time",
     y="cumulative_imported_infections",
-    estimator='median'
+    estimator='median',
 )
-plt.title(f"Cumulative imported infections over time ({particle_count} posterior samples)")
-plt.xlabel("Time (days since simulation start)")
-plt.ylabel("Number of imported infections (cumulative)")
-plt.tight_layout()
+plt.xlabel("Time")
+plt.ylabel("Cumulative Imported Infections")
 plt.show()
 ```
-We can project the cumulative number of deaths observed in the model projections. Because the last SMC step has a distance tolerance threshold below one, we see no simulations accrue deaths before the first reported death in the data.
-```{python}
-#| echo: false
 
-sns.lineplot(
-    data=deaths,
-    x="t_upper",
-    y="cumulative_deaths",
-    units='id', estimator=None,
-    alpha=0.05
+We can now see the unobserved posterior infection dyanmics prior to the first reported death. Infections consistently outpace importation, indicating sustained local transmission. The number of individuals who have already recovered from their infection is already high by the time the first death was observed, indicating that local tranmsission is occurring rapidly by the time surveillance efforts can detect and respond to the outbreak. The red dashed veritcal line shows the first reported case observed in Indiana (not used in calibration), while the black dashed vertical line shows the date of first observed death in the data (used to define the distance function).
+
+```{python}
+
+g=sns.relplot(
+    data=prevalence_data.group_by(
+        "t", "infection_status", "seed"
+    ).agg(
+        pl.sum('count').alias('count')
+    ).filter(
+        (pl.col('t') < 80) & (pl.col('infection_status').is_in(["Infectious", "Recovered"]))
+    ),
+    x="t", y="count",
+    kind="line",
+    hue="infection_status",
+    alpha=0.3,
+    units="seed",
+    estimator=None,
+    col="infection_status",
+    col_order=["Infectious", "Recovered"],
+    # estimator='median',
+    # errorbar=lambda x: (x.quantile(0.1), x.quantile(0.9))
 )
-sns.lineplot(
-    data=deaths,
-    x="t_upper",
-    y="cumulative_deaths",
+g.set(ylim=(0, 100))
+plt.xlabel("Time")
+for ax in g.axes.flat:
+    ax.axvline(x=65, color="red", linestyle="--", label="First case reported (March 6, 2020)")
+    ax.axvline(x=75, color="black", linestyle="--", label="First death reported (March 16, 2020)")
+plt.ylabel("Count")
+plt.show()
+```
+
+Expanding the time horizon of our simulations, we can see that the SIR transmission dynamics of the model are highly variable after the first death occurs. We can conclude that given the timing of the first death, the peak prevalence of infections is likely to occur within three months, but we don't have a strong indication of the magnitude of that prevalence, as the peak ranges from 500 thousand to 5 million active infections across simulations. We can show from these projections that the model behaves as expected according to classical epidemic theory - delayed epidemic peaks tend to have lower magnitudes of maximum prevalence but similar epidemic sizes.
+
+```{python}
+
+g=sns.relplot(
+    data=prevalence_data.group_by(
+        "t", "infection_status", "seed"
+    ).agg(
+        pl.sum('count').alias('count')
+    ),
+    x="t", y="count",
+    kind="line",
+    hue="infection_status",
+    alpha=0.3,
+    units="seed",
+    estimator=None,
+    col="infection_status",
+    col_order=["Susceptible", "Infectious", "Recovered"],
+    # estimator='median',
+    # errorbar=lambda x: (x.quantile(0.1), x.quantile(0.9))
 )
-plt.title(f"Total observed deaths over time ({particle_count} posterior samples)")
-plt.xlabel("Time (days since simulation start)")
-plt.ylabel("Number of deaths (cumulative)")
+plt.xlabel("Time")
+for ax in g.axes.flat:
+    # ax.axvline(x=65, color="red", linestyle="--", label="First case reported (March 6, 2020)")
+    ax.axvline(x=75, color="black", linestyle="--", label="First death reported (March 16, 2020)")
+plt.ylabel("Count")
+plt.show()
+```
+
+## Morbidity and mortality
+We can compare the trajectories of the cumulative count of deaths to the time of the frist reported death that we used in defining the distance function of our calibration approach. There is a large range of mortality rates across simulations, but they are appropriately concentrated to begin near in time to the first observed death.
+
+```{python}
+sns.lineplot(data=death_data, x="t_upper", y="cumulative_count", alpha=0.2, units ="seed", estimator=None)
+plt.xlabel("Time")
+plt.ylabel("Cumulative Deaths")
+plt.yscale("log")
 plt.axvline(x=75, color="black", linestyle="--", label="First death reported (March 16, 2020)")
-plt.tight_layout()
 plt.show()
 ```
 
-Finally, we can plot the same trajectories for number of infections observed in the model over time, which includes both imported infections and locally acquired infections. We see that some epidemic trajectories are strongly delayed from first imported infections due to stochasticity.
+If we look at the proportion of simulations that have observed at least one critical or sever case by age group, we can see that the timing of most simulations aligns well with the first reported symptomatic case observed in Indiana (MArch 6th, 2020). Only the category of individuals 65 and older always see at least one severe and critical case in each simulation by the calibration window end.
 
 ```{python}
-#| echo: false
-#| eval: false
-sir_data = all_prevalence_data.group_by(
-    't', 'infection_status', 'id'
-).agg(
-    pl.sum('count')
-)
+n_unique_seeds = prevalence_data.select(pl.col("seed").n_unique()).item()
+
+age_group_values = prevalence_data.filter(
+        pl.col('symptom_status').is_in(["Severe", "Critical"])
+    ).group_by(
+        "t", "age_group", "symptom_status", "seed"
+    ).agg(
+        pl.sum('count').alias('count')
+    ).filter(
+        pl.col('t') < 85
+    ).group_by(
+        "age_group", "symptom_status", "t"
+    ).agg(
+        (pl.len() / n_unique_seeds).alias('proportion_of_simualtions_have_had_cases')
+    )
 
 g = sns.relplot(
-    data = sir_data,
-    x='t',
-    y='count',
-    kind='line',
-    hue='infection_status',
-    units='id',
-    estimator=None,
-    alpha=0.1,
-    row='infection_status',
+    data=age_group_values,
+    x="t", y="proportion_of_simualtions_have_had_cases",
+    kind="line",
+    col="age_group",
+    col_order=["Age0To17", "Age18to49", "Age50to64", "Age65Plus"],
+    col_wrap=2,
+    hue="symptom_status",
 )
-g.fig.suptitle(
-    f"Individuals by infection status over time ({particle_count} posterior samples)",
+
+g.set(ylim=(0,1))
+
+g.figure.suptitle(
+    f"Observing symptomatic cases in simulations",
     fontsize='x-large',
     fontweight='bold'
 )
-g.fig.subplots_adjust(top=0.85)
-g.set_axis_labels("Time (days since simulation start)", "Number of people")
+g.figure.subplots_adjust(top=0.85)
+g.set_axis_labels("Time (days since simulation start)", "Proportion of simulations with at least one case")
 for ax in g.axes.flat:
-    ax.axvline(x=65, color="black", linestyle="--", label="First case reported (March 6, 2020)")
-    ax.axvline(x=75, color="red", linestyle="--", label="First death reported (March 16, 2020)")
+    ax.axvline(x=65, color="red", linestyle="--", label="First case reported (March 6, 2020)")
+    ax.axvline(x=75, color="black", linestyle="--", label="First death reported (March 16, 2020)")
+plt.show()
+```
+
+Expanding the time horizon again and assessing prevalence of symptom statuses across age groups, we can see that the trajectories are just as variable as the infection prevalence trajectories. However, we generally see highest prevalence of critical and severe symptoms in the 65 and older age group, as we would expect, while the highest prevalence of mild symptoms occurs in the 18 to 49 age group, which constitutes the largest age group class and so would also be expected to be the higest proportion with symptoms in the absence of age-specific symptom probability and attack rates.
+
+```{python}
+g = sns.relplot(
+    data=prevalence_data.filter(
+        ~pl.col('symptom_status').is_in(["NoSymptoms", "Dead", "Resolved"])
+    ).group_by(
+        "t", "age_group", "symptom_status", "seed"
+    ).agg(
+        pl.sum('count').alias('count')
+    ),
+    x="t", y="count",
+    kind="line",
+    col="age_group", row='symptom_status',
+    col_order=["Age0To17", "Age18to49", "Age50to64", "Age65Plus"],
+    row_order=["Mild", "Severe", "Critical"],
+    facet_kws={'sharey': 'row', 'sharex': True},
+    hue="symptom_status",
+    alpha=0.2,
+    units="seed",
+    estimator=None,
+    # estimator='median',
+    # errorbar = lambda x: (x.quantile(0.025), x.quantile(0.975))
+)
+g.figure.subplots_adjust(top=0.85)
+g.set_axis_labels("Time (days since simulation start)", "Number of people")
+g.set_titles("")
 plt.show()
 ```

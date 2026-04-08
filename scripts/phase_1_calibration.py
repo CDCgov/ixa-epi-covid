@@ -160,17 +160,25 @@ def main(
         particle_params = reader.read_particle(particle=particle)
         # Make particle-specific output directory and update the output path in the parameters accordingly
         simulations_dir = Path(
-            particle_params["config_inputs"]["output_dir"],
-            "simulations"
+            particle_params["config_inputs"]["output_dir"], "simulations"
         )
         # Count existing directories in simulations_dir
         if not simulations_dir.exists():
             dir_count = 0
         else:
-            dir_count = len(os.walk(simulations_dir).__next__()[1]) 
+            dir_count = len(os.walk(simulations_dir).__next__()[1])
         output_dir = Path(
             simulations_dir,
-            ".".join([str(dir_count), str(particle_params["ixa_inputs"]["epimodel.GlobalParams"]["seed"])]),
+            ".".join(
+                [
+                    str(dir_count),
+                    str(
+                        particle_params["ixa_inputs"]["epimodel.GlobalParams"][
+                            "seed"
+                        ]
+                    ),
+                ]
+            ),
         )
         output_dir.mkdir(parents=True, exist_ok=False)
 
