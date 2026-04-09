@@ -109,7 +109,7 @@ impl FIPSCode {
     /// Constructs a new [`FIPSCode`] from a [`USState`]. Unlike the other constructors, this constructor is infallible.
     #[must_use]
     pub fn with_state(state: USState) -> Self {
-        Self::new(state.into(), 0, 0, 0, 0, 0).unwrap()
+        Self::new(state.encode(), 0, 0, 0, 0, 0).unwrap()
     }
     /// Constructs a new [`FIPSCode`].
     /// Returns `Err(())` if the data provided is out of range.
@@ -224,7 +224,7 @@ impl FIPSCode {
     /// Creates a copy of `self` with the FIPS STATE set to `state`.
     #[must_use]
     pub fn set_state(&self, state: USState) -> Self {
-        self.set_state_code(state.into()).unwrap()
+        self.set_state_code(state.encode()).unwrap()
     }
 
     /// Creates a copy of `self` with the FIPS STATE set to `state`.
@@ -235,21 +235,21 @@ impl FIPSCode {
     }
 
     /// Creates a copy of `self` with the FIPS COUNTY set to `county`.
-    pub fn set_county(&self, county: CountyCode) -> Result<Self, FIPSError> {
+    pub fn set_county_code(&self, county: CountyCode) -> Result<Self, FIPSError> {
         let mut expanded = ExpandedFIPSCode::from_fips_code(*self);
         expanded.county = county;
         expanded.to_fips_code()
     }
 
     /// Creates a copy of `self` with the FIPS CENSUS TRACT set to `tract`.
-    pub fn set_tract(&self, tract: TractCode) -> Result<Self, FIPSError> {
+    pub fn set_tract_code(&self, tract: TractCode) -> Result<Self, FIPSError> {
         let mut expanded = ExpandedFIPSCode::from_fips_code(*self);
         expanded.tract = tract;
         expanded.to_fips_code()
     }
 
     /// Creates a copy of `self` with the setting category set to `category`.
-    pub fn set_category(&self, category: SettingCategoryCode) -> Result<Self, FIPSError> {
+    pub fn set_category_code(&self, category: SettingCategoryCode) -> Result<Self, FIPSError> {
         let mut expanded = ExpandedFIPSCode::from_fips_code(*self);
         expanded.category = category;
         expanded.to_fips_code()

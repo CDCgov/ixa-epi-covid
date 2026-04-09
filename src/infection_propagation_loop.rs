@@ -75,11 +75,11 @@ mod test {
     use crate::infection_propagation_loop::InfectionRng;
     use crate::infectiousness_manager::InfectionData;
     use crate::pop_reader::{
-        FIPSCode, PopulationReaderSettingCategory,
-        parser::{parse_fips_home_id, parse_fips_workplace_id},
+        FIPSCode, PopulationReaderSettingCategory, parser::parse_fips_home_id,
     };
     use crate::population_loader::PersonId;
-    use crate::settings::{ContextSettingExt, SettingCategory, SettingCode};
+    use crate::setting_code::SettingCode;
+    use crate::settings::{ContextSettingExt, SettingCategory};
     use crate::{
         infection_propagation_loop::{
             InfectionStatus, init, schedule_next_forecasted_infection, schedule_recovery,
@@ -92,10 +92,6 @@ mod test {
 
     fn make_home_id(home_id: &[u8]) -> SettingCode {
         SettingCode(parse_fips_home_id(home_id).unwrap().1)
-    }
-
-    fn make_workplace_id(workplace_id: &[u8]) -> SettingCode {
-        SettingCode(parse_fips_workplace_id(workplace_id).unwrap().1)
     }
 
     fn make_community_id(home_id: &[u8]) -> SettingCode {
@@ -116,8 +112,7 @@ mod test {
         person_id: PersonId,
     ) -> Result<(), crate::error::ModelError> {
         let community_code = make_community_id(b"160379602000001");
-        context.add_person_to_settings(person_id, None, None, None, Some(community_code))?;
-        context.initialize_setting_size()?;
+        context.add_person_to_settings(person_id, None, None, None, Some(community_code));
         Ok(())
     }
 
@@ -412,6 +407,10 @@ mod test {
             let num_infected_censustract = Rc::new(RefCell::new(0usize));
             let num_infected_workplace = Rc::new(RefCell::new(0usize));
 
+            let home_code = SettingCode::arbitrary_home_code();
+            let community_code = home_code.extract_community();
+            let workplace_code = home_code.as_arbitrary_workplace_code();
+
             for seed in 0..num_sims {
                 let num_infected_home_clone = Rc::clone(&num_infected_home);
                 let num_infected_cenustract_clone = Rc::clone(&num_infected_censustract);
@@ -424,41 +423,28 @@ mod test {
                 let person_censustract: PersonId = context.add_entity((Age(30),)).unwrap();
                 let person_workplace: PersonId = context.add_entity((Age(30),)).unwrap();
 
-                let home_code = make_home_id(b"160379602000001");
-                let community_code = make_community_id(b"160379602000001");
-                let workplace_code = make_workplace_id(b"1603796020000220");
-
-                context
-                    .add_person_to_settings(person_home, Some(home_code), None, None, None)
-                    .unwrap();
-                context
-                    .add_person_to_settings(
-                        person_workplace,
-                        None,
-                        Some(workplace_code),
-                        None,
-                        None,
-                    )
-                    .unwrap();
-                context
-                    .add_person_to_settings(
-                        person_censustract,
-                        None,
-                        None,
-                        None,
-                        Some(community_code),
-                    )
-                    .unwrap();
-                context
-                    .add_person_to_settings(
-                        infectious_person,
-                        Some(home_code),
-                        Some(workplace_code),
-                        None,
-                        Some(community_code),
-                    )
-                    .unwrap();
-                context.initialize_setting_size().unwrap();
+                context.add_person_to_settings(person_home, Some(home_code), None, None, None);
+                context.add_person_to_settings(
+                    person_workplace,
+                    None,
+                    Some(workplace_code),
+                    None,
+                    None,
+                );
+                context.add_person_to_settings(
+                    person_censustract,
+                    None,
+                    None,
+                    None,
+                    Some(community_code),
+                );
+                context.add_person_to_settings(
+                    infectious_person,
+                    Some(home_code),
+                    Some(workplace_code),
+                    None,
+                    Some(community_code),
+                );
 
                 // We don't want infectious people beyond our index case to be able to transmit, so we
                 // have to do setup on our own since just calling `init` will trigger a watcher for

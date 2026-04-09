@@ -1,7 +1,7 @@
 use crate::error::ModelError;
 use crate::infectiousness_manager::InfectionData;
 use crate::population_loader::{Person, PersonId};
-use crate::settings::SettingId;
+use crate::settings::SettingCode;
 use ixa::prelude::*;
 use ixa::profiling::open_span;
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ struct TransmissionReport {
     time: f64,
     target_id: PersonId,
     infected_by: Option<PersonId>,
-    infection_setting_id: Option<SettingId>,
+    infection_setting_id: Option<SettingCode>,
 }
 
 define_report!(TransmissionReport);
@@ -20,7 +20,7 @@ fn record_transmission_event(
     context: &mut Context,
     target_id: PersonId,
     infected_by: Option<PersonId>,
-    infection_setting_id: Option<SettingId>,
+    infection_setting_id: Option<SettingCode>,
 ) {
     if infected_by.is_some() {
         context.send_report(TransmissionReport {
@@ -57,11 +57,10 @@ mod test {
         Age,
         infectiousness_manager::InfectionContextExt,
         parameters::{ContextParametersExt, GlobalParams, Params},
-        pop_reader::parser::parse_fips_home_id,
         population_loader::PersonId,
         rate_fns::load_rate_fns,
         reports::ReportParams,
-        settings::{SettingCategory, SettingCode, SettingId},
+        settings::SettingCode,
     };
     use ixa::{
         Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt,
@@ -69,10 +68,6 @@ mod test {
     };
     use std::path::PathBuf;
     use tempfile::tempdir;
-
-    fn make_home_id(home_id: &[u8]) -> SettingCode {
-        SettingCode(parse_fips_home_id(home_id).unwrap().1)
-    }
 
     fn setup_context_with_report(transmission_report: ReportParams) -> Context {
         let mut context = Context::new();
@@ -106,9 +101,7 @@ mod test {
 
         let source: PersonId = context.add_entity((Age(30),)).unwrap();
         let target: PersonId = context.add_entity((Age(30),)).unwrap();
-        let home: SettingId = context
-            .add_entity((make_home_id(b"160379602000001"), SettingCategory::Home))
-            .unwrap();
+        let home: SettingCode = SettingCode::arbitrary_home_code();
         let setting = Some(home);
         let infection_time = 1.0;
 
