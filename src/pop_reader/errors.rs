@@ -35,7 +35,6 @@ pub enum PopulationReaderError {
     ZipError(#[source] ZipError),
 }
 
-
 /// The FIPS parser error type.
 ///
 /// We assume the length of the input text is small enough that it's not necessary to attach source
@@ -47,27 +46,27 @@ pub enum FIPSParserError {
         /// The non-digit character, if it decodes as valid UTF-8.
         found: Option<char>,
         /// The index of the non-digit character in the input string.
-        at_index: usize
+        at_index: usize,
     },
     #[error("expected {expected} digits, found {found}")]
     InvalidLength {
         /// The exact digit count required by the parser in this context.
         expected: usize,
         /// How many digits were actually available before the input ended.
-        found: usize
+        found: usize,
     },
     #[error("value {value_prefix} exceeds maximum {capacity}")]
     ValueExceedsCapacity {
         /// The parsed prefix that exceeds the bit-width constraint
         value_prefix: String,
         /// The largest value that can be represented in the requested bit width.
-        capacity: u64
+        capacity: u64,
     },
     #[error("value {value} is not a valid state code")]
     InvalidStateCode {
         /// The parsed numeric value
-        value: StateCode
-    }
+        value: StateCode,
+    },
 }
 
 /// Similar to how Nom structures its results. We have:

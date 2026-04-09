@@ -1,15 +1,15 @@
 use ixa::{impl_derived_property, prelude::*};
 
-use serde::{Serialize};
+use serde::Serialize;
 use std::path::PathBuf;
 
-use crate::pop_reader::{
-    PersonRecord, PopulationReaderSettingCategory, FIPSCode,
-    archive::{PersonRecordIterator, set_data_path},
-};
 use crate::error::ModelError;
 use crate::parameters::ContextParametersExt;
-use crate::settings::{ContextSettingExt, SETTING_COUNT, SettingCategory, SettingId, SettingCode};
+use crate::pop_reader::{
+    FIPSCode, PersonRecord, PopulationReaderSettingCategory,
+    archive::{PersonRecordIterator, set_data_path},
+};
+use crate::settings::{ContextSettingExt, SETTING_COUNT, SettingCategory, SettingCode, SettingId};
 use ixa::profiling::open_span;
 
 define_entity!(Person);
@@ -74,12 +74,15 @@ impl_derived_property!(CommunityId, Person, [SettingIds], [], |setting_ids| {
 fn community_code_from_home(home_id: SettingCode) -> SettingCode {
     let home_id = home_id.0;
     // Since we are calling this constructor with values that we know are valid, we can unwrap.
-    SettingCode(FIPSCode::with_category(
-        home_id.state_code(),
-        home_id.county_code(),
-        home_id.census_tract_code(),
-        PopulationReaderSettingCategory::CensusTract.encode(),
-    ).unwrap())
+    SettingCode(
+        FIPSCode::with_category(
+            home_id.state_code(),
+            home_id.county_code(),
+            home_id.census_tract_code(),
+            PopulationReaderSettingCategory::CensusTract.encode(),
+        )
+        .unwrap(),
+    )
 }
 
 fn create_person_from_record(
@@ -98,7 +101,7 @@ fn create_person_from_record(
         Some(home_id),
         person_record.work_id.map(SettingCode),
         person_record.school_id.map(SettingCode),
-        Some(community_id)
+        Some(community_id),
     )?;
     Ok(())
 }
@@ -135,11 +138,11 @@ pub fn init(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::parameters::{GlobalParams, Params, SettingProperties};
     use crate::pop_reader::{
         errors::PopulationReaderError,
         parser::{parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id},
     };
-    use crate::parameters::{GlobalParams, Params, SettingProperties};
     use crate::settings::{Setting, SettingCategory, SettingCode};
     use ixa::HashMap;
     use std::io::Write;
@@ -152,7 +155,6 @@ mod test {
         let (_file, path) = file.keep().unwrap();
         path
     }
-
 
     fn make_home_id(home_id: &[u8]) -> SettingCode {
         SettingCode(parse_fips_home_id(home_id).unwrap().1)
@@ -271,7 +273,7 @@ mod test {
         let mut context = setup();
         let home_code = make_home_id(b"160379602000001");
         let school_code = make_home_id(b"16037960200002");
-        let record = PersonRecord{
+        let record = PersonRecord {
             age: 43,
             home_id: Some(home_code.0),
             school_id: Some(school_code.0),
@@ -296,7 +298,7 @@ mod test {
             "42,160379602000002,16037960200004,\n",
         );
         let synth_file = persist_tmp_csv(input);
-        let _ = load_synth_population(&mut context, synth_file).unwrap_or_else(|e| panic!("{}", e));
+        load_synth_population(&mut context, synth_file).unwrap_or_else(|e| panic!("{}", e));
         context.initialize_setting_size().unwrap();
         let age = [43, 42];
         let school_id = [

@@ -170,9 +170,9 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), M
 #[cfg(test)]
 mod test {
     use crate::{
-        pop_reader::parser::parse_fips_home_id,
         infectiousness_manager::InfectionContextExt,
         parameters::{ContextParametersExt, GlobalParams, OrderedAgeGroupsParam, Params},
+        pop_reader::parser::parse_fips_home_id,
         population_loader::{Age, Person, PersonId},
         rate_fns::load_rate_fns,
         reports::ReportParams,
@@ -182,7 +182,7 @@ mod test {
     use ixa::{csv, prelude::*};
     use std::path::PathBuf;
     use tempfile::tempdir;
-    
+
     fn make_home_id(home_id: &[u8]) -> SettingCode {
         SettingCode(parse_fips_home_id(home_id).unwrap().1)
     }

@@ -72,14 +72,12 @@ use std::{
 use memchr::memchr;
 use once_cell::sync::Lazy;
 use ouroboros::self_referencing;
-use zip::{read::ZipFile, ZipArchive};
+use zip::{ZipArchive, read::ZipFile};
 
 use super::{
-    errors::{PopulationReaderError, FIPSParserError},
-    parser::{
-        parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id, parse_integer,
-    },
     PersonRecord,
+    errors::{FIPSParserError, PopulationReaderError},
+    parser::{parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id, parse_integer},
 };
 
 /// The size of the buffer used to read lines from source data files in the expected format. This is
@@ -154,13 +152,13 @@ impl ZipLineSource {
         let zip_line_source = ZipLineSourceBuilder {
             _archive: ZipArchive::new(reader).map_err(PopulationReaderError::ZipError)?,
             scratch: Vec::new(),
-            line_reader_builder: |archive: &mut ZipArchive<BufReader<File>>| {
-                match archive.by_name(path.to_str().unwrap()) {
-                    Ok(zipped_file) => Some(BufReader::with_capacity(READER_CAPACITY, zipped_file)),
-                    Err(error) => {
-                        maybe_error = Some(PopulationReaderError::ZipError(error));
-                        None
-                    }
+            line_reader_builder: |archive: &mut ZipArchive<BufReader<File>>| match archive
+                .by_name(path.to_str().unwrap())
+            {
+                Ok(zipped_file) => Some(BufReader::with_capacity(READER_CAPACITY, zipped_file)),
+                Err(error) => {
+                    maybe_error = Some(PopulationReaderError::ZipError(error));
+                    None
                 }
             },
         }
@@ -176,6 +174,7 @@ impl ZipLineSource {
 // endregion ZipLineSource
 
 /// Interface abstracting over the different ways to iterate over lines in a source data file.
+#[allow(clippy::large_enum_variant)]
 enum LineIterator {
     File(FileLineSource),
     Zip(ZipLineSource),
@@ -207,22 +206,17 @@ impl LineIterator {
         process_line: impl FnOnce(&[u8]) -> Result<R, PopulationReaderError>,
     ) -> Result<Option<R>, PopulationReaderError> {
         match self {
-
             Self::File(source) => {
                 with_next_line_from_reader(&mut source.reader, &mut source.scratch, process_line)
-            },
-
-            Self::Zip(source) => {
-                source.with_mut(|fields| {
-                    let buf_reader = fields.line_reader.as_mut().unwrap();
-                    with_next_line_from_reader(buf_reader, fields.scratch, process_line)
-                })
             }
 
+            Self::Zip(source) => source.with_mut(|fields| {
+                let buf_reader = fields.line_reader.as_mut().unwrap();
+                with_next_line_from_reader(buf_reader, fields.scratch, process_line)
+            }),
         }
     }
 }
-
 
 /// Reads the next line from a buffered reader and processes it using the provided callback
 /// function.
@@ -335,6 +329,7 @@ pub struct PersonRecordIterator {
 /// Used internally by `PersonRecordIterator::from_file_iterator`, FileRecordIterator exists to unify
 /// “many records from a file” and “one file-level error for a failed file” into a single iterator
 /// type that from_file_iterator can flatten lazily.
+#[allow(clippy::large_enum_variant)]
 enum FileRecordIterator {
     Records(PersonRecordIterator),
     Error(Option<PopulationReaderError>),
@@ -387,15 +382,13 @@ impl PersonRecordIterator {
     pub fn from_file_iterator(
         files: impl Iterator<Item = PathBuf>,
     ) -> impl Iterator<Item = Result<PersonRecord, PopulationReaderError>> {
-        files
-            .map(|path| match Self::from_path(path.clone()) {
-                Ok(records) => FileRecordIterator::Records(records),
-                Err(source) => FileRecordIterator::Error(Some(PopulationReaderError::FileError {
-                    path,
-                    source: Box::new(source),
-                })),
-            })
-            .flatten()
+        files.flat_map(|path| match Self::from_path(path.clone()) {
+            Ok(records) => FileRecordIterator::Records(records),
+            Err(source) => FileRecordIterator::Error(Some(PopulationReaderError::FileError {
+                path,
+                source: Box::new(source),
+            })),
+        })
     }
 }
 
@@ -428,7 +421,7 @@ impl Iterator for PersonRecordIterator {
                             expected: 1,
                             found: 0,
                         },
-                    }
+                    },
                 )?;
             let age = u8::try_from(age).map_err(
                 // The case of an `age` field that is too large.
@@ -439,15 +432,16 @@ impl Iterator for PersonRecordIterator {
                         value_prefix: age.to_string(),
                         capacity: u64::from(u8::MAX),
                     },
-                }
+                },
             )?;
 
-            let home_id = parse_optional_field(fields.next_field()?, parse_fips_home_id)
-                .map_err(|source| PopulationReaderError::Parse {
+            let home_id = parse_optional_field(fields.next_field()?, parse_fips_home_id).map_err(
+                |source| PopulationReaderError::Parse {
                     field_name: "homeId",
                     line_number,
                     source,
-                })?;
+                },
+            )?;
 
             let school_id = parse_optional_field(fields.next_field()?, parse_fips_school_id)
                 .map_err(|source| PopulationReaderError::Parse {
@@ -476,7 +470,8 @@ impl Iterator for PersonRecordIterator {
             Err(error) => {
                 if !matches!(
                     error,
-                    PopulationReaderError::Parse { .. } | PopulationReaderError::WrongFieldCount { .. }
+                    PopulationReaderError::Parse { .. }
+                        | PopulationReaderError::WrongFieldCount { .. }
                 ) {
                     self.failed = true;
                 }
@@ -550,7 +545,14 @@ impl<'a> FieldCursor<'a> {
     }
 }
 
-#[cfg(all(any(feature = "pop_reader_tests", feature = "pop_reader_dataset_tests", feature = "pop_reader_zip_tests"), test))]
+#[cfg(all(
+    any(
+        feature = "pop_reader_tests",
+        feature = "pop_reader_dataset_tests",
+        feature = "pop_reader_zip_tests"
+    ),
+    test
+))]
 mod tests {
     //! These tests assume the existence of data at the default data path and, separately, the existence of the
     //! corresponding zip archive beside it.
@@ -590,7 +592,11 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let csv_dir = temp_dir.path().join("subdir");
         std::fs::create_dir(&csv_dir).unwrap();
-        std::fs::write(csv_dir.join("people.csv"), b"age,homeId,schoolId,workplaceId\n").unwrap();
+        std::fs::write(
+            csv_dir.join("people.csv"),
+            b"age,homeId,schoolId,workplaceId\n",
+        )
+        .unwrap();
 
         set_data_path(temp_dir.path().to_path_buf());
 

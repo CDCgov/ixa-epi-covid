@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 
-use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
+use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use epimodel::parameters::{GlobalParams, Params, RateFnType, SettingProperties};
 use epimodel::settings::SettingCategory;
 use epimodel::symptom_status_manager::SymptomDelayDistLogNormParams;
-use epimodel::{initialize_model, ContextParametersExt};
-use ixa::prelude::*;
+use epimodel::{ContextParametersExt, initialize_model};
 use ixa::HashMap;
+use ixa::prelude::*;
 
 type SettingType = SettingCategory;
 

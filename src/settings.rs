@@ -6,16 +6,13 @@ use std::{
 };
 use strum::{EnumCount as EnumCountMacro, EnumIter, IntoEnumIterator};
 
-
+use crate::population_loader::{ItineraryRatios, SettingIds};
 use crate::{
     ContextParametersExt, Params,
-    pop_reader::FIPSCode,
     error::ModelError,
-    population_loader::{
-        CommunityId, HomeId, Person, PersonId, SchoolId, WorkId,
-    },
+    pop_reader::FIPSCode,
+    population_loader::{CommunityId, HomeId, Person, PersonId, SchoolId, WorkId},
 };
-use crate::population_loader::{ItineraryRatios, SettingIds};
 
 define_rng!(SettingRng);
 
@@ -295,7 +292,7 @@ pub trait ContextSettingExt:
         setting_code: Option<SettingCode>,
         setting_category: SettingCategory,
     ) {
-        let Some(setting_code) = setting_code  else {
+        let Some(setting_code) = setting_code else {
             // Nothing to do.
             return;
         };
@@ -385,8 +382,11 @@ mod test {
     use super::*;
     use crate::{
         Age, Params,
-        pop_reader::{PopulationReaderSettingCategory, FIPSCode, parser::{parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id}},
         parameters::{GlobalParams, SettingProperties},
+        pop_reader::{
+            FIPSCode, PopulationReaderSettingCategory,
+            parser::{parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id},
+        },
     };
     use ixa::{HashMap, assert_almost_eq};
 
@@ -404,13 +404,14 @@ mod test {
 
     fn make_community_id(home_id: &[u8]) -> SettingCode {
         let home_id = make_home_id(home_id).0;
-        SettingCode(FIPSCode::with_category(
-            home_id.state_code(),
-            home_id.county_code(),
-            home_id.census_tract_code(),
-            PopulationReaderSettingCategory::CensusTract.encode(),
-        )
-        .unwrap()
+        SettingCode(
+            FIPSCode::with_category(
+                home_id.state_code(),
+                home_id.county_code(),
+                home_id.census_tract_code(),
+                PopulationReaderSettingCategory::CensusTract.encode(),
+            )
+            .unwrap(),
         )
     }
 
@@ -512,8 +513,7 @@ mod test {
         let original_home_code = make_home_id(b"160379602000003");
         let original_community_code = make_community_id(b"160379602000003");
         let new_home_code = make_home_id(b"160379602000004");
-        let _ = context
-            .add_entity::<Setting, _>((original_home_code, SettingCategory::Home));
+        let _ = context.add_entity::<Setting, _>((original_home_code, SettingCategory::Home));
         let person1 = context.add_entity::<Person, _>((Age(20),)).unwrap();
         let person2 = context.add_entity::<Person, _>((Age(21),)).unwrap();
         context
@@ -693,7 +693,10 @@ mod test {
             .add_entity::<Setting, _>((make_home_id(b"160379602000007"), SettingCategory::Home))
             .unwrap();
         let work_id = context
-            .add_entity::<Setting, _>((make_workplace_id(b"1603796020000042"), SettingCategory::Work))
+            .add_entity::<Setting, _>((
+                make_workplace_id(b"1603796020000042"),
+                SettingCategory::Work,
+            ))
             .unwrap();
         let p1 = context.add_entity::<Person, _>((Age(23),)).unwrap();
         let p2 = context.add_entity::<Person, _>((Age(23),)).unwrap();
@@ -738,7 +741,10 @@ mod test {
             .add_entity::<Setting, _>((make_home_id(b"160379602000008"), SettingCategory::Home))
             .unwrap();
         let work_id = context
-            .add_entity::<Setting, _>((make_workplace_id(b"1603796020000709"), SettingCategory::Work))
+            .add_entity::<Setting, _>((
+                make_workplace_id(b"1603796020000709"),
+                SettingCategory::Work,
+            ))
             .unwrap();
         let p1 = context.add_entity::<Person, _>((Age(24),)).unwrap();
         let p2 = context.add_entity::<Person, _>((Age(24),)).unwrap();
@@ -767,7 +773,10 @@ mod test {
     fn test_sample_person_from_setting() {
         let mut context = setup(0.0);
         let comm_id = context
-            .add_entity::<Setting, _>((make_community_id(b"160379602000008"), SettingCategory::Community))
+            .add_entity::<Setting, _>((
+                make_community_id(b"160379602000008"),
+                SettingCategory::Community,
+            ))
             .unwrap();
         let person_id = context.add_entity::<Person, _>((Age(25),)).unwrap();
         assign_person_settings(
@@ -784,7 +793,10 @@ mod test {
     fn test_sample_from_setting_with_exclusion() {
         let mut context = setup(0.0);
         let work_id = context
-            .add_entity::<Setting, _>((make_workplace_id(b"1603796020000121"), SettingCategory::Work))
+            .add_entity::<Setting, _>((
+                make_workplace_id(b"1603796020000121"),
+                SettingCategory::Work,
+            ))
             .unwrap();
         let p1 = context.add_entity::<Person, _>((Age(26),)).unwrap();
         let p2 = context.add_entity::<Person, _>((Age(27),)).unwrap();

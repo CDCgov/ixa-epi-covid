@@ -5,12 +5,12 @@ pub mod infectiousness_manager;
 pub mod model;
 pub mod natural_history_parameter_manager;
 pub mod parameters;
+pub mod pop_reader;
 pub mod population_loader;
 pub mod rate_fns;
 pub mod reports;
 pub mod settings;
 pub mod symptom_status_manager;
-pub mod pop_reader;
 
 pub use model::initialize_model;
 pub use parameters::ContextParametersExt;

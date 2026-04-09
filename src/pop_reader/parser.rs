@@ -2,14 +2,8 @@
 //! These high-level functions parse the concatenated FIPS code and ids.
 
 use super::{
-    errors::FIPSParserError,
-    fips_code::FIFTEEN_BIT_MASK,
-    CountyCode,
-    IdCode,
-    TractCode,
-    FIPSCode,
-    PopulationReaderSettingCategory,
-    StateCode
+    CountyCode, FIPSCode, IdCode, PopulationReaderSettingCategory, StateCode, TractCode,
+    errors::FIPSParserError, fips_code::FIFTEEN_BIT_MASK,
 };
 
 /// Parser result used throughout this module.
@@ -37,7 +31,7 @@ pub fn parse_decimal_digits_to_bits(
     let mut input_bytes = input.iter();
     let mut computed_value: u64 = 0;
 
-    for idx in 0..digit_count as usize {
+    for idx in 0..digit_count {
         match input_bytes.next() {
             Some(c) => {
                 if c.is_ascii_digit() {
@@ -92,7 +86,7 @@ pub fn parse_decimal_digits_to_bits(
         } // end match next byte
     } // end for idx
 
-    let remaining = &input[digit_count as usize..];
+    let remaining = &input[digit_count..];
     Ok((remaining, computed_value))
 }
 
@@ -305,8 +299,10 @@ pub fn parse_integer(input: &[u8]) -> FIPSParseResult<u64> {
 
 #[cfg(test)]
 mod tests {
-    use crate::pop_reader::{fips_code::ExpandedFIPSCode, StateCode, states::USState, SettingCategoryCode};
     use super::*;
+    use crate::pop_reader::{
+        SettingCategoryCode, StateCode, fips_code::ExpandedFIPSCode, states::USState,
+    };
 
     #[test]
     fn test_parse_home_id() {
@@ -358,7 +354,10 @@ mod tests {
 
         // Maximum allowed value (15 bits max = 32767)
         assert_eq!(parse_private_school_id(b"32767"), Ok((&b""[..], 32767)));
-        assert_eq!(parse_private_school_id(b"xprvx32767"), Ok((&b""[..], 32767)));
+        assert_eq!(
+            parse_private_school_id(b"xprvx32767"),
+            Ok((&b""[..], 32767))
+        );
 
         // Edge cases
         assert_eq!(parse_private_school_id(b"0000test"), Ok((&b"test"[..], 0)));
@@ -401,7 +400,10 @@ mod tests {
         assert_eq!(parse_public_school_id(b"2789"), Ok((&b""[..], 2789)));
 
         // Maximum allowed value (15 bits max = 32767)
-        assert_eq!(parse_public_school_id(b"32767abc"), Ok((&b"abc"[..], 32767)));
+        assert_eq!(
+            parse_public_school_id(b"32767abc"),
+            Ok((&b"abc"[..], 32767))
+        );
 
         // Edge cases
         assert_eq!(parse_public_school_id(b"000test"), Ok((&b"test"[..], 0)));
@@ -540,7 +542,8 @@ mod tests {
         let state_code: StateCode = USState::ID.into();
         let county_code: CountyCode = 1;
         let tract_code: TractCode = 10401;
-        let setting_cat_code: SettingCategoryCode = PopulationReaderSettingCategory::PublicSchool.encode();
+        let setting_cat_code: SettingCategoryCode =
+            PopulationReaderSettingCategory::PublicSchool.encode();
         let public_school_id_code = 2789;
 
         let (_, parsed_public_school_id) = parse_fips_school_id(public_school_id).unwrap();
@@ -558,7 +561,8 @@ mod tests {
         let state_code: StateCode = 24;
         let county_code: CountyCode = 31;
         let tract_code: TractCode = 0;
-        let setting_cat_code: SettingCategoryCode = PopulationReaderSettingCategory::PrivateSchool.encode();
+        let setting_cat_code: SettingCategoryCode =
+            PopulationReaderSettingCategory::PrivateSchool.encode();
         let private_school_id_code = 1722;
 
         let (_, parsed_private_school_id) = parse_fips_school_id(private_school_id).unwrap();
@@ -576,7 +580,8 @@ mod tests {
         let state_code: StateCode = USState::ID.into();
         let county_code: CountyCode = 1;
         let tract_code: TractCode = 10401;
-        let setting_cat_code: SettingCategoryCode = PopulationReaderSettingCategory::Workplace.encode();
+        let setting_cat_code: SettingCategoryCode =
+            PopulationReaderSettingCategory::Workplace.encode();
         let workplace_id_code = 14938;
 
         let (_, parsed_workplace_id) = parse_fips_workplace_id(workplace_id).unwrap();

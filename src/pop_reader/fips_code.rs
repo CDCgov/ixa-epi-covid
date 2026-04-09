@@ -72,12 +72,14 @@
 //!    orthogonal
 //!
 //! We leave them unspecified until we have a use case for them.
+use super::{
+    CountyCode, DataCode, IdCode, SettingCategoryCode, StateCode, TractCode, errors::FIPSError,
+    states::USState,
+};
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter};
 use std::num::NonZero;
-use serde::{Deserialize, Serialize};
-use super::{DataCode, errors::FIPSError, states::USState, StateCode, CountyCode, TractCode, SettingCategoryCode, IdCode};
-
 
 // Convenience constants
 const FOUR_BIT_MASK: u8 = 15; // 2^4-1
@@ -515,7 +517,10 @@ mod tests {
         assert_eq!(fips_code.state().unwrap(), USState::TX);
         assert_eq!(fips_code.county_code(), 123);
         assert_eq!(fips_code.census_tract_code(), 990101);
-        assert_eq!(fips_code.category_code(), <SettingCategory as Into<u8>>::into(SettingCategory::Home));
+        assert_eq!(
+            fips_code.category_code(),
+            <SettingCategory as Into<u8>>::into(SettingCategory::Home)
+        );
         assert_eq!(fips_code.id(), 14938);
         assert_eq!(fips_code.data(), 123);
     }

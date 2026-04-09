@@ -5,10 +5,10 @@
 //! Note that the `FIPSCode` encoded type only uses six bits to encode the state code, which can
 //! accommodate codes <= 63. Thus, it is best to only use `FIPSCode` for these states.
 
-use strum::{IntoStaticStr, FromRepr, Display};
+use strum::{Display, FromRepr, IntoStaticStr};
 
-use super::errors::FIPSError;
 use super::StateCode;
+use super::errors::FIPSError;
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, IntoStaticStr, FromRepr, Display)]
 #[repr(u8)]
@@ -84,7 +84,7 @@ impl USState {
     pub fn encode(&self) -> StateCode {
         *self as StateCode
     }
-    
+
     /// Gives the static string representation of this state.
     #[must_use]
     pub fn to_static_str(&self) -> &'static str {

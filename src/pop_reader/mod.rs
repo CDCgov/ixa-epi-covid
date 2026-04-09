@@ -40,10 +40,9 @@ pub use fips_code::FIPSCode;
 
 pub mod archive;
 pub mod errors;
+pub mod fips_code;
 pub mod parser;
 pub mod states;
-pub mod fips_code;
-
 
 // Numeric types used for code fragments. By convention, zero values are reserved for "no data."
 
@@ -59,7 +58,6 @@ pub type SettingCategoryCode = u8;
 pub type IdCode = u16;
 /// The numeric type used for the data code fragment; `u16`
 pub type DataCode = u16;
-
 
 /// A parsed person record from the supported CSV format.
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Default, Debug)]
@@ -178,7 +176,9 @@ fn format_as_fips_code_string(fips_code: FIPSCode) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pop_reader::parser::{parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id};
+    use crate::pop_reader::parser::{
+        parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id,
+    };
 
     #[test]
     fn text_round_trip_formatting() {
@@ -189,8 +189,10 @@ mod tests {
 
         let (_, parsed_home_id) = parse_fips_home_id(home_id.as_bytes()).unwrap();
         let (_, parsed_workplace_id) = parse_fips_workplace_id(workplace_id.as_bytes()).unwrap();
-        let (_, parsed_public_school_id) = parse_fips_school_id(public_school_id.as_bytes()).unwrap();
-        let (_, parsed_private_school_id) = parse_fips_school_id(private_school_id.as_bytes()).unwrap();
+        let (_, parsed_public_school_id) =
+            parse_fips_school_id(public_school_id.as_bytes()).unwrap();
+        let (_, parsed_private_school_id) =
+            parse_fips_school_id(private_school_id.as_bytes()).unwrap();
 
         assert_eq!(home_id, format_as_fips_code_string(parsed_home_id));
         assert_eq!(
@@ -216,8 +218,10 @@ mod tests {
 
         let (_, parsed_home_id) = parse_fips_home_id(home_id.as_bytes()).unwrap();
         let (_, parsed_workplace_id) = parse_fips_workplace_id(workplace_id.as_bytes()).unwrap();
-        let (_, parsed_public_school_id) = parse_fips_school_id(public_school_id.as_bytes()).unwrap();
-        let (_, parsed_private_school_id) = parse_fips_school_id(private_school_id.as_bytes()).unwrap();
+        let (_, parsed_public_school_id) =
+            parse_fips_school_id(public_school_id.as_bytes()).unwrap();
+        let (_, parsed_private_school_id) =
+            parse_fips_school_id(private_school_id.as_bytes()).unwrap();
 
         assert_eq!(home_id, format_as_fips_code_string(parsed_home_id));
         assert_eq!(

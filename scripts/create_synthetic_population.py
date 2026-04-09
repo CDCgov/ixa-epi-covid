@@ -241,7 +241,9 @@ def create_places(tracts_gdf, n, id_col, rng):
         setting_type = (
             "school"
             if id_col == "school_id"
-            else "workplace" if id_col == "workplace_id" else id_col
+            else "workplace"
+            if id_col == "workplace_id"
+            else id_col
         )
         raise ValueError(
             f"{setting_type} sequence overflow for tract {tract_id}: "
@@ -249,9 +251,9 @@ def create_places(tracts_gdf, n, id_col, rng):
         )
 
     min_width = 3 if id_col == "school_id" else 5
-    place_ids = sample["tract_id"] + sample[
-        "place_seq_within_tract"
-    ].astype(str).str.zfill(min_width)
+    place_ids = sample["tract_id"] + sample["place_seq_within_tract"].astype(
+        str
+    ).str.zfill(min_width)
 
     return pd.DataFrame(
         {
@@ -361,7 +363,9 @@ def assign_geography(synth_pop_df, tracts_by_puma, tracts_gdf, rng):
     max_home_seq_by_tract = house_puma_df.groupby("tract_id")[
         "home_seq_within_tract"
     ].max()
-    overflowed = max_home_seq_by_tract[max_home_seq_by_tract > FIPS_CODE_ID_MAX]
+    overflowed = max_home_seq_by_tract[
+        max_home_seq_by_tract > FIPS_CODE_ID_MAX
+    ]
     if not overflowed.empty:
         tract_id = overflowed.index[0]
         max_seq = int(overflowed.iloc[0])

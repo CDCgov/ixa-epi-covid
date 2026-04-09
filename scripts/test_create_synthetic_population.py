@@ -313,7 +313,9 @@ class TestAssignGeography:
             }
         )
 
-        geo_df = assign_geography(synth_pop_df, tracts_by_puma, tracts_gdf, rng)
+        geo_df = assign_geography(
+            synth_pop_df, tracts_by_puma, tracts_gdf, rng
+        )
         households = (
             geo_df[["house_number", "home_id"]]
             .drop_duplicates()
