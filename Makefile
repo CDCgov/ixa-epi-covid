@@ -58,34 +58,35 @@ BASE ?= HEAD
 bench-compare: input/synth_pop_people_WY_10_000.csv input/synth_pop_people_WY_100_000.csv
 	uv run scripts/bench_compare.py $(BASE)
 
+MAX_WORKERS ?= 4
 TARGET_RESULTS = ./experiments/phase1/calibration/output_indiana/results.pkl
 calibrate-phase-1: $(TARGET_RESULTS)
 $(TARGET_RESULTS): ./experiments/phase1/input/priors.json ./experiments/phase1/input/default_params.json
 	uv run cargo build -r
-	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/prod-config.yaml -o ./experiments/phase1/calibration/output_indiana
+	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/prod-config.yaml -o ./experiments/phase1/calibration/output_indiana --max-workers $(MAX_WORKERS)
 
 projections-phase-1: $(TARGET_RESULTS)
-	uv run python ./scripts/phase_1_projection.py -d output_indiana
+	uv run python ./scripts/phase_1_projection.py -d output_indiana --max-workers $(MAX_WORKERS)
 
 plot-phase-1-projection:
 	uv run python ./scripts/plot_phase_1_projection.py -d output_indiana
 
 calibrate-phase-1-smc: ./experiments/phase1/input/priors.json ./experiments/phase1/input/default_params.json
 	uv run cargo build -r
-	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/prod-smc-config.yaml -o ./experiments/phase1/calibration/smc
+	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/prod-smc-config.yaml -o ./experiments/phase1/calibration/smc --max-workers $(MAX_WORKERS)
 
 projections-phase-1-smc: ./experiments/phase1/calibration/smc/results.pkl
-	uv run python ./scripts/phase_1_projection.py -d smc
+	uv run python ./scripts/phase_1_projection.py -d smc --max-workers $(MAX_WORKERS)
 
 plot-phase-1-projection-smc: projections-phase-1-smc
 	uv run python ./scripts/plot_phase_1_projection.py -d smc
 
 calibrate-phase-1-dev: ./experiments/phase1/input/priors.json ./experiments/phase1/input/default_params.json
 	uv run cargo build -r
-	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/dev-config.yaml -o ./experiments/phase1/calibration/dev_$(NORMALIZED_SIZE) --default-population-size-dev $(NORMALIZED_SIZE)
+	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/dev-config.yaml -o ./experiments/phase1/calibration/dev_$(NORMALIZED_SIZE) --default-population-size-dev $(NORMALIZED_SIZE) --max-workers $(MAX_WORKERS)
 
 projections-phase-1-dev: ./experiments/phase1/calibration/dev_$(NORMALIZED_SIZE)/results.pkl
-	uv run python ./scripts/phase_1_projection.py -d dev_$(NORMALIZED_SIZE) -f --plot-distances
+	uv run python ./scripts/phase_1_projection.py -d dev_$(NORMALIZED_SIZE) --max-workers $(MAX_WORKERS) -f --plot-distances
 
 plot-phase-1-projection-dev: projections-phase-1-dev
 	uv run python ./scripts/plot_phase_1_projection.py -d dev_$(NORMALIZED_SIZE)
