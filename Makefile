@@ -64,10 +64,28 @@ $(TARGET_RESULTS): ./experiments/phase1/input/priors.json ./experiments/phase1/i
 	uv run cargo build -r
 	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/prod-config.yaml -o ./experiments/phase1/calibration/output_indiana
 
+projections-phase-1: $(TARGET_RESULTS)
+	uv run python ./scripts/phase_1_projection.py -d output_indiana
+
+plot-phase-1-projection:
+	uv run python ./scripts/plot_phase_1_projection.py -d output_indiana
+
 calibrate-phase-1-smc: ./experiments/phase1/input/priors.json ./experiments/phase1/input/default_params.json
 	uv run cargo build -r
 	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/prod-smc-config.yaml -o ./experiments/phase1/calibration/smc
 
+projections-phase-1-smc: ./experiments/phase1/calibration/smc/results.pkl
+	uv run python ./scripts/phase_1_projection.py -d smc
+
+plot-phase-1-projection-smc: projections-phase-1-smc
+	uv run python ./scripts/plot_phase_1_projection.py -d smc
+
 calibrate-phase-1-dev: ./experiments/phase1/input/priors.json ./experiments/phase1/input/default_params.json
 	uv run cargo build -r
 	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/dev-config.yaml -o ./experiments/phase1/calibration/dev_$(SIZE) --default-population-size-dev $(SIZE)
+
+projections-phase-1-dev: ./experiments/phase1/calibration/dev_$(SIZE)/results.pkl
+	uv run python ./scripts/phase_1_projection.py -d dev_$(SIZE) -f --plot-distances
+
+plot-phase-1-projection-dev: projections-phase-1-dev
+	uv run python ./scripts/plot_phase_1_projection.py -d dev_$(SIZE)
