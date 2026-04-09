@@ -22,26 +22,16 @@ impl_property!(Age, Person);
 pub struct Alive(pub bool);
 impl_property!(Alive, Person, default_const = Alive(true));
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct SettingIds {
-    pub setting_ids: [Option<SettingCode>; SETTING_COUNT],
-}
-impl_property!(
-    SettingIds,
-    Person,
-    default_const = SettingIds {
-        setting_ids: [None; SETTING_COUNT]
-    }
-);
-
 #[derive(Debug, PartialEq, Clone, Copy, Serialize)]
-pub struct ItineraryRatios {
+pub struct Itinerary {
+    pub setting_ids: [Option<SettingCode>; SETTING_COUNT],
     pub itinerary_ratios: [f64; SETTING_COUNT],
 }
 impl_property!(
-    ItineraryRatios,
+    Itinerary,
     Person,
-    default_const = ItineraryRatios {
+    default_const = Itinerary {
+        setting_ids: [None; SETTING_COUNT],
         itinerary_ratios: [0.0; SETTING_COUNT]
     }
 );
@@ -55,20 +45,20 @@ pub struct WorkId(pub Option<SettingCode>);
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
 pub struct CommunityId(pub Option<SettingCode>);
 
-impl_derived_property!(HomeId, Person, [SettingIds], [], |setting_ids| HomeId(
-    setting_ids.setting_ids[SettingCategory::Home]
+impl_derived_property!(HomeId, Person, [Itinerary], [], |itinerary| HomeId(
+    itinerary.setting_ids[SettingCategory::Home]
 ));
 
-impl_derived_property!(SchoolId, Person, [SettingIds], [], |setting_ids| SchoolId(
-    setting_ids.setting_ids[SettingCategory::School]
+impl_derived_property!(SchoolId, Person, [Itinerary], [], |itinerary| SchoolId(
+    itinerary.setting_ids[SettingCategory::School]
 ));
 
-impl_derived_property!(WorkId, Person, [SettingIds], [], |setting_ids| WorkId(
-    setting_ids.setting_ids[SettingCategory::Work]
+impl_derived_property!(WorkId, Person, [Itinerary], [], |itinerary| WorkId(
+    itinerary.setting_ids[SettingCategory::Work]
 ));
 
-impl_derived_property!(CommunityId, Person, [SettingIds], [], |setting_ids| {
-    CommunityId(setting_ids.setting_ids[SettingCategory::Community])
+impl_derived_property!(CommunityId, Person, [Itinerary], [], |itinerary| {
+    CommunityId(itinerary.setting_ids[SettingCategory::Community])
 });
 
 fn create_person_from_record(
