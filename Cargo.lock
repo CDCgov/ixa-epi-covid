@@ -835,6 +835,7 @@ dependencies = [
  "rand_distr",
  "serde",
  "serde_json",
+ "smallvec",
  "strum",
  "tempfile",
  "thiserror",
