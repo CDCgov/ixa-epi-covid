@@ -62,6 +62,34 @@ make profile PROFILE_SIZE=10m PROFILE_FEATURES=profiling  # both
 
 The `profiling` Cargo feature enables ixa's built-in span timing (`open_span`/`Span::drop`). This adds ~25% overhead, so it's off by default for samply runs. The `run`, `run-1m`, and `run-10m` targets enable it for ixa's own profiling output.
 
+### Calibration
+
+`make calibrate-phase-1-dev` is the easiest way to run the calibration routine of Phase 1, in which we compare the first observed deaths in the model to the first observed death in the State of Indiana. Running this command with setting `SIZE` will generate a toy synthetic population of that size based on Indiana PUMs census data and then run the Phase 1 calibration script. For example, to run routines in popualtions 50K, 100K, and 1 million:
+
+```bash
+make calibrate-phase-1-dev SIZE=50_000
+make calibrate-phase-1-dev SIZE=100_000
+make calibrate-phase-1-dev SIZE=1_000_000
+```
+
+By default, the calibration routine uses four parallel worker threads to run simulations. Depending on your computer specs, this can be altered by setting the `MAX_WORKERS` parameter
+
+```bash
+make calibrate-phase-1-dev SIZE=50_000 MAX_WORKERS=10
+```
+
+To run the post-calibration projection of the accepted particles on a longer time horizon, use the command `make projections-phase-1-dev`, which also accepts the `SIZE` and `MAX_WORKERS` command and will generate the calibration if it deos not exist.
+
+To run the whole routine through generating figures, use
+
+```bash
+make plot-phase-1-projection-dev SIZE={n} MAX_WORKERS={m}
+```
+
+This command can be called without calling the others explicitly.
+
+Production code follows the same format, but drops the `dev` suffix (for example the calibration command is `make calibrate-phase-1`). To run this, please ensure that you have specified a path to a valid synthetic population in the `.env` file under `SYNTH_POP_FILE`.
+
 ## General Disclaimer
 This repository was created for use by CDC programs to collaborate on public health related projects in support of the [CDC mission](https://www.cdc.gov/about/organization/mission.htm).  GitHub is not hosted by the CDC, but is a third party website used by CDC and its partners to share information and collaborate on software. CDC use of GitHub does not imply an endorsement of any one particular service, product, or enterprise.
 
