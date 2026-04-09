@@ -82,10 +82,10 @@ plot-phase-1-projection-smc: projections-phase-1-smc
 
 calibrate-phase-1-dev: ./experiments/phase1/input/priors.json ./experiments/phase1/input/default_params.json
 	uv run cargo build -r
-	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/dev-config.yaml -o ./experiments/phase1/calibration/dev_$(SIZE) --default-population-size-dev $(SIZE)
+	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/dev-config.yaml -o ./experiments/phase1/calibration/dev_$(NORMALIZED_SIZE) --default-population-size-dev $(NORMALIZED_SIZE)
 
-projections-phase-1-dev: ./experiments/phase1/calibration/dev_$(SIZE)/results.pkl
-	uv run python ./scripts/phase_1_projection.py -d dev_$(SIZE) -f --plot-distances
+projections-phase-1-dev: ./experiments/phase1/calibration/dev_$(NORMALIZED_SIZE)/results.pkl
+	uv run python ./scripts/phase_1_projection.py -d dev_$(NORMALIZED_SIZE) -f --plot-distances
 
 plot-phase-1-projection-dev: projections-phase-1-dev
-	uv run python ./scripts/plot_phase_1_projection.py -d dev_$(SIZE)
+	uv run python ./scripts/plot_phase_1_projection.py -d dev_$(NORMALIZED_SIZE)
