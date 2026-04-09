@@ -33,7 +33,6 @@ harness = false
 default = ["profiling", "pop_reader_archive"]
 
 profiling = ["ixa/profiling"]
-bench_old_settings = []
 
 # Runs tests that assume the existence of ASPR Synthetic Population files from ZIP archives
 pop_reader_tests = ["pop_reader_dataset_tests", "pop_reader_zip_tests"]
