@@ -74,8 +74,12 @@ mod test {
     use crate::Age;
     use crate::infection_propagation_loop::InfectionRng;
     use crate::infectiousness_manager::InfectionData;
+    use crate::pop_reader::{
+        FIPSCode, PopulationReaderSettingCategory,
+        parser::{parse_fips_home_id, parse_fips_workplace_id},
+    };
     use crate::population_loader::PersonId;
-    use crate::settings::{ContextSettingExt, SettingCategory};
+    use crate::settings::{ContextSettingExt, SettingCategory, SettingCode};
     use crate::{
         infection_propagation_loop::{
             InfectionStatus, init, schedule_next_forecasted_infection, schedule_recovery,
@@ -86,11 +90,33 @@ mod test {
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
     };
 
+    fn make_home_id(home_id: &[u8]) -> SettingCode {
+        SettingCode(parse_fips_home_id(home_id).unwrap().1)
+    }
+
+    fn make_workplace_id(workplace_id: &[u8]) -> SettingCode {
+        SettingCode(parse_fips_workplace_id(workplace_id).unwrap().1)
+    }
+
+    fn make_community_id(home_id: &[u8]) -> SettingCode {
+        let home_id = make_home_id(home_id).0;
+        SettingCode(
+            FIPSCode::with_category(
+                home_id.state_code(),
+                home_id.county_code(),
+                home_id.census_tract_code(),
+                PopulationReaderSettingCategory::CensusTract.encode(),
+            )
+            .unwrap(),
+        )
+    }
+
     fn set_homogeneous_mixing_itinerary(
         context: &mut Context,
         person_id: PersonId,
     ) -> Result<(), crate::error::ModelError> {
-        context.add_person_to_settings(person_id, None, None, None, Some(0))?;
+        let community_code = make_community_id(b"160379602000001");
+        context.add_person_to_settings(person_id, None, None, None, Some(community_code))?;
         context.initialize_setting_size()?;
         Ok(())
     }
@@ -398,17 +424,39 @@ mod test {
                 let person_censustract: PersonId = context.add_entity((Age(30),)).unwrap();
                 let person_workplace: PersonId = context.add_entity((Age(30),)).unwrap();
 
+                let home_code = make_home_id(b"160379602000001");
+                let community_code = make_community_id(b"160379602000001");
+                let workplace_code = make_workplace_id(b"1603796020000220");
+
                 context
-                    .add_person_to_settings(person_home, Some(0), None, None, None)
+                    .add_person_to_settings(person_home, Some(home_code), None, None, None)
                     .unwrap();
                 context
-                    .add_person_to_settings(person_workplace, None, Some(0), None, None)
+                    .add_person_to_settings(
+                        person_workplace,
+                        None,
+                        Some(workplace_code),
+                        None,
+                        None,
+                    )
                     .unwrap();
                 context
-                    .add_person_to_settings(person_censustract, None, None, None, Some(0))
+                    .add_person_to_settings(
+                        person_censustract,
+                        None,
+                        None,
+                        None,
+                        Some(community_code),
+                    )
                     .unwrap();
                 context
-                    .add_person_to_settings(infectious_person, Some(0), Some(0), None, Some(0))
+                    .add_person_to_settings(
+                        infectious_person,
+                        Some(home_code),
+                        Some(workplace_code),
+                        None,
+                        Some(community_code),
+                    )
                     .unwrap();
                 context.initialize_setting_size().unwrap();
 

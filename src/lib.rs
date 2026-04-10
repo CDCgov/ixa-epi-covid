@@ -5,6 +5,7 @@ pub mod infectiousness_manager;
 pub mod model;
 pub mod natural_history_parameter_manager;
 pub mod parameters;
+pub mod pop_reader;
 pub mod population_loader;
 pub mod rate_fns;
 pub mod reports;

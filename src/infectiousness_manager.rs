@@ -219,17 +219,36 @@ mod test {
         Age,
         infectiousness_manager::{InfectionData, InfectionStatus},
         parameters::{GlobalParams, Params, SettingProperties},
+        pop_reader::{FIPSCode, PopulationReaderSettingCategory, parser::parse_fips_home_id},
         population_loader::{Person, PersonId},
         rate_fns::{InfectiousnessRateExt, load_rate_fns},
         settings::{ContextSettingExt, Setting, SettingCategory, SettingCode},
     };
     use ixa::{HashMap, assert_almost_eq, prelude::*};
 
+    fn make_home_id(home_id: &[u8]) -> SettingCode {
+        SettingCode(parse_fips_home_id(home_id).unwrap().1)
+    }
+
+    fn make_community_id(home_id: &[u8]) -> SettingCode {
+        let home_id = make_home_id(home_id).0;
+        SettingCode(
+            FIPSCode::with_category(
+                home_id.state_code(),
+                home_id.county_code(),
+                home_id.census_tract_code(),
+                PopulationReaderSettingCategory::CensusTract.encode(),
+            )
+            .unwrap(),
+        )
+    }
+
     fn set_homogeneous_mixing_itinerary(
         context: &mut Context,
         person_id: PersonId,
     ) -> Result<(), crate::error::ModelError> {
-        context.add_person_to_settings(person_id, None, None, None, Some(0))?;
+        let community_code = make_community_id(b"160379602000001");
+        context.add_person_to_settings(person_id, None, None, None, Some(community_code))?;
         context.initialize_setting_size()?;
         Ok(())
     }
@@ -395,7 +414,7 @@ mod test {
         let index: PersonId = context.add_entity((Age(30),)).unwrap();
         let contact: PersonId = context.add_entity((Age(30),)).unwrap();
         let home_id = context
-            .add_entity::<Setting, _>((SettingCode(0), SettingCategory::Home))
+            .add_entity::<Setting, _>((make_home_id(b"160379602000001"), SettingCategory::Home))
             .unwrap();
         let infection_setting_id = Some(home_id);
         context.infect_person(contact, Some(index), infection_setting_id);

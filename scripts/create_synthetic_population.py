@@ -24,6 +24,7 @@ DEFAULT_PUMS_DATA_YEAR = 2023
 
 CROSSWALK_FILE = "2020_Census_Tract_to_2020_PUMA.csv"
 CROSSWALK_URL = "https://www2.census.gov/geo/docs/maps-data/data/rel2020/2020_Census_Tract_to_2020_PUMA.txt"
+FIPS_CODE_ID_MAX = 32_767
 
 
 def parse_args(argv=None):
@@ -212,14 +213,51 @@ def load_tracts(state_synth, year_synth):
     return tracts_gdf
 
 
+def assign_within_group_sequence(df, group_col, seq_col):
+    df = df.copy()
+    df[seq_col] = df.groupby(group_col).cumcount() + 1
+    return df
+
+
 def create_places(tracts_gdf, n, id_col, rng):
     sample = tracts_gdf.sample(
         n=n, replace=True, random_state=rng.integers(2**31)
     ).reset_index(drop=True)
+    sample = sample.copy()
+    sample["tract_id"] = sample["GEOID"]
+    sample = assign_within_group_sequence(
+        sample, "tract_id", "place_seq_within_tract"
+    )
+
+    max_place_seq_by_tract = sample.groupby("tract_id")[
+        "place_seq_within_tract"
+    ].max()
+    overflowed = max_place_seq_by_tract[
+        max_place_seq_by_tract > FIPS_CODE_ID_MAX
+    ]
+    if not overflowed.empty:
+        tract_id = overflowed.index[0]
+        max_seq = int(overflowed.iloc[0])
+        setting_type = (
+            "school"
+            if id_col == "school_id"
+            else "workplace"
+            if id_col == "workplace_id"
+            else id_col
+        )
+        raise ValueError(
+            f"{setting_type} sequence overflow for tract {tract_id}: "
+            f"maximum sequence {max_seq} exceeds FIPSCode limit {FIPS_CODE_ID_MAX}"
+        )
+
+    min_width = 3 if id_col == "school_id" else 5
+    place_ids = sample["tract_id"] + sample["place_seq_within_tract"].astype(
+        str
+    ).str.zfill(min_width)
+
     return pd.DataFrame(
         {
-            id_col: sample["GEOID"]
-            + (sample.index + 1).astype(str).str.zfill(6),
+            id_col: place_ids,
             "lat": sample["lat"].values,
             "lon": sample["lon"].values,
             "enrolled": 0,
@@ -311,8 +349,39 @@ def assign_geography(synth_pop_df, tracts_by_puma, tracts_gdf, rng):
     )
     house_puma_df = house_puma_df.drop(columns=["tracts"])
 
+    missing_tracts = house_puma_df[house_puma_df["tract_id"].isna()]
+    if not missing_tracts.empty:
+        missing_pumas = missing_tracts["puma_id"].drop_duplicates().tolist()
+        raise ValueError(
+            "Could not assign tract_id for sampled households in PUMAs: "
+            f"{missing_pumas}"
+        )
+
+    house_puma_df = assign_within_group_sequence(
+        house_puma_df, "tract_id", "home_seq_within_tract"
+    )
+    max_home_seq_by_tract = house_puma_df.groupby("tract_id")[
+        "home_seq_within_tract"
+    ].max()
+    overflowed = max_home_seq_by_tract[
+        max_home_seq_by_tract > FIPS_CODE_ID_MAX
+    ]
+    if not overflowed.empty:
+        tract_id = overflowed.index[0]
+        max_seq = int(overflowed.iloc[0])
+        raise ValueError(
+            f"home sequence overflow for tract {tract_id}: "
+            f"maximum sequence {max_seq} exceeds FIPSCode limit {FIPS_CODE_ID_MAX}"
+        )
+
+    house_puma_df["home_id"] = house_puma_df["tract_id"] + house_puma_df[
+        "home_seq_within_tract"
+    ].astype(str).str.zfill(4)
+
     synth_pop_region_df = synth_pop_df.merge(
-        house_puma_df[["house_number", "STATE", "PUMA", "tract_id"]],
+        house_puma_df[
+            ["house_number", "STATE", "PUMA", "tract_id", "home_id"]
+        ],
         on=["house_number", "STATE", "PUMA"],
         how="left",
     )
@@ -330,10 +399,6 @@ def assign_geography(synth_pop_df, tracts_by_puma, tracts_gdf, rng):
         how="left",
         suffixes=("", "_tract"),
     )
-
-    synth_pop_region_df["home_id"] = synth_pop_region_df["tract_id"].astype(
-        str
-    ) + synth_pop_region_df["house_number"].apply(lambda x: f"{x:06d}")
 
     return synth_pop_region_df
 
