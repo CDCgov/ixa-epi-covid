@@ -1,6 +1,24 @@
 /*!
 This module provides facilities to read CSV files in the supported person record format.
 
+The CSV format is as follows:
+
+```csv
+age,homeId,schoolId,workplaceId
+33,56000000300000001,,
+37,56000000300000001,,56000000500000017
+8,56000000300000001,56000000400000001,
+5,56000000300000001,56000000400000001,
+```
+
+The first line is a header, and the remaining lines contain the data. The `age` field is required.
+The `homeId` field may be required by the model and is always present in the datasets we use, but
+the `pop_reader::archive` module does not enforce this. The `schoolId` and `workplaceId` fields
+are optional. The fields are separated by commas without spaces and are unquoted. The ID fields
+must be in the format described in the [`pop_reader`] module-level documentation. The record format
+is parsed by [`PersonRecordIterator::next()`], which itself calls out to parselets for each field,
+while `EXPECTED_FIELD_COUNT` defines the number of fields in each record.
+
 Throughout this module, source data files are addressed using two paths:
 
 - the **data path**, configured with [`set_data_path`] and retrieved with [`get_data_path`]
@@ -500,6 +518,10 @@ fn parse_optional_field<T>(
     Ok(Some(value))
 }
 
+/// An iterator-like structure that produces the fields of a line of CSV data.
+///
+/// This type emits an error message if the row has a number of fields different from
+/// `EXPECTED_FIELD_COUNT`.
 struct FieldCursor<'a> {
     rest: &'a [u8],
     line_number: usize,

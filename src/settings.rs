@@ -48,8 +48,6 @@ pub const SETTING_COUNT: usize = SettingCategory::COUNT;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct SettingCode(pub FIPSCode);
-// See #843:
-// pub type SettingCode = FIPSCode;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy, Hash)]
 pub struct Size(pub usize);
@@ -352,7 +350,7 @@ pub trait ContextSettingExt:
         &mut self,
         setting_category: SettingCategory,
         setting_code: SettingCode,
-    ) -> Result<SettingId, IxaError> {
+    ) -> Result<SettingId, ModelError> {
         if let Some(setting_id) = self
             .query_result_iterator::<Setting, _>(((setting_category, setting_code),))
             .next()

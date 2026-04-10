@@ -30,5 +30,4 @@ fn main() {
 
     // Write the profiling data and context's execution statistics to a JSON file.
     context.write_profiling_data();
-    ixa::profiling::print_profiling_data();
 }
