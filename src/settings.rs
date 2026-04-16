@@ -110,6 +110,12 @@ pub const SETTING_COUNT: usize = SettingCategory::COUNT;
 define_global_property!(SettingAlphas, [f64; SETTING_COUNT]);
 define_global_property!(SettingRatios, [f64; SETTING_COUNT]);
 
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy, Hash)]
+pub enum SizeType {
+    Current,
+    Max,
+}
+
 trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextParametersExt {
     #[allow(dead_code)]
     fn get_setting_ratio(&self, setting_category: SettingCategory) -> Result<f64, ModelError> {
@@ -173,6 +179,23 @@ pub trait ContextSettingExt:
         membership.member_count(setting)
     }
 
+    fn get_setting_max_size(&self, setting: SettingId) -> Result<usize, ModelError> {
+        Ok(self.get_property::<Setting, MaxSize>(setting).0)
+    }
+
+
+    fn increment_setting_size(&mut self, setting: SettingId) -> Result<(), ModelError> {
+        let current_size = self.get_setting_size(setting)?;
+        self.set_property::<Setting, Size>(setting, Size(current_size + 1));
+        Ok(())
+    }
+    
+    fn decrement_setting_size(&mut self, setting: SettingId) -> Result<(), ModelError> {
+        let current_size = self.get_setting_size(setting)?;
+        self.set_property::<Setting, Size>(setting, Size(current_size - 1));
+        Ok(())
+    }
+
     fn get_active_settings_for_person(
         &self,
         person_id: PersonId,
@@ -195,7 +218,7 @@ pub trait ContextSettingExt:
         // active settings is a vector of (setting_id, ratio, multiplier) for the person.
         // When iterating through this vector s.0 refers to the setting_id, s.1 refers to ratio of time the person spends in the setting
         // and s.2 refers to the multiplier for that setting based on its size and alpha.
-        let active_settings = self.get_active_settings_for_person(person_id).unwrap();
+        let active_settings = self.get_active_settings_for_person(person_id, SizeType::Current).unwrap();
         let mut current_inf = 0.0;
         let mut sum_ratio = 0.0;
         // we calculate sum of ratios to normalize weights
@@ -217,7 +240,7 @@ pub trait ContextSettingExt:
         // active settings is a vector of (setting_id, ratio, multiplier) for the person.
         // When iterating through this vector s.0 refers to the setting_id, s.1 refers to ratio of time the person spends in the setting
         // and s.2 refers to the multiplier for that setting based on its size and alpha.
-        let active_settings = self.get_active_settings_for_person(person_id).unwrap();
+        let active_settings = self.get_active_settings_for_person(person_id, SizeType::Max).unwrap();
         let mut max_inf = 0.0;
         for (_, _, multiplier) in active_settings.iter() {
             max_inf = f64::max(max_inf, *multiplier);
