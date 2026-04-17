@@ -10,7 +10,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-ixa = { git = "https://github.com/CDCgov/ixa", branch = "main", default-features = false, features = ["logging"] }
+ixa = { path = "../ixa", default-features = false, features = ["logging"] }
 rand_distr = "0.5.1"
 serde = "1.0.217"
 serde_json = "1.0.139"
@@ -22,6 +22,7 @@ once_cell = { version = "1" }
 ouroboros = { version = "0.18.5" }
 smallvec = "1.15.1"
 strum = { version = "0.28.0", features = ["derive"] }
+ordered-float = { version = "5.3.0", features = ["serde"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

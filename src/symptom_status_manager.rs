@@ -6,39 +6,37 @@ use rand_distr::LogNormal;
 use serde::{Deserialize, Serialize};
 use std::cmp::{Ordering, PartialOrd};
 
-use crate::{
-    Age, ContextParametersExt, Params, error::ModelError, infectiousness_manager::InfectionStatus,
-    parameters::OrderedAgeGroupsParam, population_loader::Person,
-};
+
+use crate::{Age, ContextParametersExt, Params, error::ModelError, infectiousness_manager::InfectionStatus, parameters::OrderedAgeGroupsParam, population_loader::Person, Float};
 
 define_rng!(SymptomsRng);
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Copy, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Copy, Clone)]
 pub enum SymptomData {
     NoSymptoms,
     Mild {
-        mild_time: f64,
+        mild_time: Float,
     },
     Severe {
-        mild_time: f64,
-        severe_time: f64,
+        mild_time: Float,
+        severe_time: Float,
     },
     Critical {
-        mild_time: f64,
-        severe_time: f64,
-        critical_time: f64,
+        mild_time: Float,
+        severe_time: Float,
+        critical_time: Float,
     },
     Resolved {
-        mild_time: f64,
-        severe_time: Option<f64>,
-        critical_time: Option<f64>,
-        resolved_time: f64,
+        mild_time: Float,
+        severe_time: Option<Float>,
+        critical_time: Option<Float>,
+        resolved_time: Float,
     },
     Dead {
-        mild_time: f64,
-        severe_time: f64,
-        critical_time: f64,
-        dead_time: f64,
+        mild_time: Float,
+        severe_time: Float,
+        critical_time: Float,
+        dead_time: Float,
     },
 }
 
@@ -88,7 +86,7 @@ impl PartialOrd for SymptomAgeGroup {
     }
 }
 
-#[derive(Debug, Serialize, PartialEq, Copy, Clone)]
+#[derive(Debug, Serialize, PartialEq, Eq, Hash, Copy, Clone)]
 pub struct AgeGroupIndex(pub usize);
 
 impl_derived_property!(
@@ -180,7 +178,7 @@ fn process_symptom_change_event(
                         event.entity_id,
                         SymptomData::Severe {
                             mild_time,
-                            severe_time: transition_time,
+                            severe_time: transition_time.into(),
                         },
                     );
                 });
@@ -198,7 +196,7 @@ fn process_symptom_change_event(
                             mild_time,
                             severe_time: None,
                             critical_time: None,
-                            resolved_time: transition_time,
+                            resolved_time: transition_time.into(),
                         },
                     );
                 });
@@ -225,7 +223,7 @@ fn process_symptom_change_event(
                         SymptomData::Critical {
                             mild_time,
                             severe_time,
-                            critical_time: transition_time,
+                            critical_time: transition_time.into(),
                         },
                     );
                 });
@@ -245,7 +243,7 @@ fn process_symptom_change_event(
                             mild_time,
                             severe_time: Some(severe_time),
                             critical_time: None,
-                            resolved_time: transition_time,
+                            resolved_time: transition_time.into(),
                         },
                     );
                 });
@@ -274,7 +272,7 @@ fn process_symptom_change_event(
                             mild_time,
                             severe_time,
                             critical_time,
-                            dead_time: transition_time,
+                            dead_time: transition_time.into(),
                         },
                     );
                 });
@@ -295,7 +293,7 @@ fn process_symptom_change_event(
                             mild_time,
                             severe_time: Some(severe_time),
                             critical_time: Some(critical_time),
-                            resolved_time: transition_time,
+                            resolved_time: transition_time.into(),
                         },
                     );
                 });
@@ -322,7 +320,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
                     context.set_property::<Person, SymptomData>(
                         event.entity_id,
                         SymptomData::Mild {
-                            mild_time: transition_time,
+                            mild_time: transition_time.into(),
                         },
                     );
                 });
@@ -572,7 +570,7 @@ mod test {
             context.set_property::<Person, SymptomData>(
                 person,
                 SymptomData::Mild {
-                    mild_time: context.get_current_time(),
+                    mild_time: context.get_current_time().into(),
                 },
             );
         }
@@ -582,46 +580,46 @@ mod test {
             // mild -> resolved
             context.get_property::<Person, SymptomData>(p1),
             SymptomData::Resolved {
-                mild_time: 0.0,
+                mild_time: 0.0.into(),
                 severe_time: None,
                 critical_time: None,
-                resolved_time: 0.0 + mild_to_resolved_duration,
+                resolved_time: (0.0 + mild_to_resolved_duration).into(),
             }
         );
         assert_eq!(
             // mild -> severe -> resolved
             context.get_property::<Person, SymptomData>(p2),
             SymptomData::Resolved {
-                mild_time: 0.0,
-                severe_time: Some(0.0 + mild_to_severe_duration),
+                mild_time: 0.0.into(),
+                severe_time: Some((0.0 + mild_to_severe_duration).into()),
                 critical_time: None,
-                resolved_time: 0.0 + mild_to_severe_duration + severe_to_resolved_duration,
+                resolved_time: (0.0 + mild_to_severe_duration + severe_to_resolved_duration).into(),
             }
         );
         assert_eq!(
             // mild -> severe -> critical -> resolved
             context.get_property::<Person, SymptomData>(p3),
             SymptomData::Resolved {
-                mild_time: 0.0,
-                severe_time: Some(0.0 + mild_to_severe_duration),
-                critical_time: Some(0.0 + mild_to_severe_duration + severe_to_critical_duration),
-                resolved_time: 0.0
+                mild_time: 0.0.into(),
+                severe_time: Some((0.0 + mild_to_severe_duration).into()),
+                critical_time: Some((0.0 + mild_to_severe_duration + severe_to_critical_duration).into()),
+                resolved_time: (0.0
                     + mild_to_severe_duration
                     + severe_to_critical_duration
-                    + critical_to_resolved_duration,
+                    + critical_to_resolved_duration).into(),
             }
         );
         assert_eq!(
             // mild -> severe -> critical -> dead
             context.get_property::<Person, SymptomData>(p4),
             SymptomData::Dead {
-                mild_time: 0.0,
-                severe_time: 0.0 + mild_to_severe_duration,
-                critical_time: 0.0 + mild_to_severe_duration + severe_to_critical_duration,
-                dead_time: 0.0
+                mild_time: 0.0.into(),
+                severe_time: (0.0 + mild_to_severe_duration).into(),
+                critical_time: (0.0 + mild_to_severe_duration + severe_to_critical_duration).into(),
+                dead_time: (0.0
                     + mild_to_severe_duration
                     + severe_to_critical_duration
-                    + critical_to_dead_duration,
+                    + critical_to_dead_duration).into(),
             }
         );
     }
@@ -677,7 +675,7 @@ mod test {
             // no symptoms -> mild -> resolved
             context.get_property::<Person, SymptomData>(p1),
             SymptomData::Mild {
-                mild_time: infect_to_mild_duration
+                mild_time: infect_to_mild_duration.into(),
             }
         );
     }

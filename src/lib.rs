@@ -13,8 +13,11 @@ mod setting_code;
 pub mod settings;
 pub mod symptom_status_manager;
 
+use ordered_float::OrderedFloat;
 pub use model::initialize_model;
 pub use parameters::ContextParametersExt;
 pub use parameters::Params;
 pub use population_loader::Age;
 pub use rate_fns::{ConstantRate, RateFn, load_rate_fns};
+
+pub type Float = OrderedFloat<f64>;

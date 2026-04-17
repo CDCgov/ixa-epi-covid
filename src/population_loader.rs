@@ -1,9 +1,10 @@
-use ixa::{impl_derived_property, prelude::*, profiling::open_span};
+use ixa::{prelude::*, profiling::open_span};
 
 use serde::Serialize;
 use std::path::PathBuf;
 
 use crate::error::ModelError;
+use crate::Float;
 use crate::parameters::ContextParametersExt;
 use crate::pop_reader::{
     PersonRecord,
@@ -22,44 +23,56 @@ impl_property!(Age, Person);
 pub struct Alive(pub bool);
 impl_property!(Alive, Person, default_const = Alive(true));
 
-#[derive(Debug, PartialEq, Clone, Copy, Serialize)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize)]
 pub struct Itinerary {
     pub setting_ids: [Option<SettingCode>; SETTING_COUNT],
-    pub itinerary_ratios: [f64; SETTING_COUNT],
+    pub itinerary_ratios: [Float; SETTING_COUNT],
 }
 impl_property!(
     Itinerary,
     Person,
     default_const = Itinerary {
         setting_ids: [None; SETTING_COUNT],
-        itinerary_ratios: [0.0; SETTING_COUNT]
+        itinerary_ratios: [0.0.into(); SETTING_COUNT]
     }
 );
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct HomeId(pub Option<SettingCode>);
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct SchoolId(pub Option<SettingCode>);
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct WorkId(pub Option<SettingCode>);
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct CommunityId(pub Option<SettingCode>);
+// #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+// pub struct HomeId(pub Option<SettingCode>);
+// #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+// pub struct SchoolId(pub Option<SettingCode>);
+// #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+// pub struct WorkId(pub Option<SettingCode>);
+// #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+// pub struct CommunityId(pub Option<SettingCode>);
 
-impl_derived_property!(HomeId, Person, [Itinerary], [], |itinerary| HomeId(
-    itinerary.setting_ids[SettingCategory::Home]
-));
+define_derived_property!(
+    struct HomeId(pub Option<SettingCode>),
+    Person,
+    [Itinerary],
+    |itinerary| HomeId(itinerary.setting_ids[SettingCategory::Home])
+);
 
-impl_derived_property!(SchoolId, Person, [Itinerary], [], |itinerary| SchoolId(
-    itinerary.setting_ids[SettingCategory::School]
-));
+define_derived_property!(
+    struct SchoolId(pub Option<SettingCode>),
+    Person,
+    [Itinerary],
+    |itinerary| SchoolId(itinerary.setting_ids[SettingCategory::School])
+);
 
-impl_derived_property!(WorkId, Person, [Itinerary], [], |itinerary| WorkId(
-    itinerary.setting_ids[SettingCategory::Work]
-));
+define_derived_property!(
+    struct WorkId(pub Option<SettingCode>),
+    Person,
+    [Itinerary],
+    |itinerary| WorkId(itinerary.setting_ids[SettingCategory::Work])
+);
 
-impl_derived_property!(CommunityId, Person, [Itinerary], [], |itinerary| {
-    CommunityId(itinerary.setting_ids[SettingCategory::Community])
-});
+define_derived_property!(
+    struct CommunityId(pub Option<SettingCode>),
+    Person,
+    [Itinerary],
+    |itinerary| CommunityId(itinerary.setting_ids[SettingCategory::Community])
+);
 
 fn create_person_from_record(
     context: &mut Context,

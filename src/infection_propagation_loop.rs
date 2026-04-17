@@ -71,7 +71,7 @@ mod test {
 
     use ixa::{HashMap, assert_almost_eq};
 
-    use crate::Age;
+    use crate::{Age, Float};
     use crate::infection_propagation_loop::InfectionRng;
     use crate::infectiousness_manager::InfectionData;
     use crate::pop_reader::{
@@ -364,19 +364,19 @@ mod test {
         context.infect_person(person, None, None);
         // For later, we need to get the recovery time from the rate function.
         context.execute();
-        let recovery_time = context.get_person_rate_fn(person).infection_duration();
+        let recovery_time: Float = context.get_person_rate_fn(person).infection_duration().into();
         schedule_recovery(&mut context, person);
         context.execute();
         // Make sure person is recovered.
         assert_eq!(
             context.get_property::<Person, InfectionData>(person),
             InfectionData::Recovered {
-                infection_time: 0.0,
+                infection_time: 0.0.into(),
                 recovery_time
             }
         );
         // Make sure nothing has happened after person is recovered.
-        assert_almost_eq!(context.get_current_time(), recovery_time, 0.0);
+        assert_almost_eq!(context.get_current_time(), *recovery_time, 0.0);
     }
 
     #[test]

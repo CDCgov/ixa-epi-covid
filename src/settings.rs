@@ -14,6 +14,7 @@ pub(crate) use crate::{
     population_loader::{Itinerary, Person, PersonId},
     setting_code::SettingCode,
 };
+use crate::Float;
 
 define_rng!(SettingRng);
 
@@ -186,7 +187,7 @@ pub trait ContextSettingExt:
             if let Some(id) = itinerary.setting_ids[category] {
                 let ratio = itinerary.itinerary_ratios[category];
                 let multiplier = self.calculate_multiplier(id)?;
-                active_settings.push((id, ratio, multiplier));
+                active_settings.push((id, ratio.0, multiplier));
             }
         }
         Ok(active_settings)
@@ -305,7 +306,7 @@ pub trait ContextSettingExt:
 
         let sum_ratio = itinerary_ratios.iter().copied().sum::<f64>();
 
-        let normalized_itinerary_ratios = itinerary_ratios.map(|ratio| ratio / sum_ratio);
+        let normalized_itinerary_ratios = itinerary_ratios.map(|ratio| Float::from(ratio / sum_ratio));
 
         self.set_property::<Person, Itinerary>(
             person_id,
@@ -401,7 +402,7 @@ mod test {
         context: &mut Context,
         person_id: PersonId,
         assignments: &[SettingCode],
-        itinerary_ratios: [f64; SETTING_COUNT],
+        itinerary_ratios: [Float; SETTING_COUNT],
     ) {
         let mut setting_ids = [None; SETTING_COUNT];
         for setting_code in assignments {
@@ -523,8 +524,18 @@ mod test {
         let home_id = SettingCode::arbitrary_home_code();
         let person1 = context.add_entity::<Person, _>((Age(20),)).unwrap();
         let person2 = context.add_entity::<Person, _>((Age(21),)).unwrap();
-        assign_person_settings(&mut context, person1, &[home_id], [1.0, 0.0, 0.0, 0.0]);
-        assign_person_settings(&mut context, person2, &[home_id], [1.0, 0.0, 0.0, 0.0]);
+        assign_person_settings(
+            &mut context,
+            person1,
+            &[home_id],
+            [1.0, 0.0, 0.0, 0.0].map(Float::from)
+        );
+        assign_person_settings(
+            &mut context,
+            person2,
+            &[home_id],
+            [1.0, 0.0, 0.0, 0.0].map(Float::from)
+        );
         let size = context.get_setting_size(home_id);
         assert_eq!(size, 2);
     }
@@ -541,7 +552,12 @@ mod test {
         let mut context = setup_test_context(0.5);
         let home_id = SettingCode::arbitrary_home_code();
         let person_id = context.add_entity::<Person, _>((Age(22),)).unwrap();
-        assign_person_settings(&mut context, person_id, &[home_id], [0.25, 0.0, 0.0, 0.0]);
+        assign_person_settings(
+            &mut context,
+            person_id,
+            &[home_id],
+            [0.25, 0.0, 0.0, 0.0].map(Float::from)
+        );
         let active = context.get_active_settings_for_person(person_id).unwrap();
         assert_eq!(active.len(), 1);
         assert_eq!(active[0].0, home_id);
@@ -558,9 +574,24 @@ mod test {
         let p1 = context.add_entity::<Person, _>((Age(23),)).unwrap();
         let p2 = context.add_entity::<Person, _>((Age(23),)).unwrap();
         let p3 = context.add_entity::<Person, _>((Age(23),)).unwrap();
-        assign_person_settings(&mut context, p1, &[home_id, work_id], [0.5, 0.5, 0.0, 0.0]);
-        assign_person_settings(&mut context, p2, &[home_id, work_id], [0.5, 0.5, 0.0, 0.0]);
-        assign_person_settings(&mut context, p3, &[home_id], [1.0, 0.0, 0.0, 0.0]);
+        assign_person_settings(
+            &mut context,
+            p1,
+            &[home_id, work_id],
+            [0.5, 0.5, 0.0, 0.0].map(Float::from)
+        );
+        assign_person_settings(
+            &mut context,
+            p2,
+            &[home_id, work_id],
+            [0.5, 0.5, 0.0, 0.0].map(Float::from)
+        );
+        assign_person_settings(
+            &mut context,
+            p3,
+            &[home_id],
+            [1.0, 0.0, 0.0, 0.0].map(Float::from)
+        );
 
         let val = context.calculate_current_infectiousness_multiplier_for_person(p1);
         // home size = 3, alpha = 0.5, so multiplier = (3-1)^0.5 = 2^0.5 = 1.41 * 0.5 = 0.707
@@ -576,8 +607,18 @@ mod test {
         let work_id = home_id.as_arbitrary_workplace_code();
         let p1 = context.add_entity::<Person, _>((Age(24),)).unwrap();
         let p2 = context.add_entity::<Person, _>((Age(24),)).unwrap();
-        assign_person_settings(&mut context, p1, &[home_id, work_id], [0.5, 0.5, 0.0, 0.0]);
-        assign_person_settings(&mut context, p2, &[home_id], [1.0, 0.0, 0.0, 0.0]);
+        assign_person_settings(
+            &mut context,
+            p1,
+            &[home_id, work_id],
+            [0.5, 0.5, 0.0, 0.0].map(Float::from)
+        );
+        assign_person_settings(
+            &mut context,
+            p2,
+            &[home_id],
+            [1.0, 0.0, 0.0, 0.0].map(Float::from)
+        );
         let val = context.calculate_max_infectiousness_multiplier_for_person(p1);
         // size = 2, alpha = 1.0, so multiplier = (2-1)^1 = 1
         assert_eq!(val, 1.0);
@@ -588,7 +629,12 @@ mod test {
         let mut context = setup_test_context(0.0);
         let comm_id = SettingCode::arbitrary_home_code().extract_community();
         let person_id = context.add_entity::<Person, _>((Age(25),)).unwrap();
-        assign_person_settings(&mut context, person_id, &[comm_id], [0.0, 0.0, 0.0, 1.0]);
+        assign_person_settings(
+            &mut context,
+            person_id,
+            &[comm_id],
+            [0.0, 0.0, 0.0, 1.0].map(Float::from)
+        );
         let sampled = context.sample_person_from_setting(comm_id).unwrap();
         assert_eq!(sampled, person_id);
     }
@@ -599,8 +645,18 @@ mod test {
         let work_id = SettingCode::arbitrary_workplace_code();
         let p1 = context.add_entity::<Person, _>((Age(26),)).unwrap();
         let p2 = context.add_entity::<Person, _>((Age(27),)).unwrap();
-        assign_person_settings(&mut context, p1, &[work_id], [0.0, 1.0, 0.0, 0.0]);
-        assign_person_settings(&mut context, p2, &[work_id], [0.0, 1.0, 0.0, 0.0]);
+        assign_person_settings(
+            &mut context,
+            p1,
+            &[work_id],
+            [0.0, 1.0, 0.0, 0.0].map(Float::from)
+        );
+        assign_person_settings(
+            &mut context,
+            p2,
+            &[work_id],
+            [0.0, 1.0, 0.0, 0.0].map(Float::from)
+        );
         let sampled = context
             .sample_from_setting_with_exclusion(p1, work_id)
             .unwrap();
@@ -612,7 +668,12 @@ mod test {
         let mut context = setup_test_context(0.0);
         let home_id = SettingCode::arbitrary_home_code();
         let person_id = context.add_entity::<Person, _>((Age(30),)).unwrap();
-        assign_person_settings(&mut context, person_id, &[home_id], [1.0, 0.0, 0.0, 0.0]);
+        assign_person_settings(
+            &mut context,
+            person_id,
+            &[home_id],
+            [1.0, 0.0, 0.0, 0.0].map(Float::from)
+        );
         let sampled = context.sample_active_setting(person_id).unwrap();
         assert_eq!(sampled, home_id);
     }

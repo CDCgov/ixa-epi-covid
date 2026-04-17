@@ -6,23 +6,24 @@ use crate::{
     population_loader::PersonId,
     rate_fns::{InfectiousnessRateExt, InfectiousnessRateFn, ScaledRateFn},
     settings::{ContextSettingExt, SettingCode},
+    Float
 };
 
 use crate::population_loader::Person;
 
 use ixa::profiling::{increment_named_count, open_span};
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Hash, Debug, Clone, Copy)]
 pub enum InfectionData {
     Susceptible,
     Infectious {
-        infection_time: f64,
+        infection_time: Float,
         infected_by: Option<PersonId>,
         infection_setting_id: Option<SettingCode>,
     },
     Recovered {
-        infection_time: f64,
-        recovery_time: f64,
+        infection_time: Float,
+        recovery_time: Float,
     },
 }
 
@@ -178,7 +179,7 @@ pub trait InfectionContextExt: PluginContext + InfectiousnessRateExt {
         self.set_property::<Person, InfectionData>(
             target_id,
             InfectionData::Infectious {
-                infection_time,
+                infection_time: infection_time.into(),
                 infected_by: source_id,
                 infection_setting_id: setting_id,
             },
@@ -194,7 +195,7 @@ pub trait InfectionContextExt: PluginContext + InfectiousnessRateExt {
         self.set_property::<Person, InfectionData>(
             person_id,
             InfectionData::Recovered {
-                recovery_time,
+                recovery_time: recovery_time.into(),
                 infection_time,
             },
         );
@@ -205,7 +206,7 @@ pub trait InfectionContextExt: PluginContext + InfectiousnessRateExt {
         else {
             panic!("Person {person_id} is not infectious")
         };
-        self.get_current_time() - infection_time
+        self.get_current_time() - infection_time.0
     }
 }
 impl InfectionContextExt for Context {}
@@ -283,7 +284,7 @@ mod test {
         else {
             panic!("Person {p1} is not infectious")
         };
-        assert_almost_eq!(infection_time, 2.0, 0.0);
+        assert_almost_eq!(infection_time.0, 2.0, 0.0);
         context.get_person_rate_fn(p1);
     }
 
@@ -305,8 +306,8 @@ mod test {
         else {
             panic!("Person {p1} is not recovered")
         };
-        assert_almost_eq!(infection_time, 2.0, 0.0);
-        assert_almost_eq!(recovery_time, 3.0, 0.0);
+        assert_almost_eq!(infection_time.0, 2.0, 0.0);
+        assert_almost_eq!(recovery_time.0, 3.0, 0.0);
     }
 
     #[test]
