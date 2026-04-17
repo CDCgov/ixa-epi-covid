@@ -81,7 +81,7 @@ impl USState {
 
     /// Returns the numeric FIPS code for this state.
     #[must_use]
-    pub fn encode(&self) -> StateCode {
+    pub const fn encode(&self) -> StateCode {
         *self as StateCode
     }
 

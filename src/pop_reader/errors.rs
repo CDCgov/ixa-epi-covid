@@ -91,7 +91,7 @@ pub struct FIPSError {
 
 impl FIPSError {
     #[must_use]
-    pub fn new(parameter_name: &'static str, value: u64, min: u64, max: u64) -> Self {
+    pub const fn new(parameter_name: &'static str, value: u64, min: u64, max: u64) -> Self {
         Self {
             parameter_name,
             value,
@@ -106,7 +106,7 @@ impl FIPSError {
     /// This one is unique in that it represents an error converting a (presumably valid) [`StateCode`] to a [`USState`]
     /// variant. We lie a little bit and claim that values in 1..57 are valid when 3, 7, 14, 43, and 52 are not.
     #[must_use]
-    pub fn from_us_state(value: StateCode) -> Self {
+    pub const fn from_us_state(value: StateCode) -> Self {
         Self {
             parameter_name: "USState Code",
             value: value as u64,
@@ -116,7 +116,7 @@ impl FIPSError {
     }
 
     #[must_use]
-    pub fn from_state_code(value: StateCode) -> Self {
+    pub const fn from_state_code(value: StateCode) -> Self {
         Self {
             parameter_name: "StateCode",
             value: value as u64,
@@ -126,7 +126,7 @@ impl FIPSError {
     }
 
     #[must_use]
-    pub fn from_county_code(value: CountyCode) -> Self {
+    pub const fn from_county_code(value: CountyCode) -> Self {
         Self {
             parameter_name: "CountyCode",
             value: value as u64,
@@ -136,7 +136,7 @@ impl FIPSError {
     }
 
     #[must_use]
-    pub fn from_tract_code(value: TractCode) -> Self {
+    pub const fn from_tract_code(value: TractCode) -> Self {
         Self {
             parameter_name: "TractCode",
             value: value as u64,
@@ -146,7 +146,7 @@ impl FIPSError {
     }
 
     #[must_use]
-    pub fn from_setting_category_code(value: SettingCategoryCode) -> Self {
+    pub const fn from_setting_category_code(value: SettingCategoryCode) -> Self {
         Self {
             parameter_name: "SettingCategoryCode",
             value: value as u64,
@@ -156,7 +156,7 @@ impl FIPSError {
     }
 
     #[must_use]
-    pub fn from_id_code(value: IdCode) -> Self {
+    pub const fn from_id_code(value: IdCode) -> Self {
         Self {
             parameter_name: "IdCode",
             value: value as u64,
@@ -166,7 +166,7 @@ impl FIPSError {
     }
 
     #[must_use]
-    pub fn from_data_code(value: DataCode) -> Self {
+    pub const fn from_data_code(value: DataCode) -> Self {
         Self {
             parameter_name: "DataCode",
             value: value as u64,

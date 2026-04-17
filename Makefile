@@ -32,7 +32,7 @@ input/synth_pop_people_%.csv:
 # Run the model with a synthetic population (e.g., make run SIZE=1_000_000)
 # Generates the population file if it doesn't exist.
 run: input/synth_pop_people_$(STATE)_$(NORMALIZED_SIZE).csv
-	cargo run --release --features profiling -- -c input/input.json -o output --no-stats -f --synth-population input/synth_pop_people_$(STATE)_$(NORMALIZED_SIZE).csv
+	cargo run --release --features profiling -- -c input/input.json -o output -f --synth-population input/synth_pop_people_$(STATE)_$(NORMALIZED_SIZE).csv
 
 run-small:
 	make run SIZE=10_000
