@@ -37,7 +37,7 @@ pub fn initialize_model(
     info!("Infection propagation loop initialized");
     infection_importation::init(context)?;
     info!("Infection importation initialized");
-    // school_closure::init(context)?;
+    school_closure::init(context)?;
     // itinerary_manager::init(context)?;
     info!("School closure initialized");
     reports::init(context)?;

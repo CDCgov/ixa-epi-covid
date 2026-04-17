@@ -22,12 +22,14 @@ define_rng!(SettingRng);
 #[derive(Default)]
 pub struct SettingMembership {
     members: HashMap<SettingCode, Vec<PersonId>>,
+    max_size: HashMap<SettingCode, usize>,
 }
 
 impl SettingMembership {
     pub fn new() -> Self {
         Self {
             members: HashMap::default(),
+            max_size: HashMap::default(),
         }
     }
 
@@ -67,6 +69,11 @@ impl SettingMembership {
             .map(|members| members.len())
             .unwrap_or(0)
     }
+
+    pub fn max_size(&self, setting_code: SettingCode) -> usize {
+        self.max_size.get(&setting_code).cloned().unwrap_or(0)
+    }
+
 }
 
 define_data_plugin!(SettingMembershipPlugin, SettingMembership, |context| {
@@ -76,6 +83,11 @@ define_data_plugin!(SettingMembershipPlugin, SettingMembership, |context| {
     for person_id in person_iter {
         let settings: SettingIds = context.get_property(person_id);
         membership.add_members(&settings.setting_ids, person_id);
+    }
+
+    for setting_code in membership.members.keys() {
+        let size = membership.member_count(*setting_code);
+        membership.max_size.insert(*setting_code, size);
     }
 
     membership
@@ -179,26 +191,28 @@ pub trait ContextSettingExt:
         membership.member_count(setting)
     }
 
-    fn get_setting_max_size(&self, setting: SettingId) -> Result<usize, ModelError> {
-        Ok(self.get_property::<Setting, MaxSize>(setting).0)
+    fn get_setting_max_size(&self, setting: SettingCode) -> usize{
+        let membership = self.get_data(SettingMembershipPlugin);
+        membership.max_size(setting)
     }
 
 
-    fn increment_setting_size(&mut self, setting: SettingId) -> Result<(), ModelError> {
-        let current_size = self.get_setting_size(setting)?;
-        self.set_property::<Setting, Size>(setting, Size(current_size + 1));
+    fn increment_setting_size(&mut self, setting: SettingCode, person: PersonId) -> Result<(), ModelError> {
+        let membership = self.get_data_mut(SettingMembershipPlugin);
+        membership.add_member(setting, person);
         Ok(())
     }
     
-    fn decrement_setting_size(&mut self, setting: SettingId) -> Result<(), ModelError> {
-        let current_size = self.get_setting_size(setting)?;
-        self.set_property::<Setting, Size>(setting, Size(current_size - 1));
+    fn decrement_setting_size(&mut self, setting: SettingCode, person: PersonId) -> Result<(), ModelError> {
+        let membership = self.get_data_mut(SettingMembershipPlugin);
+        membership.remove_member(setting, person);
         Ok(())
     }
 
     fn get_active_settings_for_person(
         &self,
         person_id: PersonId,
+        size_type: SizeType,
     ) -> Result<Vec<(SettingCode, f64, f64)>, ModelError> {
         let mut active_settings = Vec::new();
         let setting_ids = self.get_property::<Person, SettingIds>(person_id);
@@ -207,7 +221,7 @@ pub trait ContextSettingExt:
         for category in SettingCategory::iter() {
             if let Some(id) = setting_ids.setting_ids[category] {
                 let ratio = itinerary_ratios.itinerary_ratios[category];
-                let multiplier = self.calculate_multiplier(id)?;
+                let multiplier = self.calculate_multiplier(id, size_type)?;
                 active_settings.push((id, ratio, multiplier));
             }
         }
@@ -273,14 +287,18 @@ pub trait ContextSettingExt:
         }
     }
 
-    fn calculate_multiplier(&self, setting: SettingCode) -> Result<f64, ModelError> {
-        let size = self.get_setting_size(setting) as f64 - 1.0;
+    fn calculate_multiplier(&self, setting: SettingCode, size_type: SizeType) -> Result<f64, ModelError> {
+        let size = if size_type == SizeType::Current {
+            self.get_setting_size(setting) as f64 - 1.0
+        } else {
+            self.get_setting_max_size(setting) as f64 - 1.0
+        };
         let alpha = self.get_setting_alpha(setting.category())?;
         Ok(size.powf(alpha))
     }
 
     fn sample_active_setting(&self, person_id: PersonId) -> Result<SettingCode, ModelError> {
-        let active_settings = self.get_active_settings_for_person(person_id)?;
+        let active_settings = self.get_active_settings_for_person(person_id, SizeType::Current)?;
         let mut weights_vec = vec![];
         for setting in active_settings.iter() {
             let ratio = setting.1;
@@ -340,6 +358,16 @@ pub trait ContextSettingExt:
         // Register setting membership for this person.
         let membership = self.get_data_mut(SettingMembershipPlugin);
         membership.add_members(&setting_ids, person_id);
+    }
+
+    fn get_all_settings(&self, category: SettingCategory) -> Vec<SettingCode> {
+        let membership = self.get_data(SettingMembershipPlugin);
+        membership
+            .members
+            .keys()
+            .filter(|setting_code| setting_code.category() == category)
+            .cloned()
+            .collect()
     }
 }
 
@@ -563,7 +591,7 @@ mod test {
         let home_id = SettingCode::arbitrary_home_code();
         let person_id = context.add_entity::<Person, _>((Age(22),)).unwrap();
         assign_person_settings(&mut context, person_id, &[home_id], [0.25, 0.0, 0.0, 0.0]);
-        let active = context.get_active_settings_for_person(person_id).unwrap();
+        let active = context.get_active_settings_for_person(person_id, SizeType::Current).unwrap();
         assert_eq!(active.len(), 1);
         assert_eq!(active[0].0, home_id);
         assert_eq!(active[0].1, 0.25); // default ratio for home is 0.25

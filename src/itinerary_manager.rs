@@ -1,5 +1,6 @@
 use ixa::{HashMap, prelude::*};
 use serde::{Serialize};
+use strum::IntoEnumIterator;
 
 use crate::{ContextParametersExt, population_loader::{ItineraryRatios, Person, PersonId, SettingIds}, settings::{ContextSettingExt, SettingCategory}};
 
@@ -7,7 +8,6 @@ use crate::{ContextParametersExt, population_loader::{ItineraryRatios, Person, P
 pub struct ItineraryModifier {
     pub ranking: usize,
     pub itinerary_ratios: ItineraryRatios,
-    pub setting_categories: Vec<SettingCategory>,
 }
 
 /// An index of settings as represented by their setting codes.
@@ -64,7 +64,6 @@ define_data_plugin!(ItineraryModifiersPlugin, ItineraryModifiers, |context| {
         let itinerary_modifier = ItineraryModifier {
             ranking: 0,
             itinerary_ratios,
-            setting_categories: Vec::new(),
         };
         itinerary_modifiers.add_itinerary_modifier(person_id, itinerary_modifier);
         itinerary_modifiers.update_dominant_modifier(person_id);
@@ -88,9 +87,9 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt + Cont
     }
 
     fn implement_dominant_multiplier(&mut self, person: PersonId) {
-        let (dominant_itinerary_ratios, dominant_itinerary_categories) = {
+        let dominant_itinerary_ratios = {
             let container = self.get_data_mut(ItineraryModifiersPlugin);
-            let dominant = container.dominant_modifier.get(&person).map(|m| (m.itinerary_ratios.clone(), m.setting_categories.clone())).unwrap();
+            let dominant = container.dominant_modifier.get(&person).map(|m| m.itinerary_ratios.clone()).unwrap();
             dominant
         };
         let previous_dominant_itinerary_ratios = self.get_property::<Person, ItineraryRatios>(person);
@@ -98,15 +97,15 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt + Cont
                 person,
                 dominant_itinerary_ratios.clone(),
         );
-        for category in &dominant_itinerary_categories {
-            if let Some(setting_id) = self.get_property::<Person, SettingIds>(person).setting_ids[*category] {
-                let previous_itinerary_ratio = previous_dominant_itinerary_ratios.itinerary_ratios[*category];
-                let dominant_itinerary_ratio = dominant_itinerary_ratios.itinerary_ratios[*category];
+        for category in SettingCategory::iter() {
+            if let Some(setting_id) = self.get_property::<Person, SettingIds>(person).setting_ids[category] {
+                let previous_itinerary_ratio = previous_dominant_itinerary_ratios.itinerary_ratios[category];
+                let dominant_itinerary_ratio = dominant_itinerary_ratios.itinerary_ratios[category];
                 if previous_itinerary_ratio == 0.0 && dominant_itinerary_ratio != 0.0 {
-                    let _ = self.increment_setting_size(setting_id);
+                    let _ = self.increment_setting_size(setting_id, person);
                 }
                 if previous_itinerary_ratio != 0.0 && dominant_itinerary_ratio == 0.0 {
-                    let _ = self.decrement_setting_size(setting_id);
+                    let _ = self.decrement_setting_size(setting_id, person);
                 }
             }
         }
@@ -117,16 +116,14 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt + Cont
             ranking: 1,
             itinerary_ratios: ItineraryRatios {
                 itinerary_ratios: [0.75, 0.0, 0.0, 0.25],
-            },
-            setting_categories: vec![SettingCategory::School],
+            }
         };
 
         let school_closure_work_modifier = ItineraryModifier {
             ranking: 1,
             itinerary_ratios: ItineraryRatios {
                 itinerary_ratios: [0.5, 0.25, 0.0, 0.25],
-            },
-            setting_categories: vec![SettingCategory::School],
+            }
         };
 
         for person_id in self.get_entity_iterator::<Person>() {
