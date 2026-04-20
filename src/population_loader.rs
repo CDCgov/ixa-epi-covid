@@ -71,6 +71,14 @@ impl_derived_property!(CommunityId, Person, [SettingIds], [], |setting_ids| {
     CommunityId(setting_ids.setting_ids[SettingCategory::Community])
 });
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+pub struct Student(pub bool);
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+pub struct Worker(pub bool);
+
+impl_derived_property!(Student, Person, [SchoolId], [], |school_id| Student(school_id.0.is_some()));
+impl_derived_property!(Worker, Person, [WorkId], [], |work_id| Worker(work_id.0.is_some()));
+
 fn create_person_from_record(
     context: &mut Context,
     person_record: PersonRecord,

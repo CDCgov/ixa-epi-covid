@@ -14,6 +14,7 @@ pub mod settings;
 pub mod symptom_status_manager;
 pub mod school_closure;
 pub mod itinerary_manager;
+pub mod policy;
 
 pub use model::initialize_model;
 pub use parameters::ContextParametersExt;

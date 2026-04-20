@@ -2,9 +2,9 @@ use ixa::{HashMap, prelude::*};
 use serde::{Serialize};
 use strum::IntoEnumIterator;
 
-use crate::{ContextParametersExt, population_loader::{ItineraryRatios, Person, PersonId, SettingIds}, settings::{ContextSettingExt, SettingCategory}};
+use crate::{ContextParametersExt, population_loader::{ItineraryRatios, Person, PersonId, SettingIds, Student, Worker}, settings::{ContextSettingExt, SettingCategory}};
 
-#[derive(Debug, PartialEq, Clone, Serialize)]
+#[derive(Debug, PartialEq, Clone, Serialize, Copy)]
 pub struct ItineraryModifier {
     pub ranking: usize,
     pub itinerary_ratios: ItineraryRatios,
@@ -27,7 +27,7 @@ impl ItineraryModifiers {
     fn update_dominant_modifier(&mut self, person: PersonId) {
         if let Some(modifiers) = self.modifiers.get(&person) {
             if let Some(max_modifier) = modifiers.iter().max_by_key(|m| m.ranking) {
-                self.dominant_modifier.insert(person, max_modifier.clone());
+                self.dominant_modifier.insert(person, *max_modifier);
             }
         }
     }
@@ -127,14 +127,14 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt + Cont
         };
 
         for person_id in self.get_entity_iterator::<Person>() {
-            let school_id = self.get_property::<Person, SettingIds>(person_id).setting_ids[SettingCategory::School];
-            let work_id = self.get_property::<Person, SettingIds>(person_id).setting_ids[SettingCategory::Work];
+            let student = self.get_property::<Person, Student>(person_id);
+            let worker = self.get_property::<Person, Worker>(person_id);
             let school_closure_work_modifier_start = school_closure_work_modifier.clone();
             let school_closure_work_modifier_end = school_closure_work_modifier.clone();
             let school_closure_modifier_start = school_closure_modifier.clone();
             let school_closure_modifier_end = school_closure_modifier.clone();
-            if school_id.is_some() {
-                if work_id.is_some() {
+            if student.0 {
+                if worker.0 {
                     self.add_plan(start, move |context| {
                         context.register_itinerary_modifier(person_id, school_closure_work_modifier_start.clone());
                     });
