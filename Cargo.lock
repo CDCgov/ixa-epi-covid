@@ -777,7 +777,8 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 [[package]]
 name = "ixa"
 version = "2.0.0-beta2.1"
-source = "git+https://github.com/CDCgov/ixa?branch=main#5ee076a5f4a215b9521258814285344eae507548"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7514f8a567d03a2cc8bb684fa96c072b415d657f5eb8108da33ae57cfb8d656"
 dependencies = [
  "approx",
  "bincode",
@@ -814,7 +815,8 @@ dependencies = [
 [[package]]
 name = "ixa-derive"
 version = "2.0.0-beta.1"
-source = "git+https://github.com/CDCgov/ixa?branch=main#5ee076a5f4a215b9521258814285344eae507548"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2377d465cd9978c98d2b6e51722ed70d2da5aef31d0e97a83bbaf638ad75497"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
