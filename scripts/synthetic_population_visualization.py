@@ -10,6 +10,7 @@ import pygris
 
 import requests
 from io import BytesIO
+from scipy.stats import ks_2samp
 # USDA RUCA data source (latest public release)
 RUCA_PATH_2020 = "/home/xui6/Downloads/RUCA-codes-2020-tract.csv"
 RUCA_PATH_2010 = "/home/xui6/Downloads/ruca2010revised.csv"
@@ -115,6 +116,79 @@ def plot_contact_matrix(synth_pop, setting_category_string, sample_size):
     plt.show()
     
 
+def plot_distribution_of_age_by_home(synth_pop):
+    setting_pop = synth_pop.filter(pl.col("setting_category") == "Home")
+    setting_pop = setting_pop.with_columns(pl.col("age").cast(pl.Int32))
+    setting_pop = setting_pop.with_columns(pl.col("age").cast(pl.Float64).mean().over("setting_code").alias("average_age"))
+    setting_pop = setting_pop.with_columns(pl.col("age").cast(pl.Float64).max().over("setting_code").alias("max_age"))
+    setting_pop = setting_pop.with_columns(
+        pl.col("person_id").count().over("setting_code").alias("total_count")
+    )
+
+
+    # Calculate and print the statistics for age
+    min_age = setting_pop["age"].min()
+    max_age = setting_pop["age"].max()
+    mean_age = setting_pop["age"].mean()
+    median_age = setting_pop["age"].median()
+    percentile_25_age = setting_pop["age"].quantile(0.25)
+    percentile_75_age = setting_pop["age"].quantile(0.75)
+    percent_over_65 = (setting_pop.filter(pl.col("age") > 65).shape[0] / setting_pop.shape[0]) * 100
+    print(f"Percentage of individuals over 65: {percent_over_65:.2f}%")
+
+    print(f"Min Age: {min_age}")
+    print(f"Max Age: {max_age}")
+    print(f"Mean Age: {mean_age}")
+    print(f"Median Age: {median_age}")
+    print(f"25th Percentile Age: {percentile_25_age}")
+    print(f"75th Percentile Age: {percentile_75_age}")
+    
+    
+
+    setting_pop_drop = setting_pop.unique(subset="setting_code")
+    plt.figure(figsize=(10, 6))
+    seaborn.scatterplot(setting_pop_drop.to_pandas(), x="total_count", y="average_age")
+    plt.title("Home size vs average age n = " + str(len(setting_pop_drop)) + " homes")
+    plt.xlabel("Home size")
+    plt.ylabel("Average Age")
+    plt.show()
+
+    # Filter out settings with no age data
+    # setting_pop = setting_pop.sort("age")
+    plt.figure(figsize=(10, 6))
+    seaborn.histplot(setting_pop_drop.to_pandas(), x="average_age", bins = 77, kde=False)
+    plt.title("Distribution of Average Age in Homes" )
+    plt.xlabel("Age")
+    plt.ylabel("Count")
+    plt.show()
+
+    over_65 = setting_pop_drop.filter(pl.col("average_age") > 65)
+    # Filter out settings with no age data
+    # setting_pop = setting_pop.sort("age")
+    plt.figure(figsize=(10, 6))
+    seaborn.histplot(setting_pop_drop.to_pandas(), x="total_count", bins = 77, kde=False)
+    plt.title("Distribution of Size when Average Age in Homes is >65" )
+    plt.xlabel("Age")
+    plt.ylabel("Count")
+    plt.show()
+
+    # Filter out settings with no age data
+    # setting_pop = setting_pop.sort("age")
+    plt.figure(figsize=(10, 6))
+    seaborn.histplot(setting_pop.to_pandas(), x="age", bins = 77, kde=False)
+    plt.title("Distribution of Age in " )
+    plt.xlabel("Age")
+    plt.ylabel("Count")
+    plt.show()
+
+    unique_setting_codes = setting_pop["setting_code"].unique()[:20]
+    setting_pop = setting_pop.filter(pl.col("setting_code").is_in(unique_setting_codes))
+    g = seaborn.FacetGrid(setting_pop.to_pandas(), col="setting_code", col_wrap=4, sharex=False, sharey=False)
+    g.map(seaborn.histplot, "age", bins=50)
+    g.set_axis_labels("Age", "Count")
+    g.set_titles("{col_name}")
+    plt.show()
+
 def plot_distribution_of_age_by_work(synth_pop, setting_category_string):
     setting_pop = synth_pop.filter(pl.col("setting_category") == setting_category_string)
     setting_pop = setting_pop.with_columns(pl.col("age").cast(pl.Int32))
@@ -123,6 +197,26 @@ def plot_distribution_of_age_by_work(synth_pop, setting_category_string):
     setting_pop = setting_pop.with_columns(
         pl.col("person_id").count().over("setting_code").alias("total_count")
     )
+
+    setting_pop = setting_pop.filter(pl.col("age") >= 16)
+
+    # Calculate and print the statistics for age
+    min_age = setting_pop["age"].min()
+    max_age = setting_pop["age"].max()
+    mean_age = setting_pop["age"].mean()
+    median_age = setting_pop["age"].median()
+    percentile_25_age = setting_pop["age"].quantile(0.25)
+    percentile_75_age = setting_pop["age"].quantile(0.75)
+    percent_over_65 = (setting_pop.filter(pl.col("age") > 65).shape[0] / setting_pop.shape[0]) * 100
+    print(f"Percentage of individuals over 65: {percent_over_65:.2f}%")
+
+    print(f"Min Age: {min_age}")
+    print(f"Max Age: {max_age}")
+    print(f"Mean Age: {mean_age}")
+    print(f"Median Age: {median_age}")
+    print(f"25th Percentile Age: {percentile_25_age}")
+    print(f"75th Percentile Age: {percentile_75_age}")
+    
 
     setting_pop_drop = setting_pop.unique(subset="setting_code")
     plt.figure(figsize=(10, 6))
@@ -135,7 +229,7 @@ def plot_distribution_of_age_by_work(synth_pop, setting_category_string):
     # Filter out settings with no age data
     # setting_pop = setting_pop.sort("age")
     plt.figure(figsize=(10, 6))
-    seaborn.histplot(setting_pop.to_pandas(), x="age", bins=50, kde=False)
+    seaborn.histplot(setting_pop.to_pandas(), x="age", bins = 77, kde=False)
     plt.title("Distribution of Age in " + setting_category_string)
     plt.xlabel("Age")
     plt.ylabel("Count")
@@ -144,12 +238,13 @@ def plot_distribution_of_age_by_work(synth_pop, setting_category_string):
     unique_setting_codes = setting_pop["setting_code"].unique()[:20]
     setting_pop = setting_pop.filter(pl.col("setting_code").is_in(unique_setting_codes))
     g = seaborn.FacetGrid(setting_pop.to_pandas(), col="setting_code", col_wrap=4, sharex=False, sharey=False)
-    g.map(seaborn.histplot, "age", bins=30)
+    g.map(seaborn.histplot, "age", bins=50)
     g.set_axis_labels("Age", "Count")
     g.set_titles("{col_name}")
     plt.show()
 
 def plot_distribution_of_age_by_school(synth_pop, setting_category_string):
+    real_public_schools = pd.read_csv("input/school size indiana.csv")
     setting_pop = synth_pop.filter(pl.col("setting_category") == setting_category_string)
     setting_pop = setting_pop.with_columns(pl.col("age").cast(pl.Int32))
     setting_pop = setting_pop.with_columns(pl.col("age").cast(pl.Float64).mean().over("setting_code").alias("average_age"))
@@ -164,31 +259,95 @@ def plot_distribution_of_age_by_school(synth_pop, setting_category_string):
         pl.col("person_id").count().over("setting_code").alias("total_count")
     )
 
-
+    if "setting_code" in setting_pop.columns:
+        setting_pop = setting_pop.with_columns(
+            pl.when(pl.col("setting_code").str.contains("xprvx", literal=True))
+            .then(pl.lit("Private"))
+            .otherwise(pl.lit("Public"))
+            .alias("school_type")
+        )
+    else:
+        raise ValueError("Column 'setting_code' not found in the DataFrame.")
+    
 
     setting_pop_drop = setting_pop.unique(subset="setting_code")
-    setting_pop_drop = setting_pop_drop.with_columns(
-        (pl.col("count_under_21") / pl.col("count_over_21")).fill_nan(0).alias("student_teacher_ratio")
-    )
 
-    print(setting_pop_drop.select(["setting_code", "average_age", "total_count", "count_under_21", "count_over_21", "student_teacher_ratio"]))
-    no_teachers = setting_pop_drop.filter(pl.col("student_teacher_ratio") == np.inf)
-    teachers = setting_pop_drop.filter(pl.col("student_teacher_ratio") != np.inf)
+    # Filter for public schools
+    public_schools = setting_pop_drop.filter(pl.col("school_type") == "Public")
 
+    # Plot histogram of public school sizes
     plt.figure(figsize=(10, 6))
-    seaborn.scatterplot(teachers.to_pandas(), x="total_count", y="average_age", hue = "student_teacher_ratio", palette="viridis", legend= True)
-    plt.title("School size vs average age by student teacher ratio n = " + str(len(teachers)) + " of " + str(len(setting_pop_drop)) + " schools")
-    plt.xlabel("School size")
-    plt.ylabel("Average Age")
-    plt.legend(title="Students per Teacher")
+    seaborn.histplot(public_schools.to_pandas(), x="total_count", bins=30, kde=False)
+    plt.title("Size Distribution of Public Schools")
+    plt.xlabel("School Size")
+    plt.ylabel("Count")
     plt.show()
 
     plt.figure(figsize=(10, 6))
-    seaborn.scatterplot(no_teachers.to_pandas(), x="total_count", y="average_age")
-    plt.title("School size vs average age with no teachers n = " + str(len(no_teachers)) + " of " + str(len(setting_pop_drop)) + " schools")
-    plt.xlabel("School size")
-    plt.ylabel("Average Age")
-    plt.legend(title="Students per Teacher")
+    seaborn.histplot(real_public_schools, x="total_count", bins=30, kde=False)
+    plt.title("NCES Size Distribution of Public Schools")
+    plt.xlabel("School Size")
+    plt.ylabel("Count")
+    plt.show()
+
+    public_schools =public_schools.to_pandas()
+    # Perform Kolmogorov-Smirnov test
+    ks_stat, p_value = ks_2samp(
+        real_public_schools["total_count"].dropna(),
+        public_schools["total_count"].dropna()
+    )
+
+    print(f"KS Statistic: {ks_stat}")
+    print(f"P-value: {p_value}")
+
+    if p_value < 0.05:
+        print("The distributions are significantly different (p < 0.05).")
+    else:
+        print("The distributions are not significantly different (p >= 0.05).")
+
+    # Calculate and print the statistics for total_count
+    mean_total_count = setting_pop_drop["total_count"].mean()
+    median_total_count = setting_pop_drop["total_count"].median()
+    percentile_25 = setting_pop_drop["total_count"].quantile(0.25)
+    percentile_75 = setting_pop_drop["total_count"].quantile(0.75)
+
+    print(f"Mean of total_count: {mean_total_count}")
+    print(f"Median of total_count: {median_total_count}")
+    print(f"25th Percentile of total_count: {percentile_25}")
+    print(f"75th Percentile of total_count: {percentile_75}")
+
+    setting_pop_drop = setting_pop_drop.with_columns(
+        (pl.col("count_under_21") / pl.col("count_over_21")).fill_nan(0).alias("student_to_adult_ratio")
+    )
+
+    print(setting_pop_drop.select(["setting_code", "average_age", "total_count", "count_under_21", "count_over_21", "student_to_adult_ratio"]))
+    no_teachers = setting_pop_drop.filter(pl.col("student_to_adult_ratio") == np.inf)
+    teachers = setting_pop_drop.filter(pl.col("student_to_adult_ratio") != np.inf)
+
+    # Plot histogram of student to adult ratio
+    plt.figure(figsize=(10, 6))
+    seaborn.histplot(teachers.to_pandas(), x="student_to_adult_ratio", bins=30, kde=False)
+    plt.title("Distribution of Student to Adult Ratio")
+    plt.xlabel("Student to Adult Ratio")
+    plt.ylabel("Count")
+    plt.show()
+
+    plt.figure(figsize=(10, 6))
+    g = seaborn.FacetGrid(teachers.to_pandas(), col="school_type", height=6, aspect=1.5)
+    g.map(seaborn.scatterplot, "total_count", "average_age")
+    g.set_axis_labels("School size", "Average Age")
+    g.set_titles("{col_name} Schools")
+    plt.subplots_adjust(top=0.9)
+    g.figure.suptitle("School size vs average age of schools with adults = " + str(len(teachers)) + " of " + str(len(setting_pop_drop)) + " schools")
+    plt.show()
+
+    plt.figure(figsize=(10, 6))
+    g = seaborn.FacetGrid(no_teachers.to_pandas(), col="school_type", height=6, aspect=1.5)
+    g.map(seaborn.scatterplot, "total_count", "average_age")
+    g.set_axis_labels("School size", "Average Age")
+    g.set_titles("{col_name} Schools")
+    plt.subplots_adjust(top=0.9)
+    g.figure.suptitle("School size vs average age with no adults n = " + str(len(no_teachers)) + " of " + str(len(setting_pop_drop)) + " schools")
     plt.show()
     
     # Select 5 unique setting code values
@@ -202,13 +361,6 @@ def plot_distribution_of_age_by_school(synth_pop, setting_category_string):
     plt.ylabel("Count")
     plt.show()
 
-    unique_setting_codes = setting_pop["setting_code"].unique()[:20]
-    setting_pop = setting_pop.filter(pl.col("setting_code").is_in(unique_setting_codes))
-    g = seaborn.FacetGrid(setting_pop.to_pandas(), col="setting_code", col_wrap=4, sharex=False, sharey=False)
-    g.map(seaborn.histplot, "age", bins=30)
-    g.set_axis_labels("Age", "Count")
-    g.set_titles("{col_name}")
-    plt.show()
 
 def plot_map_of_indiana(df):    
     # Filter for Indiana census tracts
@@ -335,8 +487,15 @@ def plot_workplace_communiting_map(synth_pop_file):
     indiana_tracts.plot(column="count", cmap="Blues", edgecolor='black', linewidth=0.1, legend=True)
     plt.show()
 
+def connect_school_district_and_counties(school_district_file):
+    school_districts = pd.read_csv(school_district_file, delimiter="|", dtype={"LEA": str})
+    print(school_districts)
+    indiana_counties = pygris.counties(state="18", year=2016)
+    print(indiana_counties)
+    return school_districts
 
 df = load_synth_pop("input/in.csv")
+# df = connect_school_district_and_counties("input/school_district_codes_indiana.txt")
 # plot_workplace_communiting_map("input/in.csv")
 # plot_map_of_indiana(df)
 # plot_group_size_distribution(df)
@@ -344,5 +503,6 @@ df = load_synth_pop("input/in.csv")
 # plot_contact_matrix(df, "Workplace", 3000)
 # plot_contact_matrix(df, "School", 200)
 # plot_contact_matrix(df, "Community", 3)
-plot_distribution_of_age_by_school(df, "School")
+# plot_distribution_of_age_by_school(df, "School")
 # plot_distribution_of_age_by_work(df, "Workplace")
+plot_distribution_of_age_by_home(df)

@@ -1,0 +1,291 @@
+STATE|STATEFP|LEA|SDNAME|SDTYPE
+IN|18|00008|White River Valley School District|Unified
+IN|18|00030|Southwest Allen County Metropolitan School District|Unified
+IN|18|00060|Adams Central Community Schools|Unified
+IN|18|00107|Tri-Township Consolidated School Corporation|Unified
+IN|18|00118|North Central Parke Community School Corporation|Unified
+IN|18|00120|Alexandria Community School Corporation|Unified
+IN|18|00150|Anderson Community School Corporation|Unified
+IN|18|00180|Argos Community Schools|Unified
+IN|18|00210|Attica Consolidated School Corporation|Unified
+IN|18|00240|South Dearborn Community School Corporation|Unified
+IN|18|00270|Avon Community School Corporation|Unified
+IN|18|00330|Barr-Reeve Community School Corporation|Unified
+IN|18|00360|Bartholomew County School Corporation|Unified
+IN|18|00390|Batesville Community School Corporation|Unified
+IN|18|00420|Baugo Community Schools|Unified
+IN|18|00450|Beech Grove City Schools|Unified
+IN|18|00480|Benton Community School Corporation|Unified
+IN|18|00570|Blackford County Schools|Unified
+IN|18|00600|Bloomfield School District|Unified
+IN|18|00630|Monroe County Community School Corporation|Unified
+IN|18|00660|Blue River Valley Schools|Unified
+IN|18|00690|North Harrison Community School Corporation|Unified
+IN|18|00720|Bluffton-Harrison Metropolitan School District|Unified
+IN|18|00750|Boone Township Metropolitan School District|Unified
+IN|18|00840|Clay Community Schools|Unified
+IN|18|00900|Bremen Public Schools|Unified
+IN|18|00960|Brown County County School Corporation|Unified
+IN|18|01020|Brownsburg Community School Corporation|Unified
+IN|18|01050|Brownstown Central Community School Corporation|Unified
+IN|18|01060|C. A. Beard Memorial School Corporation|Unified
+IN|18|01170|Cannelton City Schools|Unified
+IN|18|01200|Carmel Clay Schools|Unified
+IN|18|01230|Medora Community School Corporation|Unified
+IN|18|01290|Carroll Consolidated School Corporation|Unified
+IN|18|01410|Caston School Corporation|Unified
+IN|18|01440|Center Grove Community School Corporation|Unified
+IN|18|01560|Centerville-Abington Community Schools|Unified
+IN|18|01590|DeKalb County Central United School District|Unified
+IN|18|01710|Central Noble Community School Corporation|Unified
+IN|18|01740|Perry Central Community School Corporation|Unified
+IN|18|01770|Randolph Central School Corporation|Unified
+IN|18|01890|Clark-Pleasant Community School Corporation|Unified
+IN|18|01920|Clarksville Community School Corporation|Unified
+IN|18|02040|Northwestern School Corporation|Unified
+IN|18|02130|Clinton Central School Corporation|Unified
+IN|18|02160|Clinton Prairie School Corporation|Unified
+IN|18|02190|South Central Community School Corporation|Unified
+IN|18|02220|Cloverdale Community Schools|Unified
+IN|18|02280|Whitley County Consolidated Schools|Unified
+IN|18|02400|Concord Community Schools|Unified
+IN|18|02430|Covington Community School Corporation|Unified
+IN|18|02440|Crawford County Community School Corporation|Unified
+IN|18|02460|Crawfordsville Community Schools|Unified
+IN|18|02490|Crown Point Community School Corporation|Unified
+IN|18|02520|Culver Community Schools Corporation|Unified
+IN|18|02550|Danville Community School Corporation|Unified
+IN|18|02610|Decatur County Community Schools|Unified
+IN|18|02640|Decatur Township Metropolitan School District|Unified
+IN|18|02660|Delaware Community School Corporation|Unified
+IN|18|02700|Delphi Community School Corporation|Unified
+IN|18|02800|Duneland School Corporation|Unified
+IN|18|02830|Zionsville Community Schools|Unified
+IN|18|02850|East Allen County Schools|Unified
+IN|18|02880|City of East Chicago School District|Unified
+IN|18|02910|Lake Station Community Schools|Unified
+IN|18|02940|East Gibson School Corporation|Unified
+IN|18|02970|East Noble School Corporation|Unified
+IN|18|03000|East Washington School Corporation|Unified
+IN|18|03030|Eastbrook Community School Corporation|Unified
+IN|18|03060|DeKalb County Eastern Community School District|Unified
+IN|18|03090|Eastern Greene County School District|Unified
+IN|18|03120|Eastern Hancock County Community School Corporation|Unified
+IN|18|03150|Eastern Howard School Corporation|Unified
+IN|18|03180|Randolph Eastern School Corporation|Unified
+IN|18|03210|Shelby Eastern Schools|Unified
+IN|18|03240|Edinburgh Community School Corporation|Unified
+IN|18|03270|Elkhart Community Schools|Unified
+IN|18|03300|Elwood Community School Corporation|Unified
+IN|18|03330|Eminence Community School Corporation|Unified
+IN|18|03450|Evansville-Vanderburgh School Corporation|Unified
+IN|18|03480|Fairfield Community Schools|Unified
+IN|18|03510|Fayette County School Corporation|Unified
+IN|18|03570|Flat Rock-Hawcreek School Corporation|Unified
+IN|18|03630|Fort Wayne Community Schools|Unified
+IN|18|03660|Frankfort Community Schools|Unified
+IN|18|03690|Franklin Community School Corporation|Unified
+IN|18|03700|Franklin County Community School Corporation|Unified
+IN|18|03720|Lanesville Community School Corporation|Unified
+IN|18|03750|Franklin Township Community School Corporation|Unified
+IN|18|03780|Fremont Community Schools|Unified
+IN|18|03810|Frontier School Corporation|Unified
+IN|18|03840|Garrett-Keyser-Butler Community Schools|Unified
+IN|18|03870|Gary Community School Corporation|Unified
+IN|18|03930|Goshen Community Schools|Unified
+IN|18|03940|Greater Clark County Schools|Unified
+IN|18|03960|Greater Jasper Consolidated Schools|Unified
+IN|18|03990|Greencastle Community School Corporation|Unified
+IN|18|04050|Greenfield-Central Community Schools|Unified
+IN|18|04080|Greensburg Community Schools|Unified
+IN|18|04110|Greenwood Community School Corporation|Unified
+IN|18|04140|Monroe-Gregg School District|Unified
+IN|18|04170|Griffith Public Schools|Unified
+IN|18|04230|Hamilton Community Schools|Unified
+IN|18|04260|Hamilton Heights School Corporation|Unified
+IN|18|04320|Hammond School City|Unified
+IN|18|04350|Hanover Community School Corporation|Unified
+IN|18|04470|Western School Corporation|Unified
+IN|18|04500|Wes-Del Community Schools|Unified
+IN|18|04560|Highland School Town|Unified
+IN|18|04590|Hobart School City|Unified
+IN|18|04620|River Forest Community School Corporation|Unified
+IN|18|04710|Huntington County Community School Corporation|Unified
+IN|18|04770|Indianapolis Public Schools|Unified
+IN|18|04800|Jac-Cen-Del Community School Corporation|Unified
+IN|18|04980|Jay School Corporation|Unified
+IN|18|05190|Jennings County Schools|Unified
+IN|18|05280|Kankakee Valley School Corporation|Unified
+IN|18|05340|Knox Community School Corporation|Unified
+IN|18|05370|Kokomo-Center Township Consolidated School Corporation|Unified
+IN|18|05400|Lafayette School Corporation|Unified
+IN|18|05450|Lake Central School Corporation|Unified
+IN|18|05460|Lake Ridge Schools|Unified
+IN|18|05520|Lakeland School Corporation|Unified
+IN|18|05550|Wawasee Community School Corporation|Unified
+IN|18|05580|La Porte Community School Corporation|Unified
+IN|18|05670|Lawrence Township Metropolitan School District|Unified
+IN|18|05700|Lawrenceburg Community School Corporation|Unified
+IN|18|05790|Lebanon Community School Corporation|Unified
+IN|18|05880|Liberty-Perry Community School Corporation|Unified
+IN|18|05910|Linton-Stockton School Corporation|Unified
+IN|18|06030|Logansport Community School Corporation|Unified
+IN|18|06060|Loogootee Community School Corporation|Unified
+IN|18|06080|Warren County Metropolitan School District|Unified
+IN|18|06090|Maconaquah School Corporation|Unified
+IN|18|06120|Madison Consolidated Schools|Unified
+IN|18|06240|Madison-Grant United School Corporation|Unified
+IN|18|06270|Manchester Community Schools|Unified
+IN|18|06390|Marion Community Schools|Unified
+IN|18|06480|Sheridan Community Schools|Unified
+IN|18|06510|Martinsville Schools Metropolitan School District|Unified
+IN|18|06570|Michigan City Area Schools|Unified
+IN|18|06600|Middlebury Community Schools|Unified
+IN|18|06630|Milan Community Schools|Unified
+IN|18|06660|Mill Creek Community School Corporation|Unified
+IN|18|06840|Mishawaka School City|Unified
+IN|18|06870|Mississinewa Community School Corporation|Unified
+IN|18|06900|Mitchell Community Schools|Unified
+IN|18|07020|Cowan Community School Corporation|Unified
+IN|18|07080|Monroe Central School Corporation|Unified
+IN|18|07110|Eastern Pulaski Community School Corporation|Unified
+IN|18|07140|Mooresville Consolidated School Corporation|Unified
+IN|18|07230|Mount Pleasant Township Community School Corporation|Unified
+IN|18|07260|Mount Vernon Community School Corporation|Unified
+IN|18|07290|Mount Vernon Metropolitan School District|Unified
+IN|18|07320|Muncie Community Schools|Unified
+IN|18|07350|Munster School Town|Unified
+IN|18|07380|Nettle Creek School Corporation|Unified
+IN|18|07410|New Albany-Floyd County Consolidated Schools|Unified
+IN|18|07440|New Castle Community School Corporation|Unified
+IN|18|07470|New Durham Township Metropolitan School District|Unified
+IN|18|07560|New Prairie United School Corporation|Unified
+IN|18|07620|Nineveh-Hensley-Jackson United School Corporation|Unified
+IN|18|07650|Noblesville Schools|Unified
+IN|18|07680|North Adams Community Schools|Unified
+IN|18|07710|North Daviess Community Schools|Unified
+IN|18|07770|North Gibson School Corporation|Unified
+IN|18|07800|North Judson-San Pierre School Corporation|Unified
+IN|18|07830|North Knox School Corporation|Unified
+IN|18|07860|North Lawrence Community Schools|Unified
+IN|18|07890|North Miami Community Schools|Unified
+IN|18|07900|North Montgomery Community School Corporation|Unified
+IN|18|07920|North Newton School Corporation|Unified
+IN|18|07950|North Posey County Schools Metropolitan School District|Unified
+IN|18|07980|North Putnam Community Schools|Unified
+IN|18|08010|North Spencer County School Corporation|Unified
+IN|18|08040|Tipton County Northern Community School Corporation|Unified
+IN|18|08070|North Vermillion Community School Corporation|Unified
+IN|18|08100|North West Hendricks Schools|Unified
+IN|18|08120|Northeast Dubois County School Corporation|Unified
+IN|18|08130|North White School Corporation|Unified
+IN|18|08160|Northeast School Corporation|Unified
+IN|18|08190|Northeastern Wayne Schools|Unified
+IN|18|08220|Northern Wells Community Schools|Unified
+IN|18|08250|Northwest Allen County Schools|Unified
+IN|18|08280|Shenandoah School Corporation|Unified
+IN|18|08310|Northwestern Consolidated School Corporation|Unified
+IN|18|08340|Oak Hill United School Corporation|Unified
+IN|18|08460|Oregon-Davis School Corporation|Unified
+IN|18|08490|Orleans Community Schools|Unified
+IN|18|08640|Paoli Community School Corporation|Unified
+IN|18|08760|Penn-Harris-Madison School Corporation|Unified
+IN|18|08820|Perry Township Metropolitan School District|Unified
+IN|18|08850|Peru Community Schools|Unified
+IN|18|08900|Pike County School Corporation|Unified
+IN|18|08910|Pike Township Metropolitan School District|Unified
+IN|18|08940|Pioneer Regional School Corporation|Unified
+IN|18|08970|Plainfield Community School Corporation|Unified
+IN|18|09000|East Porter County School Corporation|Unified
+IN|18|09060|Plymouth Community School Corporation|Unified
+IN|18|09120|John Glenn School Corporation|Unified
+IN|18|09150|Portage Township Schools|Unified
+IN|18|09180|Porter Township School Corporation|Unified
+IN|18|09300|Prairie Heights Community School Corporation|Unified
+IN|18|09360|West Central School Corporation|Unified
+IN|18|09370|West Clark Community Schools|Unified
+IN|18|09420|Rensselaer Central School Corporation|Unified
+IN|18|09480|Richland-Bean Blossom Community School Corporation|Unified
+IN|18|09510|Richmond Community School Corporation|Unified
+IN|18|09600|Rising Sun-Ohio County Community Schools|Unified
+IN|18|09630|Rochester Community School Corporation|Unified
+IN|18|09690|Merrillville Community School|Unified
+IN|18|09720|Rossville Consolidated School District|Unified
+IN|18|09750|Rush County Schools|Unified
+IN|18|09810|Salem Community Schools|Unified
+IN|18|09840|Daleville Community Schools|Unified
+IN|18|09990|Scott County School District 1|Unified
+IN|18|10020|Scott County School District 2|Unified
+IN|18|10080|Seymour Community Schools|Unified
+IN|18|10110|Shakamak Schools Metropolitan School District|Unified
+IN|18|10140|Shelbyville Central Schools|Unified
+IN|18|10170|Shoals Community School Corporation|Unified
+IN|18|10230|Smith-Green Community Schools|Unified
+IN|18|10260|South Adams Schools|Unified
+IN|18|10290|South Bend Community School Corporation|Unified
+IN|18|10350|South Gibson School Corporation|Unified
+IN|18|10360|South Harrison Community Schools|Unified
+IN|18|10380|South Henry School Corporation|Unified
+IN|18|10410|South Knox School Corporation|Unified
+IN|18|10440|South Madison Community School Corporation|Unified
+IN|18|10450|South Montgomery Community School Corporation|Unified
+IN|18|10470|South Newton School Corporation|Unified
+IN|18|10500|South Putnam Community Schools|Unified
+IN|18|10530|South Ripley Community School Corporation|Unified
+IN|18|10560|South Spencer County School Corporation|Unified
+IN|18|10590|South Vermillion Community School Corporation|Unified
+IN|18|10620|Southeast Fountain School Corporation|Unified
+IN|18|10640|Southeast Dubois County School Corporation|Unified
+IN|18|10650|Hamilton Southeastern Schools|Unified
+IN|18|10680|Southeastern School Corporation|Unified
+IN|18|10710|Southern Hancock County Community School Corporation|Unified
+IN|18|10740|Randolph Southern School Corporation|Unified
+IN|18|10770|Southern Wells Community Schools|Unified
+IN|18|10800|Southwestern Jefferson County Consolidated Schools|Unified
+IN|18|10830|Southwestern Shelby County Consolidated Schools|Unified
+IN|18|10860|Southwest School Corporation|Unified
+IN|18|10870|Southwest Dubois County School Corporation|Unified
+IN|18|10900|Southwest Parke Community School Corporation|Unified
+IN|18|10920|Speedway School Town|Unified
+IN|18|10950|Spencer-Owen Community Schools|Unified
+IN|18|10980|Springs Valley Community School Corporation|Unified
+IN|18|11100|Steuben County Metropolitan School District|Unified
+IN|18|11190|Sunman-Dearborn Community School Corporation|Unified
+IN|18|11220|Switzerland County School Corporation|Unified
+IN|18|11250|Taylor Community School Corporation|Unified
+IN|18|11260|Tell City-Troy Township School Corporation|Unified
+IN|18|11340|Tippecanoe School Corporation|Unified
+IN|18|11370|Tippecanoe Valley School Corporation|Unified
+IN|18|11400|Tipton Community School Corporation|Unified
+IN|18|11430|Tri-County School Corporation|Unified
+IN|18|11460|Tri-Creek School Corporation|Unified
+IN|18|11490|Triton School Corporation|Unified
+IN|18|11580|Twin Lakes School Corporation|Unified
+IN|18|11610|Union County-College Corner Joint School District|Unified
+IN|18|11700|Union Township School Corporation|Unified
+IN|18|11730|Union School Corporation|Unified
+IN|18|11910|Union-North United School Corporation|Unified
+IN|18|11970|Valparaiso Community Schools|Unified
+IN|18|12060|Crothersville Community Schools|Unified
+IN|18|12090|Vigo County School Corporation|Unified
+IN|18|12120|Vincennes Community School Corporation|Unified
+IN|18|12150|Wabash City Schools|Unified
+IN|18|12180|Wabash County Schools Metropolitan School District|Unified
+IN|18|12240|Wa-Nee Community Schools|Unified
+IN|18|12360|Warren Township Metropolitan School District|Unified
+IN|18|12390|Warrick County School Corporation|Unified
+IN|18|12420|Warsaw Community Schools|Unified
+IN|18|12450|Washington Community School Corporation|Unified
+IN|18|12720|Washington Township Metropolitan School District|Unified
+IN|18|12810|Wayne Township Metropolitan School District|Unified
+IN|18|12870|West Lafayette Community School Corporation|Unified
+IN|18|12880|Frankton-Lapel Community Schools|Unified
+IN|18|12900|West Noble School Corporation|Unified
+IN|18|12930|West Washington School Corporation|Unified
+IN|18|12990|Western Boone County Community School Corporation|Unified
+IN|18|13050|Western Wayne Schools|Unified
+IN|18|13080|Westfield-Washington Schools|Unified
+IN|18|13110|Westview School Corporation|Unified
+IN|18|13200|Whiting School City|Unified
+IN|18|13230|Whitko Community School Corporation|Unified
+IN|18|99997|School District Not Defined|Unified
