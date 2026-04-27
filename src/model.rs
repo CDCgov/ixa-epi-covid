@@ -40,7 +40,7 @@ pub fn initialize_model(
     info!("Infection importation initialized");
     // school_closure::init(context)?;
     // itinerary_manager::init(context)?;
-    policy::init(context)?;
+    // policy::init(context)?;
     info!("School closure initialized");
     reports::init(context)?;
     info!("Setup complete");

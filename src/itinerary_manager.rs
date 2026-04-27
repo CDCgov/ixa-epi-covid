@@ -10,7 +10,6 @@ pub struct ItineraryModifier {
     pub itinerary_ratios: ItineraryRatios,
 }
 
-/// An index of settings as represented by their setting codes.
 #[derive(Default)]
 pub struct ItineraryModifiers {
     modifiers: HashMap<PersonId, Vec<ItineraryModifier>>,
@@ -155,7 +154,7 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt + Cont
 
 }
 impl ContextItineraryModifierExt for Context {}
-pub fn init(context: &mut Context) -> Result<(), IxaError> {
-    context.implement_school_closure(1.0, 40.0);
+pub fn init(_context: &mut Context) -> Result<(), IxaError> {
+    // context.implement_school_closure(1.0, 40.0);
     Ok(())
 }
