@@ -4,6 +4,7 @@ In order to generate the results analysis report from the `reports/` directory, 
 uv sync --all-packages
 uv run cargo build -r
 uv run python scripts/phase_1_calibration.py
+uv run python scripts/phase_1_projection.py
 ```
 
 Then, to render the analysis report, ensure that `tinytex` is installed with
