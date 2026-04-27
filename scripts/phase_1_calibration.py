@@ -37,27 +37,24 @@ TARGET_DATA = pl.DataFrame(
 )
 
 
-def main(
-    config_file: str | Path,
-    output_dir: str | Path,
-    max_workers: int = 10,
-    default_population_size_dev: str = "50_000",
-):
-    # Load environment files, defaults, and setup configurations ---------------------
-    config = CovidModelConfig(
-        config_file=config_file,
-        target_data=TARGET_DATA,
-    )
+def get_synth_pop_file(
+    config: CovidModelConfig, default_population_size_dev: str
+) -> str:
+    """
+    Obtain the file name of the synthetic population to be used during the calibration routine
+    Create the file if it does not exist or throw an error if the file cannot be created
 
-    # Handle synth population file options ----------------------------------------------
-    # Users may specify a SYNTH_POP_FILE of their choosing in the .env file, which will then be copied into the local repo input path for running
-    # Otherwise, the default population file is used, and can be created automatically using the create_synthetic_population package if it does not already exist at the specified path
+    Args:
+        config: CovidModelConfig - configuration dictionary object that contains information on how to build the syntehtic population file or source it from the dotenv file
+        default_population_size_dev: str - string cast version of the population size int to be used in the case of generating a toy synthetic population file using `create_synthetic_population`
+    Raises:
+        FileNotFoundError: if the synthetic population file specified by the dotenv file cannot be found
+        HTTPError: if there are http issues with loading the census data, the year is first dropped in an attempt to create the synthetic data
+    """
+
     load_dotenv()
-    ixa_overrides = {
-        "max_time": config.target_data["t"][0] + config.tolerance_values[0] + 1
-    }
-
     synth_pop_file_env = os.getenv("SYNTH_POP_FILE")
+
     if synth_pop_file_env and config.use_env_synth_pop_file:
         print(
             f"Using the synth population file specified in environment variable SYNTH_POP_FILE: {synth_pop_file_env}"
@@ -76,9 +73,7 @@ def main(
             raise FileNotFoundError(
                 f"Synth population file specified in environment variable SYNTH_POP_FILE not found at path: {synth_pop_file_env}"
             )
-        ixa_overrides.update(
-            {"synth_population_file": str(local_synth_pop_file)}
-        )
+        return str(local_synth_pop_file)
     else:
         us_state = states.lookup(config.state)
         state_abbr = us_state.abbr
@@ -86,7 +81,7 @@ def main(
             "input",
             f"synth_pop_people_{state_abbr}_{default_population_size_dev}.csv",
         )
-        ixa_overrides.update({"synth_population_file": str(input_file)})
+
         print(
             f"Creating a default synth population file for {us_state.name}: {input_file}."
         )
@@ -114,6 +109,32 @@ def main(
                         state_abbr,
                     ]
                 )
+    return str(input_file)
+
+
+def main(
+    config_file: str | Path,
+    output_dir: str | Path,
+    max_workers: int = 10,
+    default_population_size_dev: str = "50_000",
+):
+    # Load environment files, defaults, and setup configurations ---------------------
+    config = CovidModelConfig(
+        config_file=config_file,
+        target_data=TARGET_DATA,
+    )
+
+    # Update ixa overrides ----------------------------------------------
+    # Users may specify a SYNTH_POP_FILE of their choosing in the .env file, which will then be copied into the local repo input path for running
+    # Otherwise, the default population file is used, and can be created automatically using the create_synthetic_population package if it does not already exist at the specified path
+    ixa_overrides = {
+        "max_time": config.target_data["t"][0] + config.tolerance_values[0] + 1
+    }
+
+    synth_pop_file = get_synth_pop_file(
+        config, default_population_size_dev=default_population_size_dev
+    )
+    ixa_overrides.update({"synth_population_file": synth_pop_file})
 
     config.update_ixa_params(ixa_overrides)
     # Generate MRP defaults ------------------------------------

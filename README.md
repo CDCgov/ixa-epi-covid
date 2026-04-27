@@ -78,6 +78,8 @@ By default, the calibration routine uses four parallel worker threads to run sim
 make calibrate-phase-1-dev SIZE=50_000 MAX_WORKERS=10
 ```
 
+In general, for local parallelized computing, you should select a maximum number of workers that will not exhaust your memory. Check the amount of memory that a single simulation of the model requires and divide your working memory by that number. Flooring that value should arrive at a reasonable estimate of the number of workers that can run concurrently for a particular model calibration run. For example, if each simulation takes 2.3 GB of memory to run and your machine has 16 GB of RAM, then 16 / 2.3 = 6.9 -> 6 workers should be allowed for the parallel execution. Allowing for a higher number of workers runs the risk of fatal memory overflow errors.
+
 To run the post-calibration projection of the accepted particles on a longer time horizon, use the command `make projections-phase-1-dev`, which also accepts the `SIZE` and `MAX_WORKERS` command and will generate the calibration if it deos not exist.
 
 To run the whole routine through generating figures, use
