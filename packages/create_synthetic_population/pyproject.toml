@@ -1,12 +1,12 @@
 [project]
-name = "ixa-epi-utils"
+name = "create_synthetic_population"
 version = "0.1.0"
-description = "Library of utility functions for handling inputs and outputs of the ixa-epi-covid model"
-readme = "README.md"
+description = "Library for creating a synthetic population of a particular size and following state structure from PUMs data"
 requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.3.4",
     "polars>=1.35.1",
+    "geopandas>=1.1.3"
 ]
 
 [build-system]

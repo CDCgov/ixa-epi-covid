@@ -212,7 +212,7 @@ def prob_undetected_infections(
                 "Parameter combination yielded low total probability (p<1e-15) for all undetected infection values. Proceeding"
             )
 
-        if total_weight == 0:
+        if prob_data.select(pl.sum("weight").eq(0)).item():
             return prob_data.with_columns(
                 pl.lit(1.0 / prob_data.height).alias("probability")
             )
@@ -258,7 +258,9 @@ def sample_undetected_infections(
     """
 
     if seed is not None:
-        np.random.seed(seed)
+        rng = np.random.default_rng(seed)
+    else:
+        rng = np.random.default_rng()
 
     prob_data = prob_undetected_infections(
         n_undetected=list(
@@ -269,8 +271,7 @@ def sample_undetected_infections(
         prop_ascf=prop_ascf,
     )
 
-    prob_data = prob_data
-    sampled_undetected = np.random.choice(
+    sampled_undetected = rng.choice(
         prob_data["n_undetected_infections"].to_list(),
         size=1,
         p=prob_data["probability"].to_list(),
@@ -298,9 +299,6 @@ def sample_us_importation_incidence_data(
     datasets of undetected infections. This approach preserves the joint distribution of day,
     onset_day, and exposure_day with limited effort, albeit likely overfitted to the 153 data points.
     """
-
-    if seed is not None:
-        np.random.seed(seed)
 
     prop_ascf = get_prop_ascf(importation_parameters)
 

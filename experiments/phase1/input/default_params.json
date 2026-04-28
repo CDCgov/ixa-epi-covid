@@ -2,21 +2,23 @@
     "epimodel.GlobalParams": {
         "seed": 1234,
         "max_time": 100.0,
-        "synth_population_file": "input/people_test.csv",
-        "initial_prevalence": 0.1,
+        "synth_population_file": "input/synth_pop_people_IN_1_000_000.csv",
+        "initial_prevalence": 0.0,
         "imported_cases_timeseries": {
             "include": true,
-            "filename": "input/importation_test.csv"
+            "filename": "./experiments/phase1/calibration/output/importation_timeseries.csv"
         },
         "infectiousness_rate_fn": {"Constant": {
-                "rate": 1.0,
-                "duration": 5.0
+                "rate": 0.2,
+                "duration": 12.0
             }
         },
-        "symptom_age_groups": [{"label": "Age0To17", "min": 0, "max": 17},
+        "symptom_age_groups": [
+            {"label": "Age0To17", "min": 0, "max": 17},
             {"label": "Age18To49", "min": 18, "max": 49},
             {"label": "Age50To64", "min": 50, "max": 64},
-            {"label": "Age65Plus", "min": 65, "max": 120}],
+            {"label": "Age65Plus", "min": 65, "max": 120}
+        ],
         "probability_mild_given_infect": 0.7,
         "infect_to_mild_delay": {
             "mu": 1.63,
@@ -55,17 +57,17 @@
                             "Community": {"alpha": 0.0}},
         "itinerary_ratios": {"Home": 0.25, "Work": 0.25, "School": 0.25, "Community": 0.25},
         "prevalence_report": {
-            "write": true,
+            "write": false,
             "filename": "person_property_count.csv",
             "period": 1.0
         },
         "incidence_report": {
-            "write": true,
+            "write": false,
             "filename": "incidence_report.csv",
             "period": 1.0
         },
         "transmission_report": {
-            "write": true,
+            "write": false,
             "filename": "transmission_report.csv"
         },
         "aggregated_deaths_report": {
@@ -73,6 +75,6 @@
             "filename": "aggregated_deaths_report.csv",
             "period": 1.0
         },
-        "first_death_terminates_run": false
+        "first_death_terminates_run": true
     }
 }

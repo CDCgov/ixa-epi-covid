@@ -1,0 +1,339 @@
+---
+title: "Phase I calibration"
+date: "2026-03-09"
+format: pdf
+---
+
+# Overview
+In this phase, we aim to calibrate the model to the timing of the first reported death due to COVID-19 in the state of Indiana. The first reported death in Indiana occurred on March 16th, 2020, 10 days after the first confirmed case.
+
+# Results
+```{python}
+#| echo: false
+import pickle
+from calibrationtools.calibration_results import CalibrationResults, Particle
+from pathlib import Path
+import os
+import seaborn as sns
+import matplotlib.pyplot as plt
+import numpy as np
+import polars as pl
+import json
+from particle_reader import ParticleReader
+import tempfile
+import polars as pl
+import os
+from ixa_epi_covid import CovidModel
+from mrp.api import apply_dict_overrides
+import multiprocessing as mp
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any
+import shutil
+
+os.chdir('../../../')
+
+wd = Path("experiments", "phase1")
+results_name = "output_indiana"
+
+calibration_dir = wd / "calibration" / results_name
+projection_dir = wd / "projection" / results_name
+
+# Load results object from the calibration directory
+with open(calibration_dir / "results.pkl", "rb") as fp:
+    results: CalibrationResults = pickle.load(fp)
+```
+
+## Parameters
+
+Quantiles for each fitted parameter
+```{python}
+#| echo: false
+diagnostics = results.get_diagnostics()
+print(
+    json.dumps(
+        {
+            k1: {k2: np.format_float_positional(v2, precision=3) for k2, v2 in v1.items()}
+            for k1, v1 in diagnostics["quantiles"].items()
+        },
+        indent=4,
+    )
+)
+```
+
+Histograms of posterior samples compared to the probability density of each prior. For each plot, the prior is plotted as a blue line and the histogram of the posterior samples is plotted in orange with a kernel density estimator overlay. To generate the histogram, we sample $n$ particles from the posterior population, where $n$ is the effective sample size of the population. Re-sampling particles in this manner reflects the posterior weight distribution, the probability mass function over accepted particles determined by the ABC-SMC algorithm perturbation kernel and prior distributions. We can see that the posteriors do not storngly diverge from the priors, indicating the expected result that limited data does not provide much information when priors are well-specified.
+
+```{python}
+#| echo: false
+#| eval: false
+# Preferred API for development in calibrationtools----------
+for param in results.fitted_params:
+    # get values and use weights to alter histogram instead of sampling with ESS
+    values = results.posterior_particles.get_values_of(param)
+    sns.histplot(values, weights=results.posterior_particles.weights)
+
+    # Method to obtain the marginal prior and call PDF on those values for certain evaluation list
+    marginal_prior = results.get_marginal_prior(param)
+    eval_points = np.arange(min(values) - np.var(values), max(values) + np.var(values), 0.01)
+    prior_density = marginal_prior.probability_density(eval_points)
+    sns.lineplot(
+        data = pl.DataFrame({
+            param: list(eval_points),
+            'density': prior_density
+        })
+    )
+    plt.title(f"Posterior versus prior distribution")
+    plt.xlabel(" ".join(param.split(".")))
+    plt.ylabel("Density")
+    plt.tight_layout()
+    plt.show()
+
+```
+```{python}
+#| echo: false
+posterior_samples = results.sample_posterior_particles(n=int(results.ess))
+
+for param in results.fitted_params:
+    vals = [p[param] for p in posterior_samples]
+    min_val = min(vals)
+    max_val = max(vals)
+
+    sns.histplot(x=vals, stat="density", kde=True, color='orange', edgecolor='black')
+    eval_points = np.arange(
+        min_val - np.var(vals), max_val + np.var(vals), 0.01
+    )
+    param_prior = None
+    for prior in results.priors.priors:
+        if prior.param == param:
+            param_prior = prior
+            break
+    if not param_prior:
+        raise (ValueError, f"Could not find prior {param}")
+
+    density_vals = [
+        param_prior.probability_density(Particle({param: v}))
+        for v in eval_points
+    ]
+
+    sns.lineplot(
+        data=pl.DataFrame({param: list(eval_points), "density": density_vals}),
+        x=param,
+        y="density",
+    )
+    plt.title(f"Posterior versus prior distribution")
+    plt.xlabel(" ".join(param.split(".")))
+    plt.ylabel("Density")
+    plt.tight_layout()
+    plt.show()
+
+```
+
+
+## Infection imprtation and local transmission
+```{python}
+#| echo: false
+
+# Load the data from the projection directory
+projections_path = projection_dir / "simulations"
+aggregated_deaths_report_list = []
+imported_cases_timeseries_list = []
+prevalence_report_list = []
+for particle_dir in projections_path.iterdir():
+    if particle_dir.is_dir():
+        imported_cases_timeseries = pl.read_csv(particle_dir / "imported_cases_timeseries.csv")
+        aggregated_deaths_report = pl.read_csv(particle_dir / "aggregated_deaths_report.csv")
+        imported_cases_timeseries = imported_cases_timeseries.with_columns(
+            pl.col("imported_infections").cum_sum().over(order_by="time").alias("cumulative_imported_infections"),
+            pl.lit(particle_dir.name).alias("seed")
+        )
+        aggregated_deaths_report = aggregated_deaths_report.with_columns(
+            pl.col("count").cum_sum().over(order_by="t_upper").alias("cumulative_count"),
+            pl.lit(particle_dir.name).alias("seed")
+        )
+        prevalence_report = pl.read_csv(particle_dir / "person_property_count.csv").with_columns(
+            pl.when(pl.col('age') < 18).then(pl.lit("Age0To17"))
+            .when((pl.col('age') >= 18) & (pl.col('age') < 50)).then(pl.lit("Age18to49"))
+            .when((pl.col('age') >= 50) & (pl.col('age') < 65)).then(pl.lit("Age50to64"))
+            .otherwise(pl.lit("Age65Plus")).alias("age_group")
+        ).group_by(
+            't', 'age_group', 'symptom_status', 'infection_status'
+        ).agg(
+            pl.sum('count').alias('count')
+        ).sort(['t', 'age_group', 'symptom_status', 'infection_status']).with_columns(
+            pl.lit(particle_dir.name).alias("seed")
+        )
+        imported_cases_timeseries_list.append(imported_cases_timeseries)
+        aggregated_deaths_report_list.append(aggregated_deaths_report)
+        prevalence_report_list.append(prevalence_report)
+
+
+death_data = pl.concat(aggregated_deaths_report_list)
+imported_data = pl.concat(imported_cases_timeseries_list)
+prevalence_data = pl.concat(prevalence_report_list)
+```
+
+When we inspect the infections that are imported, we see that the posterior estimate of earliest infection importation is in late January, or day 20 in the simulation. Cumulative imported infections tended to grow exponsentially by the beginning of MArch, or day 60 in the simulation.
+```{python}
+
+sns.scatterplot(
+    data=imported_data.filter(pl.col('imported_infections') > 0),
+    x="time",
+    y="cumulative_imported_infections",
+    alpha=0.2,
+)
+sns.lineplot(
+    data=imported_data,
+    x="time",
+    y="cumulative_imported_infections",
+    estimator='median',
+)
+plt.xlabel("Time")
+plt.ylabel("Cumulative Imported Infections")
+plt.show()
+```
+
+We can now see the unobserved posterior infection dyanmics prior to the first reported death. Infections consistently outpace importation, indicating sustained local transmission. The number of individuals who have already recovered from their infection is already high by the time the first death was observed, indicating that local tranmsission is occurring rapidly by the time surveillance efforts can detect and respond to the outbreak. The red dashed veritcal line shows the first reported case observed in Indiana (not used in calibration), while the black dashed vertical line shows the date of first observed death in the data (used to define the distance function).
+
+```{python}
+
+g=sns.relplot(
+    data=prevalence_data.group_by(
+        "t", "infection_status", "seed"
+    ).agg(
+        pl.sum('count').alias('count')
+    ).filter(
+        (pl.col('t') < 80) & (pl.col('infection_status').is_in(["Infectious", "Recovered"]))
+    ),
+    x="t", y="count",
+    kind="line",
+    hue="infection_status",
+    alpha=0.3,
+    units="seed",
+    estimator=None,
+    col="infection_status",
+    col_order=["Infectious", "Recovered"],
+    # estimator='median',
+    # errorbar=lambda x: (x.quantile(0.1), x.quantile(0.9))
+)
+g.set(ylim=(0, 100))
+plt.xlabel("Time")
+for ax in g.axes.flat:
+    ax.axvline(x=65, color="red", linestyle="--", label="First case reported (March 6, 2020)")
+    ax.axvline(x=75, color="black", linestyle="--", label="First death reported (March 16, 2020)")
+plt.ylabel("Count")
+plt.show()
+```
+
+Expanding the time horizon of our simulations, we can see that the SIR transmission dynamics of the model are highly variable after the first death occurs. We can conclude that given the timing of the first death, the peak prevalence of infections is likely to occur within three months, but we don't have a strong indication of the magnitude of that prevalence, as the peak ranges from 500 thousand to 5 million active infections across simulations. We can show from these projections that the model behaves as expected according to classical epidemic theory - delayed epidemic peaks tend to have lower magnitudes of maximum prevalence but similar epidemic sizes.
+
+```{python}
+
+g=sns.relplot(
+    data=prevalence_data.group_by(
+        "t", "infection_status", "seed"
+    ).agg(
+        pl.sum('count').alias('count')
+    ),
+    x="t", y="count",
+    kind="line",
+    hue="infection_status",
+    alpha=0.3,
+    units="seed",
+    estimator=None,
+    col="infection_status",
+    col_order=["Susceptible", "Infectious", "Recovered"],
+    # estimator='median',
+    # errorbar=lambda x: (x.quantile(0.1), x.quantile(0.9))
+)
+plt.xlabel("Time")
+for ax in g.axes.flat:
+    # ax.axvline(x=65, color="red", linestyle="--", label="First case reported (March 6, 2020)")
+    ax.axvline(x=75, color="black", linestyle="--", label="First death reported (March 16, 2020)")
+plt.ylabel("Count")
+plt.show()
+```
+
+## Morbidity and mortality
+We can compare the trajectories of the cumulative count of deaths to the time of the frist reported death that we used in defining the distance function of our calibration approach. There is a large range of mortality rates across simulations, but they are appropriately concentrated to begin near in time to the first observed death.
+
+```{python}
+sns.lineplot(data=death_data, x="t_upper", y="cumulative_count", alpha=0.2, units ="seed", estimator=None)
+plt.xlabel("Time")
+plt.ylabel("Cumulative Deaths")
+plt.yscale("log")
+plt.axvline(x=75, color="black", linestyle="--", label="First death reported (March 16, 2020)")
+plt.show()
+```
+
+If we look at the proportion of simulations that have observed at least one critical or sever case by age group, we can see that the timing of most simulations aligns well with the first reported symptomatic case observed in Indiana (MArch 6th, 2020). Only the category of individuals 65 and older always see at least one severe and critical case in each simulation by the calibration window end.
+
+```{python}
+n_unique_seeds = prevalence_data.select(pl.col("seed").n_unique()).item()
+
+age_group_values = prevalence_data.filter(
+        pl.col('symptom_status').is_in(["Severe", "Critical"])
+    ).group_by(
+        "t", "age_group", "symptom_status", "seed"
+    ).agg(
+        pl.sum('count').alias('count')
+    ).filter(
+        pl.col('t') < 85
+    ).group_by(
+        "age_group", "symptom_status", "t"
+    ).agg(
+        (pl.len() / n_unique_seeds).alias('proportion_of_simualtions_have_had_cases')
+    )
+
+g = sns.relplot(
+    data=age_group_values,
+    x="t", y="proportion_of_simualtions_have_had_cases",
+    kind="line",
+    col="age_group",
+    col_order=["Age0To17", "Age18to49", "Age50to64", "Age65Plus"],
+    col_wrap=2,
+    hue="symptom_status",
+)
+
+g.set(ylim=(0,1))
+
+g.figure.suptitle(
+    "Observing symptomatic cases in simulations",
+    fontsize='x-large',
+    fontweight='bold'
+)
+g.figure.subplots_adjust(top=0.85)
+g.set_axis_labels("Time (days since simulation start)", "Proportion of simulations with at least one case")
+for ax in g.axes.flat:
+    ax.axvline(x=65, color="red", linestyle="--", label="First case reported (March 6, 2020)")
+    ax.axvline(x=75, color="black", linestyle="--", label="First death reported (March 16, 2020)")
+plt.show()
+```
+
+Expanding the time horizon again and assessing prevalence of symptom statuses across age groups, we can see that the trajectories are just as variable as the infection prevalence trajectories. However, we generally see highest prevalence of critical and severe symptoms in the 65 and older age group, as we would expect, while the highest prevalence of mild symptoms occurs in the 18 to 49 age group, which constitutes the largest age group class and so would also be expected to be the higest proportion with symptoms in the absence of age-specific symptom probability and attack rates.
+
+```{python}
+g = sns.relplot(
+    data=prevalence_data.filter(
+        ~pl.col('symptom_status').is_in(["NoSymptoms", "Dead", "Resolved"])
+    ).group_by(
+        "t", "age_group", "symptom_status", "seed"
+    ).agg(
+        pl.sum('count').alias('count')
+    ),
+    x="t", y="count",
+    kind="line",
+    col="age_group", row='symptom_status',
+    col_order=["Age0To17", "Age18to49", "Age50to64", "Age65Plus"],
+    row_order=["Mild", "Severe", "Critical"],
+    facet_kws={'sharey': 'row', 'sharex': True},
+    hue="symptom_status",
+    alpha=0.2,
+    units="seed",
+    estimator=None,
+    # estimator='median',
+    # errorbar = lambda x: (x.quantile(0.025), x.quantile(0.975))
+)
+g.figure.subplots_adjust(top=0.85)
+g.set_axis_labels("Time (days since simulation start)", "Number of people")
+g.set_titles("")
+plt.show()
+```
