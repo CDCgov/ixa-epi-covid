@@ -28,6 +28,7 @@ mod test {
     use super::*;
     use crate::parameters::GlobalParams;
     use crate::{population_loader::Age, symptom_status_manager::SymptomData};
+    use ixa::assert_almost_eq;
 
     fn setup(first_death_terminates_run: bool) -> Context {
         let mut context = Context::new();
@@ -63,6 +64,7 @@ mod test {
         });
         context.execute();
         assert_eq!(context.get_entity_count::<Person>(), 2);
+        assert_almost_eq!(context.get_current_time(), 2.0, 0.0);
     }
 
     #[test]
@@ -86,5 +88,6 @@ mod test {
         });
         context.execute();
         assert_eq!(context.get_entity_count::<Person>(), 3);
+        assert_almost_eq!(context.get_current_time(), 3.0, 0.0);
     }
 }
