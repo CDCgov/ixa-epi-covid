@@ -28,7 +28,7 @@ requires = ["uv_build>=0.8.13,<0.9.0"]
 build-backend = "uv_build"
 
 [tool.uv.sources]
-calibrationtools = { git = "https://github.com/CDCgov/cfa-calibration-tools.git" , branch = "wtk-store-distances"}
+calibrationtools = { git = "https://github.com/CDCgov/cfa-calibration-tools.git" }
 
 [tool.uv]
 package = true
