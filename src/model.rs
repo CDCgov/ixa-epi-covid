@@ -2,10 +2,8 @@ use std::path::PathBuf;
 
 use ixa::{ExecutionPhase, prelude::*};
 #[allow(unused_imports)]
-use crate::policy;
-#[allow(unused_imports)]
 use crate::{
-    error::ModelError, infection_importation, infection_propagation_loop, itinerary_manager, parameters, population_loader, reports, school_closure, settings, symptom_status_manager
+    error::ModelError, school_calendar, policy, infection_importation, infection_propagation_loop, itinerary_manager, parameters, population_loader, reports, school_closure, settings, symptom_status_manager
 };
 
 pub fn initialize_model(
@@ -38,9 +36,8 @@ pub fn initialize_model(
     info!("Infection propagation loop initialized");
     infection_importation::init(context)?;
     info!("Infection importation initialized");
-    // school_closure::init(context)?;
-    // itinerary_manager::init(context)?;
-    policy::init(context)?;
+    school_closure::init(context)?;
+    school_calendar::init(context)?;
     info!("School closure initialized");
     reports::init(context)?;
     info!("Setup complete");

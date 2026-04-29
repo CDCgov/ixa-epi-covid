@@ -76,16 +76,16 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt + Cont
     fn register_itinerary_modifier(&mut self, person: PersonId, itinerary_modifier: ItineraryModifier) {
         let container = self.get_data_mut(ItineraryModifiersPlugin);
         container.add_itinerary_modifier(person, itinerary_modifier);
-        self.implement_dominant_multiplier(person);
+        self.implement_dominant_modifier(person);
     }
 
     fn remove_itinerary_modifier(&mut self, person: PersonId, itinerary_modifier: ItineraryModifier) {
         let container = self.get_data_mut(ItineraryModifiersPlugin);
         container.remove_itinerary_modifier(person, itinerary_modifier);
-        self.implement_dominant_multiplier(person);
+        self.implement_dominant_modifier(person);
     }
 
-    fn implement_dominant_multiplier(&mut self, person: PersonId) {
+    fn implement_dominant_modifier(&mut self, person: PersonId) {
         let dominant_itinerary_ratios = {
             let container = self.get_data_mut(ItineraryModifiersPlugin);
             let dominant = container.dominant_modifier.get(&person).map(|m| m.itinerary_ratios.clone()).unwrap();
