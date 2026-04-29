@@ -15,7 +15,6 @@ pub mod symptom_status_manager;
 pub mod school_closure;
 pub mod school_calendar;
 pub mod itinerary_manager;
-pub mod itinerary_manager_entity_properties;
 pub mod policy;
 
 pub use model::initialize_model;
