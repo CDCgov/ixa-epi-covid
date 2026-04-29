@@ -7,6 +7,7 @@ from urllib.request import urlopen
 import polars as pl
 
 REPO_DATA_URL = "https://raw.githubusercontent.com/TALexPerkins/sarscov2_unobserved/master/data/"
+PACKAGE_DATA_DIR = Path(__file__).resolve().parent / "data"
 
 # =========================== #
 # Data Retrieval Functions  #
@@ -33,6 +34,13 @@ def read_bytes(data_url: str, file_path: str) -> pl.DataFrame:
         data = BytesIO(response.read())
 
     return data
+
+
+def _packaged_data_path(filename: str) -> Path | None:
+    candidate = PACKAGE_DATA_DIR / filename
+    if candidate.exists():
+        return candidate
+    return None
 
 
 def get_perkins_et_al_posteriors(
@@ -98,11 +106,10 @@ def get_linelist_data(
         - The data is filtered following the methods in Perkins et al. 2020 PNAS to include only US importations that are not associated with the Diamond Princess cruise ship and are marked as international travelers.
     """
 
-    # Create cache directory if it doesn't exist
-    os.makedirs(input_dir, exist_ok=True)
-    if os.path.exists(os.path.join(input_dir, filename)):
+    packaged_file = _packaged_data_path(filename)
+    if packaged_file is not None:
         linelist_data = pl.read_csv(
-            os.path.join(input_dir, filename),
+            packaged_file,
             schema_overrides={
                 "age": pl.Float64,
                 "international_traveler": pl.Int64,
@@ -111,22 +118,35 @@ def get_linelist_data(
                 "exposure_start": pl.Datetime,
             },
         )
-    else:  # download repo output from url
-        # Get linelist data from repo
-        linelist_bytes = read_bytes(url, linelist_file)
-        linelist_data = pl.read_csv(
-            linelist_bytes,
-            null_values="NA",
-            schema_overrides={
-                "age": pl.Float64,
-                "international_traveler": pl.Int64,
-                "reporting date": pl.Datetime,
-                "symptom_onset": pl.Datetime,
-                "exposure_start": pl.Datetime,
-            },
-        )
-        if cache:
-            linelist_data.write_csv(os.path.join(input_dir, filename))
+    else:
+        os.makedirs(input_dir, exist_ok=True)
+        cached_file = Path(input_dir) / filename
+        if cached_file.exists():
+            linelist_data = pl.read_csv(
+                cached_file,
+                schema_overrides={
+                    "age": pl.Float64,
+                    "international_traveler": pl.Int64,
+                    "reporting date": pl.Datetime,
+                    "symptom_onset": pl.Datetime,
+                    "exposure_start": pl.Datetime,
+                },
+            )
+        else:  # download repo output from url
+            linelist_bytes = read_bytes(url, linelist_file)
+            linelist_data = pl.read_csv(
+                linelist_bytes,
+                null_values="NA",
+                schema_overrides={
+                    "age": pl.Float64,
+                    "international_traveler": pl.Int64,
+                    "reporting date": pl.Datetime,
+                    "symptom_onset": pl.Datetime,
+                    "exposure_start": pl.Datetime,
+                },
+            )
+            if cache:
+                linelist_data.write_csv(cached_file)
 
     us_imports = (
         linelist_data.filter(

@@ -1,9 +1,9 @@
 # Running the calibration routine
-In order to generate the results analysis report from the `reports/` directory, first calibrate the model by using the phase 1 calibration script. Ensure that the uv environment is synced and the rust binaries have been assembled
+In order to generate the results analysis report from the `reports/` directory, first calibrate the model by using the phase 1 calibration script. Ensure that the uv environment is synced and then run the calibration to projection pipeline for the phase 1 routine.
+
 ```
 uv sync --all-packages
-uv run cargo build -r
-uv run python scripts/phase_1_calibration.py
+make projections-phase-1 MAX_WORKERS={MAX_WORKER_COUNT}
 ```
 
 Then, to render the analysis report, ensure that `tinytex` is installed with

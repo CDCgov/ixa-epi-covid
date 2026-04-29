@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from importation.geographies import get_state_proportion_population_data
 from mrp.api import apply_dict_overrides
 
 
@@ -75,6 +76,10 @@ class CovidModelConfig:
                 "outputs_to_read": outputs_to_read,
             },
             "importation_inputs": {
+                "population_proportion": get_state_proportion_population_data(
+                    state=self.config["state"],
+                    year=self.config["year"],
+                ),
                 "state": self.config["state"],
                 "year": self.config["year"],
                 "symptomatic_reporting_prob": self.config[

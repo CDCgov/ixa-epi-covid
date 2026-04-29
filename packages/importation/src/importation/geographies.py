@@ -6,6 +6,8 @@ from census import Census
 from dotenv import load_dotenv
 from us import states
 
+PACKAGE_DATA_DIR = Path(__file__).resolve().parent / "data"
+
 
 def get_api_key() -> str:
     """Get the Census API key from the environment variable"""
@@ -41,26 +43,34 @@ def get_total_state_population_data(
           "state_population_data_<year>.csv".
     """
     filename = f"state_population_data_{year if year else 'latest'}.csv"
+    packaged_filepath = PACKAGE_DATA_DIR / filename
+    if packaged_filepath.exists():
+        return pl.read_csv(packaged_filepath)
+
+    if year is None:
+        packaged_candidates = sorted(
+            PACKAGE_DATA_DIR.glob("state_population_data_*.csv")
+        )
+        if packaged_candidates:
+            return pl.read_csv(packaged_candidates[-1])
+
     filepath = Path(".cache") / filename
     if filepath.exists():
         return pl.read_csv(filepath)
-    else:
-        api_key = get_api_key()
-        c = Census(api_key, year=year)
-        state_population_data = c.acs5.state(
-            ("B01003_001E", "NAME"), Census.ALL
-        )
-        state_population_df = pl.DataFrame(state_population_data).select(
-            [
-                pl.col("NAME").alias("state_name"),
-                pl.col("state").cast(pl.Int64),
-                pl.col("B01003_001E").alias("population").cast(pl.Int64),
-            ]
-        )
-        if cache:
-            os.makedirs(filepath.parent, exist_ok=True)
-            # Cache the DataFrame for faster future access
-            state_population_df.write_csv(filepath)
+
+    api_key = get_api_key()
+    c = Census(api_key, year=year)
+    state_population_data = c.acs5.state(("B01003_001E", "NAME"), Census.ALL)
+    state_population_df = pl.DataFrame(state_population_data).select(
+        [
+            pl.col("NAME").alias("state_name"),
+            pl.col("state").cast(pl.Int64),
+            pl.col("B01003_001E").alias("population").cast(pl.Int64),
+        ]
+    )
+    if cache:
+        os.makedirs(filepath.parent, exist_ok=True)
+        state_population_df.write_csv(filepath)
     return state_population_df
 
 

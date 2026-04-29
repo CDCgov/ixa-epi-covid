@@ -1,36 +1,20 @@
 use std::path::{Path, PathBuf};
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
-#[cfg(feature = "bench_old_settings")]
-use epimodel::parameters::{CoreSettingsTypes, GlobalParams, Params, RateFnType};
-#[cfg(not(feature = "bench_old_settings"))]
 use epimodel::parameters::{GlobalParams, Params, RateFnType, SettingProperties};
-#[cfg(not(feature = "bench_old_settings"))]
 use epimodel::settings::SettingCategory;
-#[cfg(feature = "bench_old_settings")]
-use epimodel::settings::SettingProperties;
 use epimodel::symptom_status_manager::SymptomDelayDistLogNormParams;
 use epimodel::{ContextParametersExt, initialize_model};
 use ixa::HashMap;
 use ixa::prelude::*;
 
-#[cfg(feature = "bench_old_settings")]
-type SettingType = CoreSettingsTypes;
-#[cfg(not(feature = "bench_old_settings"))]
 type SettingType = SettingCategory;
+
 fn make_params(synth_file: PathBuf) -> Params {
     let delay = SymptomDelayDistLogNormParams {
         mu: 0.1,
         sigma: 0.1,
     };
-    #[cfg(feature = "bench_old_settings")]
-    let settings = [
-        (SettingType::Home, 0.3, 0.3),
-        (SettingType::Workplace, 0.2, 0.3),
-        (SettingType::School, 0.2, 0.1),
-        (SettingType::CensusTract, 0.01, 0.3),
-    ];
-    #[cfg(not(feature = "bench_old_settings"))]
     let settings = [
         (SettingType::Home, 0.3, 0.3),
         (SettingType::Work, 0.2, 0.3),

@@ -1,3 +1,5 @@
+import subprocess
+import sys
 import warnings
 from pathlib import Path
 from unittest.mock import patch
@@ -13,6 +15,10 @@ from create_synthetic_population import (
     load_tracts,
     parse_args,
     sample_population,
+)
+from create_synthetic_population.run import (
+    FIPS_CODE_ID_MAX,
+    build_household_frame,
 )
 from shapely.geometry import Point, Polygon
 
@@ -201,6 +207,68 @@ class TestCreatePlaces:
         df = create_places(tracts_gdf, 3, "school_id", rng)
         assert df["lat"].notna().all() and df["lon"].notna().all()
 
+    def test_school_ids_reset_within_tract(self, tracts_gdf, rng):
+        sampled = tracts_gdf.iloc[[0, 1, 0, 1]].copy().reset_index(drop=True)
+        with patch.object(
+            gpd.GeoDataFrame,
+            "sample",
+            autospec=True,
+            return_value=sampled,
+        ):
+            df = create_places(tracts_gdf, 4, "school_id", rng)
+
+        assert df["school_id"].tolist() == [
+            "56001000100001",
+            "56001000200001",
+            "56001000100002",
+            "56001000200002",
+        ]
+
+    def test_workplace_ids_reset_within_tract(self, tracts_gdf, rng):
+        sampled = tracts_gdf.iloc[[0, 1, 0, 1]].copy().reset_index(drop=True)
+        with patch.object(
+            gpd.GeoDataFrame,
+            "sample",
+            autospec=True,
+            return_value=sampled,
+        ):
+            df = create_places(tracts_gdf, 4, "workplace_id", rng)
+
+        assert df["workplace_id"].tolist() == [
+            "5600100010000001",
+            "5600100020000001",
+            "5600100010000002",
+            "5600100020000002",
+        ]
+
+    @pytest.mark.parametrize(
+        ("id_col", "setting_type"),
+        [("school_id", "school"), ("workplace_id", "workplace")],
+    )
+    def test_place_id_overflow_raises(
+        self, tracts_gdf, rng, id_col, setting_type
+    ):
+        sampled = (
+            tracts_gdf.iloc[np.zeros(FIPS_CODE_ID_MAX + 1, dtype=int)]
+            .copy()
+            .reset_index(drop=True)
+        )
+        with patch.object(
+            gpd.GeoDataFrame,
+            "sample",
+            autospec=True,
+            return_value=sampled,
+        ):
+            with pytest.raises(
+                ValueError,
+                match=(
+                    rf"{setting_type} sequence overflow for tract 56001000100: "
+                    rf"maximum sequence {FIPS_CODE_ID_MAX + 1} exceeds "
+                    rf"FIPSCode limit {FIPS_CODE_ID_MAX}"
+                ),
+            ):
+                create_places(tracts_gdf, FIPS_CODE_ID_MAX + 1, id_col, rng)
+
 
 class TestSamplePopulation:
     def test_produces_at_least_target(self, household_pums, sample_pums, rng):
@@ -223,12 +291,102 @@ class TestSamplePopulation:
         if len(non_workers) > 0:
             assert non_workers["workplace_id"].isna().all()
 
+    def test_ignores_invalid_household_weights(self, sample_pums, rng):
+        corrupted = sample_pums.copy()
+        corrupted.loc[corrupted["SERIALNO"] == "HU001", "WGTP"] = np.nan
+        corrupted.loc[corrupted["SERIALNO"] == "HU003", "WGTP"] = 0
+
+        household_pums = build_household_frame(corrupted)
+        df = sample_population(
+            household_pums, corrupted, WORKPLACE_IDS, SCHOOL_IDS, 2, rng
+        )
+
+        assert len(df) >= 2
+        assert set(df["SERIALNO"].unique()) == {"HU002"}
+
+    def test_raises_when_no_positive_household_weights(self, sample_pums, rng):
+        corrupted = sample_pums.copy()
+        corrupted["WGTP"] = 0
+        household_pums = build_household_frame(corrupted)
+
+        with pytest.raises(
+            ValueError, match="No households with positive WGTP values"
+        ):
+            sample_population(
+                household_pums,
+                corrupted,
+                WORKPLACE_IDS,
+                SCHOOL_IDS,
+                2,
+                rng,
+            )
+
 
 class TestAssignGeography:
     def test_adds_tract_and_home_id(self, geo_df):
         assert "home_id" in geo_df.columns
         assert "tract_id" in geo_df.columns
         assert geo_df["home_id"].notna().all()
+
+    def test_home_ids_reset_within_tract_and_households_share_home(
+        self, tracts_gdf, rng
+    ):
+        synth_pop_df = pd.DataFrame(
+            {
+                "person_id": [1, 2, 3, 4, 5],
+                "house_number": [1, 1, 2, 3, 3],
+                "STATE": ["56"] * 5,
+                "PUMA": ["00100", "00100", "00200", "00300", "00300"],
+            }
+        )
+        tracts_by_puma = pd.DataFrame(
+            {
+                "puma_id": ["5600100", "5600200", "5600300"],
+                "tracts": [
+                    ["56001000100"],
+                    ["56001000200"],
+                    ["56001000100"],
+                ],
+            }
+        )
+
+        geo_df = assign_geography(
+            synth_pop_df, tracts_by_puma, tracts_gdf, rng
+        )
+        households = (
+            geo_df[["house_number", "home_id"]]
+            .drop_duplicates()
+            .sort_values("house_number")
+        )
+
+        assert households["home_id"].tolist() == [
+            "560010001000001",
+            "560010002000001",
+            "560010001000002",
+        ]
+        assert geo_df.groupby("house_number")["home_id"].nunique().eq(1).all()
+
+    def test_home_id_overflow_raises(self, tracts_gdf, rng):
+        synth_pop_df = pd.DataFrame(
+            {
+                "house_number": np.arange(1, FIPS_CODE_ID_MAX + 2),
+                "STATE": ["56"] * (FIPS_CODE_ID_MAX + 1),
+                "PUMA": ["00100"] * (FIPS_CODE_ID_MAX + 1),
+            }
+        )
+        tracts_by_puma = pd.DataFrame(
+            {"puma_id": ["5600100"], "tracts": [["56001000100"]]}
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=(
+                r"home sequence overflow for tract 56001000100: "
+                rf"maximum sequence {FIPS_CODE_ID_MAX + 1} exceeds "
+                rf"FIPSCode limit {FIPS_CODE_ID_MAX}"
+            ),
+        ):
+            assign_geography(synth_pop_df, tracts_by_puma, tracts_gdf, rng)
 
 
 class TestBuildOutputs:
@@ -245,6 +403,23 @@ class TestBuildOutputs:
     def test_region_deduped(self, geo_df):
         _, region_df = build_outputs(geo_df)
         assert region_df["censusTractId"].is_unique
+
+
+class TestPackageImport:
+    def test_module_entrypoint_has_no_runpy_warning(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "create_synthetic_population.run",
+                "--help",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        assert "RuntimeWarning" not in result.stderr
 
 
 class TestReproducibility:

@@ -1,0 +1,39 @@
+FROM rust:1.90-bookworm AS rust-builder
+
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+COPY benches ./benches
+COPY src ./src
+RUN cargo build --release --bin ixa-epi-covid
+
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS python-builder
+
+WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+COPY pyproject.toml uv.lock README.md ./
+COPY packages ./packages
+COPY src ./src
+COPY experiments/phase1/input/default_params.json ./experiments/phase1/input/default_params.json
+COPY ixa_epi_covid.mrp.task.toml ./ixa_epi_covid.mrp.task.toml
+RUN uv sync --frozen --no-dev
+
+FROM python:3.12-slim-bookworm
+
+WORKDIR /app
+
+RUN useradd --create-home --shell /bin/bash appuser
+
+COPY --from=python-builder /app /app
+COPY --from=rust-builder /app/target/release/ixa-epi-covid /usr/local/bin/ixa-epi-covid
+COPY ixa_epi_covid.mrp.task.toml /app/ixa_epi_covid.mrp.task.toml
+COPY experiments/phase1/input/default_params.json /app/default_params.json
+
+RUN ln -sf /app/.venv/bin/mrp /usr/local/bin/mrp
+
+ENV PATH="/app/.venv/bin:${PATH}"
+
+USER appuser
+
+CMD ["mrp", "run", "/app/ixa_epi_covid.mrp.task.toml"]

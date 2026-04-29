@@ -24,6 +24,7 @@ DEFAULT_PUMS_DATA_YEAR = 2023
 
 CROSSWALK_FILE = "2020_Census_Tract_to_2020_PUMA.csv"
 CROSSWALK_URL = "https://www2.census.gov/geo/docs/maps-data/data/rel2020/2020_Census_Tract_to_2020_PUMA.txt"
+FIPS_CODE_ID_MAX = 131_071
 
 
 def parse_args(argv=None):
@@ -212,18 +213,82 @@ def load_tracts(state_synth, year_synth):
     return tracts_gdf
 
 
+def assign_within_group_sequence(df, group_col, seq_col):
+    df = df.copy()
+    df[seq_col] = df.groupby(group_col).cumcount() + 1
+    return df
+
+
 def create_places(tracts_gdf, n, id_col, rng):
     sample = tracts_gdf.sample(
         n=n, replace=True, random_state=rng.integers(2**31)
     ).reset_index(drop=True)
+    sample = sample.copy()
+    sample["tract_id"] = sample["GEOID"]
+    sample = assign_within_group_sequence(
+        sample, "tract_id", "place_seq_within_tract"
+    )
+
+    max_place_seq_by_tract = sample.groupby("tract_id")[
+        "place_seq_within_tract"
+    ].max()
+    overflowed = max_place_seq_by_tract[
+        max_place_seq_by_tract > FIPS_CODE_ID_MAX
+    ]
+    if not overflowed.empty:
+        tract_id = overflowed.index[0]
+        max_seq = int(overflowed.iloc[0])
+        setting_type = (
+            "school"
+            if id_col == "school_id"
+            else "workplace"
+            if id_col == "workplace_id"
+            else id_col
+        )
+        raise ValueError(
+            f"{setting_type} sequence overflow for tract {tract_id}: "
+            f"maximum sequence {max_seq} exceeds FIPSCode limit {FIPS_CODE_ID_MAX}"
+        )
+
+    min_width = 3 if id_col == "school_id" else 5
+    place_ids = sample["tract_id"] + sample["place_seq_within_tract"].astype(
+        str
+    ).str.zfill(min_width)
+
     return pd.DataFrame(
         {
-            id_col: sample["GEOID"]
-            + (sample.index + 1).astype(str).str.zfill(6),
+            id_col: place_ids,
             "lat": sample["lat"].values,
             "lon": sample["lon"].values,
             "enrolled": 0,
         }
+    )
+
+
+def resolve_household_weight(weights):
+    valid_weights = pd.to_numeric(pd.Series(weights), errors="coerce")
+    valid_weights = valid_weights[
+        np.isfinite(valid_weights) & (valid_weights > 0)
+    ]
+    if valid_weights.empty:
+        return np.nan
+    return float(valid_weights.mode().iloc[0])
+
+
+def build_household_frame(sample_pums):
+    household_sizes = (
+        sample_pums.groupby("SERIALNO", sort=False).size().rename("NP")
+    )
+    household_weights = (
+        sample_pums.groupby("SERIALNO", sort=False)["WGTP"]
+        .apply(resolve_household_weight)
+        .rename("WGTP")
+    )
+    return (
+        pd.concat([household_weights, household_sizes], axis=1)
+        .reset_index()
+        .sort_values("SERIALNO", kind="stable")
+        .reset_index(drop=True)
     )
 
 
@@ -236,28 +301,33 @@ def sample_population(
     rng,
 ):
     start_time = time.time()
-    n_households = len(household_pums)
+    valid_households = household_pums.copy()
+    weights = pd.to_numeric(valid_households["WGTP"], errors="coerce").astype(
+        float
+    )
+    valid_mask = np.isfinite(weights) & (weights > 0)
+    valid_households = valid_households.loc[valid_mask].reset_index(drop=True)
+    if valid_households.empty:
+        raise ValueError("No households with positive WGTP values available")
 
-    weights = household_pums["WGTP"].values.astype(float)
+    n_households = len(valid_households)
+    weights = valid_households["WGTP"].values.astype(float)
     weights = weights / weights.sum()
 
     # Estimate how many households we need based on average household size
-    avg_people_per_hh = len(sample_pums) / n_households
+    avg_people_per_hh = valid_households["NP"].values.astype(float).mean()
     n_hh_needed = math.ceil(population_size / avg_people_per_hh * 1.05)
 
     # Sample all households at once with replacement
     sampled_indices = rng.choice(
         n_households, size=n_hh_needed, replace=True, p=weights
     )
-    house_sample = (
-        household_pums.iloc[sampled_indices].copy().reset_index(drop=True)
-    )
+    house_sample = valid_households.iloc[sampled_indices][["SERIALNO"]].copy()
+    house_sample = house_sample.reset_index(drop=True)
     house_sample["house_number"] = range(1, n_hh_needed + 1)
 
     # Expand to people via merge
-    synth_pop_df = house_sample.merge(
-        sample_pums, on=["SERIALNO", "WGTP", "NP"], how="left"
-    )
+    synth_pop_df = house_sample.merge(sample_pums, on="SERIALNO", how="left")
 
     # Trim to target population size
     if len(synth_pop_df) > population_size:
@@ -305,14 +375,45 @@ def assign_geography(synth_pop_df, tracts_by_puma, tracts_gdf, rng):
     )
 
     house_puma_df["tract_id"] = house_puma_df["tracts"].apply(
-        lambda x: rng.choice(x)
-        if isinstance(x, list) and len(x) > 0
-        else np.nan
+        lambda x: (
+            rng.choice(x) if isinstance(x, list) and len(x) > 0 else np.nan
+        )
     )
     house_puma_df = house_puma_df.drop(columns=["tracts"])
 
+    missing_tracts = house_puma_df[house_puma_df["tract_id"].isna()]
+    if not missing_tracts.empty:
+        missing_pumas = missing_tracts["puma_id"].drop_duplicates().tolist()
+        raise ValueError(
+            "Could not assign tract_id for sampled households in PUMAs: "
+            f"{missing_pumas}"
+        )
+
+    house_puma_df = assign_within_group_sequence(
+        house_puma_df, "tract_id", "home_seq_within_tract"
+    )
+    max_home_seq_by_tract = house_puma_df.groupby("tract_id")[
+        "home_seq_within_tract"
+    ].max()
+    overflowed = max_home_seq_by_tract[
+        max_home_seq_by_tract > FIPS_CODE_ID_MAX
+    ]
+    if not overflowed.empty:
+        tract_id = overflowed.index[0]
+        max_seq = int(overflowed.iloc[0])
+        raise ValueError(
+            f"home sequence overflow for tract {tract_id}: "
+            f"maximum sequence {max_seq} exceeds FIPSCode limit {FIPS_CODE_ID_MAX}"
+        )
+
+    house_puma_df["home_id"] = house_puma_df["tract_id"] + house_puma_df[
+        "home_seq_within_tract"
+    ].astype(str).str.zfill(4)
+
     synth_pop_region_df = synth_pop_df.merge(
-        house_puma_df[["house_number", "STATE", "PUMA", "tract_id"]],
+        house_puma_df[
+            ["house_number", "STATE", "PUMA", "tract_id", "home_id"]
+        ],
         on=["house_number", "STATE", "PUMA"],
         how="left",
     )
@@ -330,10 +431,6 @@ def assign_geography(synth_pop_df, tracts_by_puma, tracts_gdf, rng):
         how="left",
         suffixes=("", "_tract"),
     )
-
-    synth_pop_region_df["home_id"] = synth_pop_region_df["tract_id"].astype(
-        str
-    ) + synth_pop_region_df["house_number"].apply(lambda x: f"{x:06d}")
 
     return synth_pop_region_df
 
@@ -393,11 +490,7 @@ def run(argv=None):
     sample_pums = load_pums(
         state_synth, state_fips, year_synth, census_api_key, input_dir
     )
-    household_pums = (
-        sample_pums[["SERIALNO", "WGTP", "NP"]]
-        .drop_duplicates()
-        .reset_index(drop=True)
-    )
+    household_pums = build_household_frame(sample_pums)
 
     tracts_by_puma = load_crosswalk(input_dir)
     tracts_gdf = load_tracts(state_synth, year_synth)
