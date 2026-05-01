@@ -63,6 +63,26 @@ where
     }
 }
 
+impl<P> DummyTrait for PersonPropertyModifier<'static, P> 
+where 
+    P: Property<Person> + std::fmt::Debug, 
+    P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn get_itinerary(
+        &self,
+        context: &Context,
+        person_id: PersonId,
+    ) -> Option<ItineraryModifier> {
+        if self.property == context.get_property::<Person, P>(person_id){
+            Some(self.modifiers)
+        } else {
+            None
+        }        
+    }
+}
+
 #[derive(Default)]
 struct ItineraryModifierContainer {
     itinerary_modifier_map: HashMap<TypeId, Box<dyn ItineraryModifierTrait>>,
@@ -75,6 +95,7 @@ define_data_plugin!(
 );
 
 pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
+    
     /// Register a generic itinerary modifier.
     fn register_itinerary_modifier<P: Property<Person> + std::fmt::Debug + 'static>(
         &mut self,
