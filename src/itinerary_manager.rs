@@ -2,9 +2,9 @@ use ixa::{
     prelude::*,
 };
 use serde::Serialize;
-use std::{any::{TypeId}, collections::HashMap};
+use std::{any::{Any, TypeId}, collections::HashMap};
 
-use crate::{Age, population_loader::SchoolId, settings::ItineraryRatios, symptom_status_manager::SymptomStatus};
+use crate::{Age, settings::ItineraryRatios};
 use crate::population_loader::{Person, PersonId};
 
 define_rng!(DummyRng);
@@ -46,7 +46,14 @@ impl Eq for ItineraryModifier {}
 //     }
 // }
 
-pub trait DummyTrait: std::fmt::Debug + 'static{}
+pub trait DummyTrait: std::fmt::Debug  + Any{
+    fn as_any(&self) -> &dyn std::any::Any;
+    fn get_itinerary(
+        &self,
+        context: &Context,
+        person_id: PersonId,
+    ) -> Option<ItineraryModifier>;
+}
 
 // A newtype wrapper for the itinerary modifiers specified via a hashmap of person
 // property values and itinerary -- i.e., `modifier_key: &[(P::Value, Vec<ItineraryEntry>)]`
@@ -62,9 +69,29 @@ where
     _phantom: std::marker::PhantomData<&'a ()>,
 }
 
+impl<P> DummyTrait for PersonPropertyModifier<'static, P> 
+where 
+    P: Property<Person> + std::fmt::Debug, 
+    P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn get_itinerary(
+        &self,
+        context: &Context,
+        person_id: PersonId,
+    ) -> Option<ItineraryModifier> {
+        if self.property == context.get_property::<Person, P>(person_id){
+            Some(self.modifiers)
+        } else {
+            None
+        }        
+    }
+}
+
 #[derive(Default)]
 struct ItineraryModifierContainer {
-    itinerary_modifier_map: HashMap<TypeId, Box<dyn std::any::Any>>,
+    itinerary_modifier_map: HashMap<TypeId, Box<dyn DummyTrait>>,
 }
 
 define_data_plugin!(
@@ -74,6 +101,7 @@ define_data_plugin!(
 );
 
 pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
+    
     /// Register a generic itinerary modifier.
     fn register_itinerary_modifier<P: Property<Person> + std::fmt::Debug + 'static>(
         &mut self,
@@ -106,34 +134,45 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
             .remove(&TypeId::of::<P>());
     }
 
-    fn get_itinerary<P: Property<Person> + std::fmt::Debug + 'static>(&self, person_property: P) -> Option<ItineraryModifier>
-    where 
-        <P as ixa::prelude::Property<Person>>::CanonicalValue: std::hash::Hash + Eq 
-    {
-        let itinerary_modifier_container = self.get_data(ItineraryModifierPlugin);
-        let modifier_key = TypeId::of::<P>();
-        let modifier = itinerary_modifier_container.itinerary_modifier_map.get(&modifier_key).unwrap();
-        let modifier = modifier.downcast_ref::<PersonPropertyModifier<'_, P>>().unwrap();
-        if modifier.property == person_property {
-            Some(modifier.modifiers)
-        } else {
-            None
-        }
-    }
+    // fn get_itinerary<P: Property<Person> + std::fmt::Debug + 'static>(&self, person_property: P) -> Option<ItineraryModifier>
+    // where 
+    //     <P as ixa::prelude::Property<Person>>::CanonicalValue: std::hash::Hash + Eq 
+    // {
+    //     let itinerary_modifier_container = self.get_data(ItineraryModifierPlugin);
+    //     let modifier_key = TypeId::of::<P>();
+    //     let modifier = itinerary_modifier_container.itinerary_modifier_map.get(&modifier_key).unwrap();
+    //     let modifier = modifier.as_any();
+    //     let modifier = modifier.downcast_ref::<PersonPropertyModifier<'_, P>>().unwrap();
+    //     if modifier.property == person_property {
+    //         Some(modifier.modifiers)
+    //     } else {
+    //         None
+    //     }
+    // }
 
-    fn get_dominant_itinerary_modifier(&self, person_id: PersonId) -> Option<ItineraryModifier> {
-        println!("Getting dominant itinerary modifier for person {person_id}");
-        let age_modifier = self.get_itinerary(self.get_property::<Person, Age>(person_id));
-        let symp_modifier = self.get_itinerary(self.get_property::<Person, SymptomStatus>(person_id));
-        let school_modifier = self.get_itinerary(self.get_property::<Person, SchoolId>(person_id));
-        let modifiers = [age_modifier, symp_modifier, school_modifier];
-        let mut sorted_modifiers: Vec<_> = modifiers.into_iter().flatten().collect();
-        sorted_modifiers.sort(); 
-        sorted_modifiers.pop()
-    }
+    fn get_dominant_itinerary_modifier(&self, person_id: PersonId) -> Option<ItineraryModifier>;
 
 }
-impl ContextItineraryModifierExt for Context {}
+impl ContextItineraryModifierExt for Context {
+    // This needs to be here to have access to the concrete context type for the get_itinerary trait method
+    fn get_dominant_itinerary_modifier(&self, person_id: PersonId) -> Option<ItineraryModifier> {
+            let itinerary_modifier_container = self.get_data(ItineraryModifierPlugin);
+            let mut dominant_modifier: Option<ItineraryModifier> = None;
+            for modifier in itinerary_modifier_container.itinerary_modifier_map.values() {
+                let itinerary_modifier = modifier.get_itinerary(self, person_id);
+                if let Some(temp) = itinerary_modifier {
+                    if let Some(dominant_modifier_temp) = dominant_modifier {
+                        if temp > dominant_modifier_temp {
+                            dominant_modifier = Some(temp);
+                        }
+                    } else {
+                        dominant_modifier = Some(temp);
+                    }
+                }
+            }
+            dominant_modifier      
+        }
+}
 
 pub fn init(context: &mut Context) {
     let school_closure_modifier = ItineraryModifier {
@@ -148,6 +187,6 @@ pub fn init(context: &mut Context) {
             school_closure_modifier,
         );
     let p1 = context.sample_entity(DummyRng, (Age(11),)).unwrap();
-    println!("dominant modifier {:?}", context.get_itinerary(context.get_property::<Person, Age>(p1)));
+    println!("dominant modifier {:?}", context.get_dominant_itinerary_modifier(p1));
     context.shutdown();
 }
