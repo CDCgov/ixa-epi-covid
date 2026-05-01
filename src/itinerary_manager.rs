@@ -4,7 +4,7 @@ use ixa::{
 use serde::Serialize;
 use std::{any::{TypeId}, collections::HashMap};
 
-use crate::{Age, settings::ItineraryRatios};
+use crate::{Age, population_loader::SchoolId, settings::ItineraryRatios, symptom_status_manager::SymptomStatus};
 use crate::population_loader::{Person, PersonId};
 
 define_rng!(DummyRng);
@@ -14,6 +14,20 @@ pub struct ItineraryModifier{
     ranking: usize,
     itinerary_ratios: ItineraryRatios
 }
+
+impl Ord for ItineraryModifier {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.ranking.cmp(&other.ranking)
+    }
+}
+
+impl PartialOrd for ItineraryModifier {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Eq for ItineraryModifier {}
 
 // pub trait ItineraryModifiers: std::fmt::Debug + Any {
 //     /// Return the itinerary of a person based on their properties and the current context.
@@ -32,6 +46,8 @@ pub struct ItineraryModifier{
 //     }
 // }
 
+pub trait DummyTrait: std::fmt::Debug + 'static{}
+
 // A newtype wrapper for the itinerary modifiers specified via a hashmap of person
 // property values and itinerary -- i.e., `modifier_key: &[(P::Value, Vec<ItineraryEntry>)]`
 #[allow(dead_code)]
@@ -42,43 +58,9 @@ where
     P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
 {
     property: P,
-    modifiers: HashMap<<P as Property<Person>>::CanonicalValue, ItineraryModifier>,
+    modifiers: ItineraryModifier,
     _phantom: std::marker::PhantomData<&'a ()>,
 }
-#[allow(dead_code)]
-impl<'a, P> PersonPropertyModifier<'a, P>
-where
-    P: Property<Person> + std::fmt::Debug,
-    P::CanonicalValue: std::hash::Hash + Eq,
-{
-    fn get(&self, key: &P::CanonicalValue) -> Option<&ItineraryModifier> {
-        self.modifiers.get(key)
-    }
-}
-
-// #[allow(dead_code)]
-// impl<P> ItineraryModifiers for PersonPropertyModifier<'_, P>
-// where
-//     P: Property<Person, CanonicalValue = P> + std::fmt::Debug + 'static,
-//     P::CanonicalValue: std::hash::Hash + Eq,
-// {
-//     fn get_itinerary(
-//         &self,
-//         context: &Context,
-//         person_id: PersonId,
-//     ) -> Option<ItineraryModifier> {
-//         let (_person_property, modifier_map) = self;
-//         let property_val = context.get_property::<Person, P>(person_id);
-//         match modifier_map.get(&property_val) {
-//             Some(value) => Some(*value),
-//             None => None,
-//         }
-//     }
-    
-//     fn get_name(&self) -> String {
-//         format!("{:?}", self.0)
-//     }
-// }
 
 #[derive(Default)]
 struct ItineraryModifierContainer {
@@ -96,7 +78,6 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
     fn register_itinerary_modifier<P: Property<Person> + std::fmt::Debug + 'static>(
         &mut self,
         person_property: P,
-        person_property_value: P::CanonicalValue,
         itinerary_modifier: ItineraryModifier,
     )
     where
@@ -106,7 +87,7 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
         // Itinerary modifiers must implement debug so that we can more easily log their addition
         let person_property_modifier = PersonPropertyModifier {
             property: person_property,
-            modifiers: HashMap::from([(person_property_value, itinerary_modifier)]),
+            modifiers: itinerary_modifier,
             _phantom: std::marker::PhantomData,
         };
         // Insert the boxed function into the itinerary modifier map, using entry to handle unititialized keys
@@ -125,69 +106,31 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
             .remove(&TypeId::of::<P>());
     }
 
-    // fn store_itinerary_modifier_values<
-    //     P: Property<Person, CanonicalValue = P> + std::fmt::Debug + 'static,
-    // >(
-    //     &mut self,
-    //     person_property: P,
-    //     person_property_value: P::CanonicalValue,
-    //     itinerary_modifier: ItineraryModifier,
-    // ) -> Result<(), ModelError>
-    // where
-    //     P::CanonicalValue: std::hash::Hash + Eq,
-    // {
-    //     // Convert modifiers to HashMap
-    //     let mut modifier_map = HashMap::new();
-    //     if let Some(old_value) = modifier_map.insert(person_property_value, itinerary_modifier) {
-    //         return Err(ModelError::ModelError(
-    //             "Duplicate values provided in modifier key ".to_string()
-    //                 + &format!("Values {old_value:?} and {itinerary_modifier:?} were both attempted to be registered to key {person_property:?}::{person_property_value:?}"),
-    //         ));
-    //     }
-    //     self.register_itinerary_modifier_fn((person_property, modifier_map.clone()));
-    //     Ok(())
-    // }
-
-    fn get_itinerary<P: Property<Person> + std::fmt::Debug + 'static>(&self, person_id: PersonId, person_property: P) 
-    where <P as ixa::prelude::Property<Person>>::CanonicalValue: std::hash::Hash + Eq {
+    fn get_itinerary<P: Property<Person> + std::fmt::Debug + 'static>(&self, person_property: P) -> Option<ItineraryModifier>
+    where 
+        <P as ixa::prelude::Property<Person>>::CanonicalValue: std::hash::Hash + Eq 
+    {
         let itinerary_modifier_container = self.get_data(ItineraryModifierPlugin);
-        println!("itinerary modifier map: {:?}", itinerary_modifier_container.itinerary_modifier_map);
         let modifier_key = TypeId::of::<P>();
         let modifier = itinerary_modifier_container.itinerary_modifier_map.get(&modifier_key).unwrap();
-        println!("Getting itinerary modifier for person {person_id} and property {person_property:?}");
-        println!("Modifier: {:?}", modifier);
-        let temp = modifier.downcast_ref::<PersonPropertyModifier<'_, P>>().unwrap();
-        let property = temp.property;
-        let property_val = temp.modifiers.keys().next().unwrap();
-        println!("Property: {:?}", property);
-        println!("Property value: {:?}", property_val);
-        let age = self.get_property::<Person, P>(person_id);
-        println!("Person property value: {:?}", age);
-        println!("property == age {}", property == age);
-        // match modifier.get(&property_val) {
-        //     Some(value) => Some(*value),
-        //     None => None,
-        // }
+        let modifier = modifier.downcast_ref::<PersonPropertyModifier<'_, P>>().unwrap();
+        if modifier.property == person_property {
+            Some(modifier.modifiers)
+        } else {
+            None
+        }
     }
 
-    // fn get_dominant_itinerary_modifier(&self, person_id: PersonId) -> Option<ItineraryModifier> {
-    //     println!("Getting dominant itinerary modifier for person {person_id}");
-    //     let itinerary_modifier_container = self.get_data(ItineraryModifierPlugin);
-    //     let mut dominant_itinerary_modifier: Option<ItineraryModifier> = None;
-    //     for itinerary_modifier in itinerary_modifier_container.itinerary_modifier_map.values() {
-    //         println!("Checking itinerary modifier: {:?}", itinerary_modifier);
-    //         if let Some(modifier) = itinerary_modifier.get_itinerary(self, person_id) {
-    //             if let Some(current_dominant) = dominant_itinerary_modifier {
-    //                 if modifier.ranking > current_dominant.ranking {
-    //                     dominant_itinerary_modifier = Some(modifier);
-    //                 }
-    //             } else {
-    //                 dominant_itinerary_modifier = Some(modifier);
-    //             }
-    //         }
-    //     }
-    //     dominant_itinerary_modifier
-    // }
+    fn get_dominant_itinerary_modifier(&self, person_id: PersonId) -> Option<ItineraryModifier> {
+        println!("Getting dominant itinerary modifier for person {person_id}");
+        let age_modifier = self.get_itinerary(self.get_property::<Person, Age>(person_id));
+        let symp_modifier = self.get_itinerary(self.get_property::<Person, SymptomStatus>(person_id));
+        let school_modifier = self.get_itinerary(self.get_property::<Person, SchoolId>(person_id));
+        let modifiers = [age_modifier, symp_modifier, school_modifier];
+        let mut sorted_modifiers: Vec<_> = modifiers.into_iter().flatten().collect();
+        sorted_modifiers.sort(); 
+        sorted_modifiers.pop()
+    }
 
 }
 impl ContextItineraryModifierExt for Context {}
@@ -201,11 +144,10 @@ pub fn init(context: &mut Context) {
         };
     context
         .register_itinerary_modifier(
-            Age(0),
-            Age(10),
+            Age(11),
             school_closure_modifier,
         );
     let p1 = context.sample_entity(DummyRng, (Age(11),)).unwrap();
-    println!("dominant modifier {:?}", context.get_itinerary(p1, Age(11)));
+    println!("dominant modifier {:?}", context.get_itinerary(context.get_property::<Person, Age>(p1)));
     context.shutdown();
 }
