@@ -29,25 +29,7 @@ impl PartialOrd for ItineraryModifier {
 
 impl Eq for ItineraryModifier {}
 
-// pub trait ItineraryModifiers: std::fmt::Debug + Any {
-//     /// Return the itinerary of a person based on their properties and the current context.
-//     #[allow(dead_code)]
-//     fn get_itinerary(
-//         &self,
-//         context: &Context,
-//         person_id: PersonId,
-//     ) -> Option<ItineraryModifier>;
-
-//     /// For debugging purposes. The name of the itinerary modifier. The default implementation
-//     /// returns the `Debug` representation of the itinerary modifier struct on which this trait
-//     /// is implemented.
-//     fn get_name(&self) -> String {
-//         format!("{self:?}")
-//     }
-// }
-
-pub trait DummyTrait: std::fmt::Debug  + Any{
-    fn as_any(&self) -> &dyn std::any::Any;
+pub trait ItineraryModifierTrait: std::fmt::Debug  + Any{
     fn get_itinerary(
         &self,
         context: &Context,
@@ -59,7 +41,7 @@ pub trait DummyTrait: std::fmt::Debug  + Any{
 // property values and itinerary -- i.e., `modifier_key: &[(P::Value, Vec<ItineraryEntry>)]`
 #[allow(dead_code)]
 #[derive(Debug)]
-struct PersonPropertyModifier<'a, P>
+struct PersonPropertyItineraryModifier<'a, P>
 where
     P: Property<Person> + std::fmt::Debug,
     P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
@@ -69,13 +51,11 @@ where
     _phantom: std::marker::PhantomData<&'a ()>,
 }
 
-impl<P> DummyTrait for PersonPropertyModifier<'static, P> 
+impl<P> ItineraryModifierTrait for PersonPropertyItineraryModifier<'static, P> 
 where 
     P: Property<Person> + std::fmt::Debug, 
     P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
+    
     fn get_itinerary(
         &self,
         context: &Context,
@@ -91,7 +71,7 @@ where
 
 #[derive(Default)]
 struct ItineraryModifierContainer {
-    itinerary_modifier_map: HashMap<TypeId, Box<dyn DummyTrait>>,
+    itinerary_modifier_map: HashMap<TypeId, Box<dyn ItineraryModifierTrait>>,
 }
 
 define_data_plugin!(
@@ -113,7 +93,7 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
     {
         // Box the itinerary modifier to store it in the map
         // Itinerary modifiers must implement debug so that we can more easily log their addition
-        let person_property_modifier = PersonPropertyModifier {
+        let person_property_modifier = PersonPropertyItineraryModifier {
             property: person_property,
             modifiers: itinerary_modifier,
             _phantom: std::marker::PhantomData,
@@ -128,27 +108,11 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
         }
     }
 
-    fn remove_itinerary_modifier_fn<P: Property<Person> + 'static>(&mut self) {
+    fn remove_itinerary_modifier<P: Property<Person> + 'static>(&mut self) {
         self.get_data_mut(ItineraryModifierPlugin)
             .itinerary_modifier_map
             .remove(&TypeId::of::<P>());
     }
-
-    // fn get_itinerary<P: Property<Person> + std::fmt::Debug + 'static>(&self, person_property: P) -> Option<ItineraryModifier>
-    // where 
-    //     <P as ixa::prelude::Property<Person>>::CanonicalValue: std::hash::Hash + Eq 
-    // {
-    //     let itinerary_modifier_container = self.get_data(ItineraryModifierPlugin);
-    //     let modifier_key = TypeId::of::<P>();
-    //     let modifier = itinerary_modifier_container.itinerary_modifier_map.get(&modifier_key).unwrap();
-    //     let modifier = modifier.as_any();
-    //     let modifier = modifier.downcast_ref::<PersonPropertyModifier<'_, P>>().unwrap();
-    //     if modifier.property == person_property {
-    //         Some(modifier.modifiers)
-    //     } else {
-    //         None
-    //     }
-    // }
 
     fn get_dominant_itinerary_modifier(&self, person_id: PersonId) -> Option<ItineraryModifier>;
 
@@ -186,7 +150,170 @@ pub fn init(context: &mut Context) {
             Age(11),
             school_closure_modifier,
         );
-    let p1 = context.sample_entity(DummyRng, (Age(11),)).unwrap();
+    let p1 = context.sample_entity(DummyRng, (Age(10),)).unwrap();
     println!("dominant modifier {:?}", context.get_dominant_itinerary_modifier(p1));
     context.shutdown();
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::parameters::{GlobalParams, Params, SettingProperties};
+    use crate::population_loader::Alive;
+    use crate::settings::SettingCategory;
+    use ixa::HashMap;
+
+    fn setup(
+        home_ratio: f64,
+        school_ratio: f64,
+        work_ratio: f64,
+        community_ratio: f64,
+    ) -> Context {
+        let mut context = Context::new();
+        let parameters = Params {
+            settings_properties: HashMap::from_iter(
+                [
+                    (SettingCategory::Home, SettingProperties { alpha: 0.0 }),
+                    (SettingCategory::School, SettingProperties { alpha: 0.0 }),
+                    (SettingCategory::Work, SettingProperties { alpha: 0.0 }),
+                    (SettingCategory::Community, SettingProperties { alpha: 0.0 }),
+                ]
+                .into_iter()
+                .collect::<HashMap<_, _>>(),
+            ),
+            itinerary_ratios: HashMap::from_iter([
+                (SettingCategory::Home, home_ratio),
+                (SettingCategory::School, school_ratio),
+                (SettingCategory::Work, work_ratio),
+                (SettingCategory::Community, community_ratio),
+            ]),
+            ..Default::default()
+        };
+        context
+            .set_global_property_value(GlobalParams, parameters)
+            .unwrap();
+        crate::settings::init(&mut context).unwrap();
+        context
+    }
+
+    #[test]
+    fn test_itinerary_modifier_registration() {
+        let mut context = setup(0.25, 0.25, 0.25, 0.25);
+        let school_closure_modifier = ItineraryModifier {
+            ranking: 1,
+            itinerary_ratios: ItineraryRatios {
+                itinerary_ratios: [0.75, 0.0, 0.0, 0.25],
+            }
+        };
+        context
+            .register_itinerary_modifier(
+                Age(11),
+                school_closure_modifier,
+            );
+        let p1 = context.add_entity::<Person,_>((Age(10),)).unwrap();
+        let p2 = context.add_entity::<Person,_>((Age(11),)).unwrap();
+        let dominant_modifier_p1 = context.get_dominant_itinerary_modifier(p1);
+        let dominant_modifier_p2 = context.get_dominant_itinerary_modifier(p2);
+        assert_eq!(dominant_modifier_p1, None);
+        assert_eq!(dominant_modifier_p2, Some(school_closure_modifier));
+        println!("dominant modifier {:?}", context.get_dominant_itinerary_modifier(p1));
+    }
+
+    #[test]
+    fn test_itinerary_modifier_removal() {
+        let mut context = setup(0.25, 0.25, 0.25, 0.25);
+        let school_closure_modifier = ItineraryModifier {
+            ranking: 1,
+            itinerary_ratios: ItineraryRatios {
+                itinerary_ratios: [0.75, 0.0, 0.0, 0.25],
+            }
+        };
+        context
+            .register_itinerary_modifier(
+                Age(11),
+                school_closure_modifier,
+            );
+        let p1 = context.add_entity::<Person,_>((Age(11),)).unwrap();
+        assert_eq!(context.get_dominant_itinerary_modifier(p1), Some(school_closure_modifier));
+        // This would remove all age based itinerary modifiers that is not ideal.
+        context.remove_itinerary_modifier::<Age>();
+        assert_eq!(context.get_dominant_itinerary_modifier(p1), None);
+    }
+
+    #[test]
+    fn test_itinerary_modifier_dominance() {
+        let mut context = setup(0.25, 0.25, 0.25, 0.25);
+        let school_closure_modifier = ItineraryModifier {
+            ranking: 1,
+            itinerary_ratios: ItineraryRatios {
+                itinerary_ratios: [0.75, 0.0, 0.0, 0.25],
+            }
+        };
+        let work_closure_modifier = ItineraryModifier {
+            ranking: 2,
+            itinerary_ratios: ItineraryRatios {
+                itinerary_ratios: [0.75, 0.0, 0.25, 0.0],
+            }
+        };
+        context
+            .register_itinerary_modifier(
+                Age(11),
+                school_closure_modifier,
+            );
+        context
+            .register_itinerary_modifier(
+                Age(11),
+                work_closure_modifier,
+            );
+        let p1 = context.add_entity::<Person,_>((Age(11),)).unwrap();
+        assert_eq!(context.get_dominant_itinerary_modifier(p1), Some(work_closure_modifier));
+    }
+
+    #[test]
+    fn example_with_schools_and_weekends() {
+        let mut context = setup(0.25, 0.25, 0.25, 0.25);
+        let school_closure_modifier = ItineraryModifier {
+            ranking: 1,
+            itinerary_ratios: ItineraryRatios {
+                itinerary_ratios: [0.75, 0.0, 0.0, 0.25],
+            }
+        };
+
+        let weekend_modifier = ItineraryModifier {
+            ranking: 2,
+            itinerary_ratios: ItineraryRatios {
+                itinerary_ratios: [0.5, 0.0, 0.0, 0.5],
+            }
+        };
+        
+        let p1 = context.add_entity::<Person,_>((Age(11),)).unwrap();
+        context.add_plan(2.0, move |context| {
+            assert_eq!(context.get_dominant_itinerary_modifier(p1), None);
+            context
+            .register_itinerary_modifier(
+                Age(11),
+                school_closure_modifier,
+            );
+            assert_eq!(context.get_dominant_itinerary_modifier(p1), Some(school_closure_modifier));
+        });
+
+        context.add_plan(4.0, move |context| {
+            context
+            .register_itinerary_modifier(
+                Alive(true),
+                weekend_modifier,
+            );
+            assert_eq!(context.get_dominant_itinerary_modifier(p1), Some(weekend_modifier));
+        });
+        context.add_plan(6.0, move |context| {
+            context.remove_itinerary_modifier::<Alive>();
+            assert_eq!(context.get_dominant_itinerary_modifier(p1), Some(school_closure_modifier));
+        });
+
+        context.add_plan(8.0, move |context| {
+            context.remove_itinerary_modifier::<Age>();
+            assert_eq!(context.get_dominant_itinerary_modifier(p1), None);
+        });
+        context.execute();    
+    }
 }
