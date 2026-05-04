@@ -73,11 +73,16 @@ where
         context: &Context,
         person_id: PersonId,
     ) -> Option<ItineraryModifier> {
-        if self.property == context.get_property::<Person, P>(person_id){
-            Some(self.modifiers)
-        } else {
-            None
-        }        
+        let (_person_property, modifier_map) = self;
+        let property_val = context.get_property::<Person, P>(person_id);
+        match modifier_map.get(&property_val.make_canonical()) {
+            Some(value) => Some(*value),
+            None => None,
+        }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
