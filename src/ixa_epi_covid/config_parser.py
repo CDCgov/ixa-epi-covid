@@ -8,6 +8,21 @@ from mrp.api import apply_dict_overrides
 
 
 class CovidModelConfig:
+    config_file: str | Path
+    config: dict[str, Any]
+    ixa_default_params_file: str
+    ixa_defaults: dict[str, Any]
+    exe_file: str
+    force_overwrite: bool
+    state: str
+    year: int
+    symptomatic_reporting_prob: float
+    priors_file: str
+    generation_particle_count: int
+    tolerance_values: list[float]
+    target_data: Any
+    use_env_synth_pop_file: bool
+
     """
     A class to handle the configuration for the COVID model calibration process. It reads a YAML config file, validates it, and provides methods to access the configuration parameters and generate default parameters for the MRP model based on the configuration.
     The initialization also handles the generation of the default ixa parameters and some convenience methods for
@@ -19,12 +34,17 @@ class CovidModelConfig:
     """
 
     def __init__(
-        self, config_file: str | Path, ixa_overrides: dict = {}, **kwargs
+        self,
+        config_file: str | Path,
+        ixa_overrides: dict[str, Any] | None = None,
+        **kwargs: Any,
     ):
         with open(config_file, "r") as f:
-            self.config = yaml.safe_load(f)
+            loaded_config = yaml.safe_load(f)
+        if not isinstance(loaded_config, dict):
+            raise ValueError("Config file must contain a mapping.")
 
-        self.config = apply_dict_overrides(self.config, kwargs)
+        self.config = apply_dict_overrides(loaded_config, kwargs)
         self._validate_config()
 
         self.config_file = config_file

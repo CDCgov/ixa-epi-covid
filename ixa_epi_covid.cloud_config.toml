@@ -1,0 +1,67 @@
+[cloud]
+keyvault = "cfa-predict"
+vm_size = "large"
+jobs_per_session = 1
+task_slots_per_node = 50
+pool_max_nodes = 5
+task_timeout_minutes = 60
+pool_ready_timeout_minutes = 20
+pool_auto_scale_evaluation_interval_minutes = 5
+dispatch_buffer = 1000
+print_task_durations = false
+max_parallel_output_downloads = 8
+
+[cloud.image]
+local_image = "ixa-epi-covid-cloud"
+repository = "ixa-epi-covid-cloud"
+build_context = "."
+dockerfile = "Dockerfile.cloud"
+task_mrp_config_path = "/app/ixa_epi_covid.mrp.task.toml"
+
+[cloud.resources]
+pool_prefix = "ixa-epi-covid-cloud"
+job_prefix = "ixa-epi-covid-cloud"
+input_container_prefix = "ixa-epi-covid-cloud-input"
+output_container_prefix = "ixa-epi-covid-cloud-output"
+logs_container_prefix = "ixa-epi-covid-cloud-logs"
+input_mount_path = "/cloud-input"
+output_mount_path = "/cloud-output"
+logs_mount_path = "/cloud-logs"
+
+[cloud.output]
+filename = "output.csv"
+mode = "csv_table"
+output_name = "aggregated_deaths_report"
+orientation = "columns"
+
+[cloud.shared_assets.synthetic_population]
+source_json_pointer = "/ixa_inputs/epimodel.GlobalParams/synth_population_file"
+blob_dir = "shared"
+remote_path_var = "SYNTH_POPULATION_PATH"
+required = true
+
+[cloud.task_payload]
+task_output_dir = "/tmp/ixa-epi-covid/{run_id}"
+
+[[cloud.task_payload.transforms]]
+name = "set-output-dir"
+op = "set"
+path = "/config_inputs/output_dir"
+value = "{task_output_dir}"
+
+[[cloud.task_payload.transforms]]
+name = "set-synth-population"
+op = "set"
+path = "/ixa_inputs/epimodel.GlobalParams/synth_population_file"
+value = "{SYNTH_POPULATION_PATH}"
+
+[[cloud.task_payload.transforms]]
+name = "set-importation-output"
+op = "set"
+path = "/ixa_inputs/epimodel.GlobalParams/imported_cases_timeseries/filename"
+value = "{task_output_dir}/imported_cases_timeseries.csv"
+
+[cloud.auto_size]
+probe = "local_task"
+local_mrp_config_path = "ixa_epi_covid.mrp.toml"
+memory_scope = "process_tree"

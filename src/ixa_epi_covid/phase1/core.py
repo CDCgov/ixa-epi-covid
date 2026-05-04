@@ -7,16 +7,16 @@ import re
 import shutil
 import tempfile
 import warnings
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 
 import polars as pl
-from calibrationtools import Particle
+from calibrationtools import Particle, ParticleReader
 from create_synthetic_population.run import (
     run as create_synthetic_population_run,
 )
 from dotenv import load_dotenv
-from particle_reader import ParticleReader
 from requests.exceptions import HTTPError
 from us import states
 
@@ -38,6 +38,14 @@ _SYNTH_POPULATION_FILENAME_RE = re.compile(
 )
 
 
+class Phase1Config(Protocol):
+    use_env_synth_pop_file: bool
+    state: str
+    year: int
+    target_data: Any
+    tolerance_values: list[float]
+
+
 def load_phase1_config(
     config_file: str | Path,
     *,
@@ -52,19 +60,19 @@ def load_phase1_config(
 
 
 def resolve_synth_population_file(
-    config: CovidModelConfig,
+    config: Phase1Config,
     *,
     default_population_size_dev: str = DEFAULT_DEV_POPULATION_SIZE,
-    env: dict[str, str] | None = None,
+    env: Mapping[str, str] | None = None,
     create_population_func: Callable[[list[str]], Any] | None = None,
 ) -> Path:
     """Resolve the synth-population CSV needed by phase-1 calibration."""
     load_dotenv()
-    env = os.environ if env is None else env
+    env_map = os.environ if env is None else env
     if create_population_func is None:
         create_population_func = create_synthetic_population_run
 
-    synth_pop_file_env = env.get("SYNTH_POP_FILE")
+    synth_pop_file_env = env_map.get("SYNTH_POP_FILE")
     if synth_pop_file_env and config.use_env_synth_pop_file:
         env_path = Path(synth_pop_file_env)
         if not env_path.exists():
@@ -160,7 +168,7 @@ def format_synth_population_summary(
 
 
 def build_runtime_ixa_overrides(
-    config: CovidModelConfig,
+    config: Phase1Config,
     *,
     synth_population_file: str | Path,
 ) -> dict[str, Any]:

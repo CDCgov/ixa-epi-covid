@@ -11,6 +11,8 @@ CLEAN_SIZE_PATTERN := $(if $(filter command line environment environment overrid
 .PHONY: run run-small run-large run-xl profile profile-small profile-large profile-xl
 .PHONY: bench bench-compare build-rust-release docker-build-cloud-image
 .PHONY: calibrate-phase-1 calibrate-phase-1-docker calibrate-phase-1-cloud
+.PHONY: cloud-list cloud-cleanup-plan cloud-cleanup
+.PHONY: cloud-cleanup-user-plan cloud-cleanup-user
 .PHONY: projections-phase-1 plot-phase-1-projection
 .PHONY: calibrate-phase-1-smc projections-phase-1-smc plot-phase-1-projection-smc
 .PHONY: calibrate-phase-1-dev projections-phase-1-dev plot-phase-1-projection-dev
@@ -45,6 +47,11 @@ help:
 		'  calibrate-phase-1           Run phase-1 production calibration' \
 		'  calibrate-phase-1-docker    Run phase-1 calibration via local Docker MRP' \
 		'  calibrate-phase-1-cloud     Run phase-1 calibration via Azure/cloud MRP' \
+		'  cloud-list                  List current user Azure cloud resources' \
+		'  cloud-cleanup-plan          Dry-run cleanup for SESSION_ID=...' \
+		'  cloud-cleanup               Delete cloud resources for SESSION_ID=...' \
+		'  cloud-cleanup-user-plan     Dry-run cleanup for CLOUD_USER' \
+		'  cloud-cleanup-user          Delete all cloud sessions for CLOUD_USER' \
 		'  projections-phase-1         Run phase-1 projections' \
 		'  plot-phase-1-projection     Plot phase-1 projections' \
 		'  calibrate-phase-1-smc       Run phase-1 SMC calibration' \
@@ -58,7 +65,10 @@ help:
 		'  STATE=WY                    Synthetic population state' \
 		'  SIZE=1000                   Synthetic population size' \
 		'  BASE=HEAD                   Benchmark comparison base ref' \
-		'  MAX_WORKERS=4               Calibration/projection worker count'
+		'  MAX_WORKERS=4               Calibration/projection worker count' \
+		'  SESSION_ID=...              Cloud cleanup session ID' \
+		'  CLOUD_USER=<current user>  Cloud cleanup username filter' \
+		'  CLOUD_CONFIG=...            Cloud cleanup/calibration config path'
 
 # Run the Python test suite
 test:
@@ -141,10 +151,23 @@ bench-compare: input/synth_pop_people_WY_10_000.csv input/synth_pop_people_WY_10
 
 MAX_WORKERS ?= 4
 AUTO_SIZE ?=
+CLOUD_CONFIG ?= ixa_epi_covid.cloud_config.toml
+CURRENT_CLOUD_USER := $(shell python3 -c 'import getpass, os, re; user = os.environ.get("USER") or os.environ.get("LOGNAME") or getpass.getuser(); print(re.sub("-+", "-", re.sub("[^a-z0-9-]+", "-", user.lower())).strip("-"))')
+CLOUD_USER ?= $(CURRENT_CLOUD_USER)
+CLOUD_CLEANUP_ACR ?= --skip-acr
+CLOUD_CLEANUP_FILTERS = $(if $(SESSION_ID),--session-id $(SESSION_ID)) $(if $(CLOUD_USER),--user $(CLOUD_USER)) $(if $(IMAGE_TAG),--image-tag $(IMAGE_TAG)) $(CLOUD_CLEANUP_ACR)
 PHASE1_PROD_CONFIG ?= ./experiments/phase1/input/prod-config.yaml
 PHASE1_DEV_CONFIG ?= ./experiments/phase1/input/dev-config.yaml
 CLOUD_ARTIFACTS_DIR ?= ./experiments/phase1/calibration/cloud_artifacts
 TARGET_RESULTS = ./experiments/phase1/calibration/output_indiana/results.pkl
+
+define require_session_id
+$(if $(SESSION_ID),,$(error SESSION_ID is required, e.g. make $@ SESSION_ID=<session-id>))
+endef
+
+define require_user
+$(if $(CLOUD_USER),,$(error CLOUD_USER is required, e.g. make $@ CLOUD_USER=<username>))
+endef
 
 build-rust-release:
 	uv run cargo build -r
@@ -168,7 +191,26 @@ calibrate-phase-1-docker: docker-build-cloud-image
 # Run phase-1 calibration through the Azure/cloud-backed MRP path. This target
 # requires the cloudops dependency group, so bootstrap with uv-sync-cloud first.
 calibrate-phase-1-cloud: uv-sync-cloud build-rust-release
-	uv run python ./scripts/phase_1_calibration.py -c $(PHASE1_PROD_CONFIG) -o ./experiments/phase1/calibration/output_indiana_cloud --max-workers $(MAX_WORKERS) --cloud $(AUTO_SIZE) --artifacts-dir $(CLOUD_ARTIFACTS_DIR) --repo-root . --dockerfile ./Dockerfile.cloud
+	uv run python ./scripts/phase_1_calibration.py -c $(PHASE1_PROD_CONFIG) -o ./experiments/phase1/calibration/output_indiana_cloud --max-workers $(MAX_WORKERS) --cloud --cloud-config $(CLOUD_CONFIG) $(AUTO_SIZE) --artifacts-dir $(CLOUD_ARTIFACTS_DIR)
+
+cloud-list: uv-sync-cloud
+	uv run python -m calibrationtools.cloud.cleanup --config $(CLOUD_CONFIG) --list $(CLOUD_CLEANUP_FILTERS)
+
+cloud-cleanup-plan: uv-sync-cloud
+	$(call require_session_id)
+	uv run python -m calibrationtools.cloud.cleanup --config $(CLOUD_CONFIG) --session-id $(SESSION_ID) --user $(CLOUD_USER) --dry-run $(if $(IMAGE_TAG),--image-tag $(IMAGE_TAG)) $(CLOUD_CLEANUP_ACR)
+
+cloud-cleanup: uv-sync-cloud
+	$(call require_session_id)
+	uv run python -m calibrationtools.cloud.cleanup --config $(CLOUD_CONFIG) --session-id $(SESSION_ID) --user $(CLOUD_USER) $(if $(IMAGE_TAG),--image-tag $(IMAGE_TAG)) $(CLOUD_CLEANUP_ACR)
+
+cloud-cleanup-user-plan: uv-sync-cloud
+	$(call require_user)
+	uv run python -m calibrationtools.cloud.cleanup --config $(CLOUD_CONFIG) --user $(CLOUD_USER) --all-sessions-for-user --dry-run $(if $(IMAGE_TAG),--image-tag $(IMAGE_TAG)) $(CLOUD_CLEANUP_ACR)
+
+cloud-cleanup-user: uv-sync-cloud
+	$(call require_user)
+	uv run python -m calibrationtools.cloud.cleanup --config $(CLOUD_CONFIG) --user $(CLOUD_USER) --all-sessions-for-user $(if $(IMAGE_TAG),--image-tag $(IMAGE_TAG)) $(CLOUD_CLEANUP_ACR)
 
 projections-phase-1: $(TARGET_RESULTS)
 	uv run python ./scripts/phase_1_projection.py -d output_indiana --max-workers $(MAX_WORKERS)

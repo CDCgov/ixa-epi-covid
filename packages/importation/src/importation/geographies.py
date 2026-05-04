@@ -9,7 +9,7 @@ from us import states
 PACKAGE_DATA_DIR = Path(__file__).resolve().parent / "data"
 
 
-def get_api_key() -> str:
+def get_api_key() -> str | None:
     """Get the Census API key from the environment variable"""
     load_dotenv()
     return os.getenv("CENSUS_API_KEY")

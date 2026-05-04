@@ -233,7 +233,7 @@ def sample_undetected_infections(
     known_deaths: int,
     prop_ascf: pl.DataFrame,
     max_infections: int = 20000,
-    seed: int = None,
+    seed: int | None = None,
 ) -> pl.DataFrame:
     """
     Sample undetected infections from a probability distribution based on known cases, known deaths,
@@ -289,7 +289,7 @@ def sample_us_importation_incidence_data(
     reporting_data: pl.DataFrame,
     importation_parameters: dict | pl.DataFrame,
     max_infections: int = 20000,
-    seed: int = None,
+    seed: int | None = None,
 ) -> pl.DataFrame:
     """
     Create synthetic dataset of the total number of infections by sampling undetected infections.

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import timeit
 import warnings
 from pathlib import Path
@@ -17,20 +16,17 @@ from calibrationtools import (
 )
 from calibrationtools.cloud.auto_size import (
     CloudSizing,
-    resolve_cloud_auto_size,
-    run_local_memory_probe,
+    print_cloud_auto_size_summary,
+    resolve_cloud_sizing_from_config,
 )
+from calibrationtools.cloud.runner import create_cloud_mrp_runner_from_config
 
 from ixa_epi_covid import IxaEpiCovidDirectRunner
-from ixa_epi_covid.cloud.runner import (
-    IxaEpiCovidCloudRunner,
-    resolve_cloud_build_context,
-)
-from ixa_epi_covid.cloud.utils import load_cloud_runtime_settings
 from ixa_epi_covid.model_execution import PHASE1_OUTPUT_NAME
 from ixa_epi_covid.mrp_runner import (
-    DEFAULT_CLOUD_MRP_CONFIG_PATH,
+    DEFAULT_CLOUD_CONFIG_PATH,
     DEFAULT_DOCKER_MRP_CONFIG_PATH,
+    PHASE1_OUTPUT_CONTRACT,
     IxaEpiCovidMRPRunner,
 )
 
@@ -72,6 +68,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--mrp-config",
         type=Path,
         help="Run simulations through the given MRP config path.",
+    )
+    parser.add_argument(
+        "--cloud-config",
+        type=Path,
+        default=DEFAULT_CLOUD_CONFIG_PATH,
+        help="Cloud config used by --cloud and --auto-size.",
     )
     parser.add_argument(
         "--config_file",
@@ -142,18 +144,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Disable local input/output artifact staging. Not valid with --cloud."
         ),
     )
-    parser.add_argument(
-        "--repo-root",
-        type=Path,
-        default=None,
-        help="Docker build context root for cloud mode.",
-    )
-    parser.add_argument(
-        "--dockerfile",
-        type=Path,
-        default=None,
-        help="Dockerfile path for cloud mode.",
-    )
     return parser.parse_args(argv)
 
 
@@ -205,74 +195,19 @@ def resolve_cloud_sizing(
     base_inputs: dict[str, Any],
 ) -> CloudSizing:
     max_concurrent_simulations = resolve_max_concurrent_simulations(args)
-    if not args.auto_size or not args.cloud:
-        return resolve_cloud_auto_size(
-            auto_size=args.auto_size,
-            cloud=args.cloud,
-            max_concurrent_simulations=max_concurrent_simulations,
-            max_concurrent_simulations_explicit=(
-                _max_concurrent_simulations_was_explicit(args)
-            ),
-        )
-
-    settings = load_cloud_runtime_settings(DEFAULT_CLOUD_MRP_CONFIG_PATH)
-    return resolve_cloud_auto_size(
+    return resolve_cloud_sizing_from_config(
+        cloud_config_path=getattr(
+            args,
+            "cloud_config",
+            DEFAULT_CLOUD_CONFIG_PATH,
+        ),
+        base_inputs=base_inputs,
         auto_size=args.auto_size,
         cloud=args.cloud,
         max_concurrent_simulations=max_concurrent_simulations,
         max_concurrent_simulations_explicit=(
             _max_concurrent_simulations_was_explicit(args)
         ),
-        vm_size=settings.vm_size,
-        pool_max_nodes=settings.pool_max_nodes,
-        measure_task_peak_rss_bytes=(
-            lambda: run_local_memory_probe(
-                "ixa_epi_covid.cloud.auto_size",
-                base_inputs,
-            )
-        ),
-    )
-
-
-def _format_bytes(size: int) -> str:
-    if size >= 1024**3:
-        return f"{size / 1024**3:.1f} GiB"
-    if size >= 1024**2:
-        return f"{size / 1024**2:.1f} MiB"
-    return f"{size} bytes"
-
-
-def print_cloud_auto_size_summary(sizing: CloudSizing) -> None:
-    summary = sizing.summary
-    if summary is None:
-        return
-
-    cap_note = ""
-    if summary.task_slots_per_node < summary.memory_task_slots_per_node:
-        cap_note = (
-            f", capped_from_ram_slots={summary.memory_task_slots_per_node}"
-        )
-
-    print(
-        (
-            "[cloud-run] auto-size simulation RAM "
-            f"measured_peak_rss="
-            f"{summary.measured_task_peak_rss_bytes} bytes "
-            f"({_format_bytes(summary.measured_task_peak_rss_bytes)}), "
-            f"vm_size={summary.vm_size}, "
-            f"vm_ram={summary.vm_memory_bytes} bytes "
-            f"({_format_bytes(summary.vm_memory_bytes)}), "
-            f"reserve={summary.reserve:.0%}, "
-            f"batch_slot_limit={summary.max_task_slots_per_node}, "
-            f"task_slots_per_node={summary.task_slots_per_node}"
-            f"{cap_note}, "
-            f"max_concurrent_simulations_per_node="
-            f"{summary.task_slots_per_node}, "
-            f"max_concurrent_simulations_total="
-            f"{sizing.max_concurrent_simulations}"
-        ),
-        file=sys.stderr,
-        flush=True,
     )
 
 
@@ -280,7 +215,7 @@ def resolve_model_runner(
     args: argparse.Namespace,
     *,
     generation_count: int,
-    synth_population_file: str | Path,
+    base_inputs: dict[str, Any],
     cloud_sizing: CloudSizing | None = None,
 ):
     if args.cloud:
@@ -290,19 +225,14 @@ def resolve_model_runner(
                     resolve_max_concurrent_simulations(args)
                 )
             )
-        repo_root, dockerfile = resolve_cloud_build_context(
-            repo_root=args.repo_root,
-            dockerfile=args.dockerfile,
-        )
-        return IxaEpiCovidCloudRunner(
-            DEFAULT_CLOUD_MRP_CONFIG_PATH,
+        return create_cloud_mrp_runner_from_config(
+            getattr(args, "cloud_config", DEFAULT_CLOUD_CONFIG_PATH),
             generation_count=generation_count,
             max_concurrent_simulations=(
                 cloud_sizing.max_concurrent_simulations
             ),
-            synth_population_path=synth_population_file,
-            repo_root=repo_root,
-            dockerfile=dockerfile,
+            output_contract=PHASE1_OUTPUT_CONTRACT,
+            base_inputs=base_inputs,
             print_task_durations=args.print_task_durations,
             task_slots_per_node_override=(
                 cloud_sizing.task_slots_per_node_override
@@ -323,6 +253,7 @@ def run_phase1_calibration(
     max_concurrent_simulations: int = DEFAULT_MAX_CONCURRENT_SIMULATIONS,
     default_population_size_dev: str = DEFAULT_DEV_POPULATION_SIZE,
     mrp_config: str | Path | None = None,
+    cloud_config: str | Path = DEFAULT_CLOUD_CONFIG_PATH,
     docker: bool = False,
     cloud: bool = False,
     auto_size: bool = False,
@@ -330,8 +261,6 @@ def run_phase1_calibration(
     print_task_progress: bool = False,
     artifacts_dir: str | Path | None = None,
     no_artifacts: bool = False,
-    repo_root: str | Path | None = None,
-    dockerfile: str | Path | None = None,
 ):
     args = argparse.Namespace(
         config_file=Path(config_file),
@@ -340,6 +269,7 @@ def run_phase1_calibration(
         max_concurrent_simulations=max_concurrent_simulations,
         default_population_size_dev=default_population_size_dev,
         mrp_config=Path(mrp_config) if mrp_config is not None else None,
+        cloud_config=Path(cloud_config),
         docker=docker,
         cloud=cloud,
         auto_size=auto_size,
@@ -349,8 +279,6 @@ def run_phase1_calibration(
         if artifacts_dir is not None
         else None,
         no_artifacts=no_artifacts,
-        repo_root=Path(repo_root) if repo_root is not None else None,
-        dockerfile=Path(dockerfile) if dockerfile is not None else None,
     )
     return _run_calibration_from_args(args)
 
@@ -402,7 +330,7 @@ def _run_calibration_from_args(args: argparse.Namespace):
     model_runner = resolve_model_runner(
         args,
         generation_count=len(config.tolerance_values),
-        synth_population_file=synth_population_file,
+        base_inputs=mrp_defaults,
         cloud_sizing=cloud_sizing,
     )
 
