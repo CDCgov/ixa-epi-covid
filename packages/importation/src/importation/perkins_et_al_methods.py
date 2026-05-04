@@ -250,7 +250,7 @@ def sample_undetected_infections(
             for each replicate. It must include a column named "replicate".
         max_infections (int, optional): The maximum number of infections to consider in the
             probability distribution. Defaults to 20000.
-        seed (int, optional): A random seed for reproducibility. Defaults to None.
+        seed (int | None): A random seed for reproducibility. Defaults to None.
 
     Returns:
         pl.DataFrame: A Polars DataFrame containing the sampled number of undetected infections

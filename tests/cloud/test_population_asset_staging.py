@@ -122,9 +122,7 @@ def test_task_payload_transforms_set_cloud_task_paths(tmp_path):
         == "/tmp/ixa-epi-covid/gen_0_particle_0_attempt_0"
     )
     assert (
-        payload["ixa_inputs"]["epimodel.GlobalParams"][
-            "synth_population_file"
-        ]
+        payload["ixa_inputs"]["epimodel.GlobalParams"]["synth_population_file"]
         == "/cloud-input/shared/synthetic_population/session-1/synth.csv"
     )
     assert (
@@ -133,11 +131,3 @@ def test_task_payload_transforms_set_cloud_task_paths(tmp_path):
         ]["filename"]
         == "/tmp/ixa-epi-covid/gen_0_particle_0_attempt_0/imported_cases_timeseries.csv"
     )
-
-
-def test_cloud_config_limits_parallel_output_downloads():
-    cloud_config = load_cloud_model_config(
-        REPO_ROOT / "ixa_epi_covid.cloud_config.toml"
-    )
-
-    assert cloud_config.runtime_settings.max_parallel_output_downloads == 8

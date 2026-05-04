@@ -17,8 +17,13 @@ def test_dependency_contract_imports():
         create_cloud_mrp_runner_from_config,
         resolve_cloud_build_context,
     )
-    from calibrationtools.cloud.task_payload import apply_task_payload_transforms
-    from calibrationtools.mrp_csv_runner import CSVOutputMRPRunner, MRPOutputRunner
+    from calibrationtools.cloud.task_payload import (
+        apply_task_payload_transforms,
+    )
+    from calibrationtools.mrp_csv_runner import (
+        CSVOutputMRPRunner,
+        MRPOutputRunner,
+    )
     from calibrationtools.output_contracts import (
         CSVTableOutputContract,
         OutputContract,

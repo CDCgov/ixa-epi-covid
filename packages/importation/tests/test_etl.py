@@ -39,7 +39,7 @@ def test_read_bytes(mock_urlopen):
     assert isinstance(result, BytesIO)
 
 
-def test_get_perkins_et_al_posteriors(mock_urlopen, mock_read_csv):
+def test_get_perkins_et_al_posteriors(mock_urlopen, mock_read_csv, tmp_path):
     # Mock response data
     mock_response = mock_urlopen.return_value.__enter__.return_value
     mock_response.read.return_value = b"mock csv data"
@@ -52,15 +52,16 @@ def test_get_perkins_et_al_posteriors(mock_urlopen, mock_read_csv):
     )
 
     # Call the function
-    params = get_perkins_et_al_posteriors()
+    params = get_perkins_et_al_posteriors(input_dir=tmp_path, cache=False)
 
     # Assertions
     assert "rho_travel_alpha" in params.columns
     assert "rho_travel_beta" in params.columns
     assert params.filter(pl.col("Scenario") == "Default").height == 1
+    assert mock_urlopen.call_count == 1
 
 
-def test_get_linelist_data(mock_urlopen, mock_read_csv):
+def test_get_linelist_data(mock_urlopen, mock_read_csv, tmp_path):
     # Mock response data
     mock_response = mock_urlopen.return_value.__enter__.return_value
     mock_response.read.return_value = b"mock csv data"
@@ -101,7 +102,11 @@ def test_get_linelist_data(mock_urlopen, mock_read_csv):
     )
 
     # Call the function
-    data = get_linelist_data()
+    data = get_linelist_data(
+        filename="downloaded_linelist.csv",
+        input_dir=tmp_path,
+        cache=False,
+    )
 
     # Assertions
     assert "report_day" in data.columns
@@ -110,3 +115,4 @@ def test_get_linelist_data(mock_urlopen, mock_read_csv):
     assert "confirmed_cases" in data.columns
     assert "confirmed_deaths" in data.columns
     assert data.height == 1
+    assert mock_urlopen.call_count == 1

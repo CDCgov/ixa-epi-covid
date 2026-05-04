@@ -18,7 +18,7 @@ def test_get_linelist_data_prefers_packaged_resource(monkeypatch, tmp_path):
 
 
 def test_get_total_state_population_data_prefers_packaged_resource(
-    monkeypatch,
+    monkeypatch, tmp_path
 ):
     monkeypatch.setattr(
         "importation.geographies.Census",
@@ -26,6 +26,7 @@ def test_get_total_state_population_data_prefers_packaged_resource(
             AssertionError("Census API should not be used")
         ),
     )
+    monkeypatch.chdir(tmp_path)
 
     data = get_total_state_population_data(year=2020, cache=False)
 

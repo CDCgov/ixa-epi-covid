@@ -17,7 +17,9 @@ def test_auto_size_uses_configured_local_task_probe(monkeypatch, tmp_path):
             "epimodel.GlobalParams": {
                 "synth_population_file": str(synth_population),
                 "imported_cases_timeseries": {
-                    "filename": str(tmp_path / "imported_cases_timeseries.csv"),
+                    "filename": str(
+                        tmp_path / "imported_cases_timeseries.csv"
+                    ),
                 },
             }
         },

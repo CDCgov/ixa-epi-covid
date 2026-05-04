@@ -11,8 +11,10 @@ repos:
     -   id: check-yaml
     -   id: check-toml
     -   id: end-of-file-fixer
+        exclude: \.patch$
     -   id: mixed-line-ending
     -   id: trailing-whitespace
+        exclude: \.patch$
 #####
 # Python
 - repo: https://github.com/astral-sh/ruff-pre-commit

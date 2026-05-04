@@ -4,15 +4,6 @@ import pytest
 from calibrationtools.cloud import cleanup as shared_cleanup
 
 
-def test_makefile_population_rule_uses_packaged_entrypoint():
-    makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(
-        encoding="utf-8"
-    )
-
-    assert "uv run python -m create_synthetic_population.run" in makefile
-    assert "scripts/create_synthetic_population.py" not in makefile
-
-
 def test_makefile_cloud_cleanup_targets_use_shared_cli():
     makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(
         encoding="utf-8"

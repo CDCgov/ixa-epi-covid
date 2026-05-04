@@ -179,7 +179,9 @@ def phase1_rows_to_report(
     report: pl.DataFrame | dict[str, list[Any]] | list[dict[str, Any]],
 ) -> pl.DataFrame:
     """Normalize a phase-1 report payload into a Polars DataFrame."""
-    frame = report if isinstance(report, pl.DataFrame) else pl.DataFrame(report)
+    frame = (
+        report if isinstance(report, pl.DataFrame) else pl.DataFrame(report)
+    )
     casts = []
     if "t_lower" in frame.columns:
         casts.append(pl.col("t_lower").cast(pl.Float64))

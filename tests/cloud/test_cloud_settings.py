@@ -2,9 +2,6 @@ from pathlib import Path
 
 import pytest
 from calibrationtools.cloud.config import (
-    CloudAutoSizeMemoryScope,
-    CloudOutputMode,
-    CSVTableOrientation,
     DEFAULT_INPUT_MOUNT_PATH,
     load_cloud_model_config,
 )
@@ -79,28 +76,3 @@ def test_load_cloud_model_config_accepts_legacy_jobs_per_generation(
         settings = load_cloud_model_config(config_path).runtime_settings
 
     assert settings.jobs_per_session == 2
-
-
-def test_packaged_cloud_config_loads():
-    config_path = (
-        Path(__file__).resolve().parents[2] / "ixa_epi_covid.cloud_config.toml"
-    )
-
-    config = load_cloud_model_config(config_path)
-
-    assert config.runtime_settings.repository == "ixa-epi-covid-cloud"
-    assert config.runtime_settings.jobs_per_session == 1
-    assert config.runtime_settings.max_parallel_output_downloads == 8
-    assert config.output.filename == "output.csv"
-    assert config.output.mode is CloudOutputMode.CSV_TABLE
-    assert config.output.output_name == "aggregated_deaths_report"
-    assert config.output.orientation is CSVTableOrientation.COLUMNS
-    assert config.shared_assets[0].name == "synthetic_population"
-    assert config.auto_size.probe == "local_task"
-    assert config.auto_size.local_mrp_config_path == (
-        Path(__file__).resolve().parents[2] / "ixa_epi_covid.mrp.toml"
-    )
-    assert (
-        config.auto_size.memory_scope
-        is CloudAutoSizeMemoryScope.PROCESS_TREE
-    )

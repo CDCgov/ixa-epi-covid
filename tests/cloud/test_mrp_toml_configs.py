@@ -23,6 +23,8 @@ def test_cloud_config_uses_model_facing_schema():
 
     assert cloud_config.build_context == REPO_ROOT
     assert cloud_config.dockerfile == REPO_ROOT / "Dockerfile.cloud"
+    assert cloud_config.runtime_settings.repository == "ixa-epi-covid-cloud"
+    assert cloud_config.runtime_settings.jobs_per_session == 1
     assert cloud_config.runtime_settings.task_mrp_config_path == (
         "/app/ixa_epi_covid.mrp.task.toml"
     )
@@ -31,6 +33,7 @@ def test_cloud_config_uses_model_facing_schema():
     assert cloud_config.output.mode is CloudOutputMode.CSV_TABLE
     assert cloud_config.output.output_name == "aggregated_deaths_report"
     assert cloud_config.output.orientation is CSVTableOrientation.COLUMNS
+    assert cloud_config.shared_assets[0].name == "synthetic_population"
     assert cloud_config.auto_size.probe == "local_task"
     assert cloud_config.auto_size.local_mrp_config_path == (
         REPO_ROOT / "ixa_epi_covid.mrp.toml"
