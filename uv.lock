@@ -10,7 +10,6 @@ members = [
     "create-synthetic-population",
     "importation",
     "ixa-epi-covid",
-    "particle-reader",
 ]
 
 [[package]]
@@ -502,7 +501,7 @@ css = [
 [[package]]
 name = "calibrationtools"
 version = "0.1.1"
-source = { git = "https://github.com/CDCgov/cfa-calibration-tools.git?branch=mrp_docker_cloudops#e2e039e0c2ffa5a69abe22b03d28f610601f6d5b" }
+source = { git = "https://github.com/CDCgov/cfa-calibration-tools.git?branch=cloud-phase3#5d2d5c185040f76c08bcf885ee9f4dbe3f4fdc8b" }
 dependencies = [
     { name = "cfa-mrp" },
     { name = "jsonschema" },
@@ -1344,7 +1343,6 @@ dependencies = [
     { name = "numpy" },
     { name = "pandas" },
     { name = "pandas-stubs" },
-    { name = "particle-reader" },
     { name = "polars" },
     { name = "pyarrow" },
     { name = "pygris" },
@@ -1363,7 +1361,7 @@ cloudops = [
 
 [package.metadata]
 requires-dist = [
-    { name = "calibrationtools", git = "https://github.com/CDCgov/cfa-calibration-tools.git?branch=mrp_docker_cloudops" },
+    { name = "calibrationtools", git = "https://github.com/CDCgov/cfa-calibration-tools.git?branch=cloud-phase3" },
     { name = "census", specifier = ">=0.8.25" },
     { name = "cfa-mrp", specifier = ">=0.0.4" },
     { name = "create-synthetic-population", editable = "packages/create_synthetic_population" },
@@ -1374,7 +1372,6 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.3.4" },
     { name = "pandas", specifier = ">=2.3.2,<3.0.0" },
     { name = "pandas-stubs", specifier = ">=2.3.2,<3.0.0" },
-    { name = "particle-reader", editable = "packages/particle_reader" },
     { name = "polars", specifier = ">=1.35.1" },
     { name = "pyarrow", specifier = ">=23.0.0" },
     { name = "pygris", specifier = ">=0.2.1" },
@@ -2372,21 +2369,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/30/4b/90c937815137d43ce71ba043cd3566221e9df6b9c805f24b5d138c9d40a7/parso-0.8.7.tar.gz", hash = "sha256:eaaac4c9fdd5e9e8852dc778d2d7405897ec510f2a298071453e5e3a07914bb1", size = 401824 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/99/5d/8268b644392ee874ee82a635cd0df1773de230bde356c38de28e298392cc/parso-0.8.7-py2.py3-none-any.whl", hash = "sha256:a8926eb2a1b915486941fdbd31e86a4baf88fe8c210f25f2f35ecec5b574ca1c", size = 107025 },
-]
-
-[[package]]
-name = "particle-reader"
-version = "0.1.0"
-source = { editable = "packages/particle_reader" }
-dependencies = [
-    { name = "numpy" },
-    { name = "polars" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "numpy", specifier = ">=2.3.4" },
-    { name = "polars", specifier = ">=1.35.1" },
 ]
 
 [[package]]

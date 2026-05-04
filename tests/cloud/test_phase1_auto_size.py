@@ -10,6 +10,7 @@ def _args(**overrides):
     values = {
         "auto_size": False,
         "cloud": False,
+        "cloud_config": calibrate.DEFAULT_CLOUD_CONFIG_PATH,
         "artifacts_dir": None,
         "no_artifacts": False,
         "max_concurrent_simulations": None,
@@ -35,30 +36,14 @@ def test_resolve_cloud_sizing_uses_cloud_config_and_probe(monkeypatch):
         summary=object(),
     )
 
-    monkeypatch.setattr(
-        calibrate,
-        "load_cloud_runtime_settings",
-        lambda config_path: SimpleNamespace(
-            vm_size="large",
-            pool_max_nodes=2,
-        ),
-    )
-
-    def fake_probe(module_name, base_inputs):
-        calls["probe_module"] = module_name
-        calls["probe_inputs"] = base_inputs
-        return 123_456
-
-    def fake_resolve_cloud_auto_size(**kwargs):
-        calls["auto_size_kwargs"] = kwargs
-        assert kwargs["measure_task_peak_rss_bytes"]() == 123_456
+    def fake_resolve_cloud_sizing_from_config(**kwargs):
+        calls.update(kwargs)
         return returned_sizing
 
-    monkeypatch.setattr(calibrate, "run_local_memory_probe", fake_probe)
     monkeypatch.setattr(
         calibrate,
-        "resolve_cloud_auto_size",
-        fake_resolve_cloud_auto_size,
+        "resolve_cloud_sizing_from_config",
+        fake_resolve_cloud_sizing_from_config,
     )
 
     base_inputs = {"seed": 1}
@@ -68,15 +53,12 @@ def test_resolve_cloud_sizing_uses_cloud_config_and_probe(monkeypatch):
     )
 
     assert sizing is returned_sizing
-    assert calls["probe_module"] == "ixa_epi_covid.cloud.auto_size"
-    assert calls["probe_inputs"] is base_inputs
-    assert calls["auto_size_kwargs"]["vm_size"] == "large"
-    assert calls["auto_size_kwargs"]["pool_max_nodes"] == 2
-    assert calls["auto_size_kwargs"]["max_concurrent_simulations"] == 10
-    assert (
-        calls["auto_size_kwargs"]["max_concurrent_simulations_explicit"]
-        is True
-    )
+    assert calls["cloud_config_path"] == calibrate.DEFAULT_CLOUD_CONFIG_PATH
+    assert calls["base_inputs"] is base_inputs
+    assert calls["auto_size"] is True
+    assert calls["cloud"] is True
+    assert calls["max_concurrent_simulations"] == 10
+    assert calls["max_concurrent_simulations_explicit"] is True
 
 
 def test_resolve_artifacts_dir_defaults_to_shared_artifacts_dir():
@@ -109,21 +91,7 @@ def test_resolve_artifacts_dir_rejects_conflicting_flags(tmp_path):
 def test_resolve_cloud_sizing_preserves_explicit_concurrency(monkeypatch):
     calls: dict[str, object] = {}
 
-    monkeypatch.setattr(
-        calibrate,
-        "load_cloud_runtime_settings",
-        lambda config_path: SimpleNamespace(
-            vm_size="large",
-            pool_max_nodes=5,
-        ),
-    )
-    monkeypatch.setattr(
-        calibrate,
-        "run_local_memory_probe",
-        lambda module_name, base_inputs: 123_456,
-    )
-
-    def fake_resolve_cloud_auto_size(**kwargs):
+    def fake_resolve_cloud_sizing_from_config(**kwargs):
         calls.update(kwargs)
         return SimpleNamespace(
             max_concurrent_simulations=12,
@@ -133,8 +101,8 @@ def test_resolve_cloud_sizing_preserves_explicit_concurrency(monkeypatch):
 
     monkeypatch.setattr(
         calibrate,
-        "resolve_cloud_auto_size",
-        fake_resolve_cloud_auto_size,
+        "resolve_cloud_sizing_from_config",
+        fake_resolve_cloud_sizing_from_config,
     )
 
     calibrate.resolve_cloud_sizing(
@@ -156,21 +124,7 @@ def test_resolve_cloud_sizing_uses_default_as_implicit_concurrency(
 ):
     calls: dict[str, object] = {}
 
-    monkeypatch.setattr(
-        calibrate,
-        "load_cloud_runtime_settings",
-        lambda config_path: SimpleNamespace(
-            vm_size="large",
-            pool_max_nodes=5,
-        ),
-    )
-    monkeypatch.setattr(
-        calibrate,
-        "run_local_memory_probe",
-        lambda module_name, base_inputs: 123_456,
-    )
-
-    def fake_resolve_cloud_auto_size(**kwargs):
+    def fake_resolve_cloud_sizing_from_config(**kwargs):
         calls.update(kwargs)
         return SimpleNamespace(
             max_concurrent_simulations=25,
@@ -180,8 +134,8 @@ def test_resolve_cloud_sizing_uses_default_as_implicit_concurrency(
 
     monkeypatch.setattr(
         calibrate,
-        "resolve_cloud_auto_size",
-        fake_resolve_cloud_auto_size,
+        "resolve_cloud_sizing_from_config",
+        fake_resolve_cloud_sizing_from_config,
     )
 
     calibrate.resolve_cloud_sizing(
@@ -196,7 +150,9 @@ def test_resolve_cloud_sizing_uses_default_as_implicit_concurrency(
     assert calls["max_concurrent_simulations_explicit"] is False
 
 
-def test_resolve_model_runner_passes_auto_size_to_cloud_runner(monkeypatch):
+def test_resolve_model_runner_passes_base_inputs_to_cloud_factory(
+    monkeypatch,
+):
     calls: dict[str, object] = {}
     sizing = SimpleNamespace(
         max_concurrent_simulations=12,
@@ -204,42 +160,40 @@ def test_resolve_model_runner_passes_auto_size_to_cloud_runner(monkeypatch):
         summary=object(),
     )
 
-    monkeypatch.setattr(
-        calibrate,
-        "resolve_cloud_build_context",
-        lambda repo_root=None, dockerfile=None: ("repo", "dockerfile"),
-    )
-
-    def fake_cloud_runner(config_path, **kwargs):
+    def fake_cloud_runner_factory(config_path, **kwargs):
         calls["config_path"] = config_path
         calls.update(kwargs)
         return "runner"
 
     monkeypatch.setattr(
         calibrate,
-        "IxaEpiCovidCloudRunner",
-        fake_cloud_runner,
+        "create_cloud_mrp_runner_from_config",
+        fake_cloud_runner_factory,
     )
 
+    base_inputs = {"seed": 1}
     runner = calibrate.resolve_model_runner(
         argparse.Namespace(
             cloud=True,
+            cloud_config=calibrate.DEFAULT_CLOUD_CONFIG_PATH,
             mrp_config=None,
             docker=False,
-            repo_root=None,
-            dockerfile=None,
             print_task_durations=True,
             max_concurrent_simulations=None,
             max_workers=None,
         ),
         generation_count=2,
-        synth_population_file="population.csv",
+        base_inputs=base_inputs,
         cloud_sizing=sizing,
     )
 
     assert runner == "runner"
-    assert calls["config_path"] == calibrate.DEFAULT_CLOUD_MRP_CONFIG_PATH
+    assert calls["config_path"] == calibrate.DEFAULT_CLOUD_CONFIG_PATH
+    assert calls["generation_count"] == 2
     assert calls["max_concurrent_simulations"] == 12
+    assert calls["output_contract"] is calibrate.PHASE1_OUTPUT_CONTRACT
+    assert calls["base_inputs"] is base_inputs
+    assert calls["print_task_durations"] is True
     assert calls["task_slots_per_node_override"] == 4
     assert calls["auto_size_summary"] is sizing.summary
 
@@ -248,16 +202,15 @@ def test_resolve_model_runner_defaults_to_direct_runner():
     runner = calibrate.resolve_model_runner(
         argparse.Namespace(
             cloud=False,
+            cloud_config=calibrate.DEFAULT_CLOUD_CONFIG_PATH,
             mrp_config=None,
             docker=False,
-            repo_root=None,
-            dockerfile=None,
             print_task_durations=False,
             max_concurrent_simulations=None,
             max_workers=None,
         ),
         generation_count=2,
-        synth_population_file="population.csv",
+        base_inputs={"seed": 1},
     )
 
     assert isinstance(runner, calibrate.IxaEpiCovidDirectRunner)

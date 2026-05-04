@@ -92,6 +92,25 @@ This command can be called without calling the others explicitly.
 
 Production code follows the same format, but drops the `dev` suffix (for example the calibration command is `make calibrate-phase-1`). To run this, please ensure that you have specified a path to a valid synthetic population in the `.env` file under `SYNTH_POP_FILE`.
 
+Cloud calibration uses the model-facing cloud config:
+
+```bash
+uv run python -m ixa_epi_covid.phase1.calibrate \
+  --config_file experiments/phase1/input/prod-config.yaml \
+  --output-dir experiments/phase1/calibration/output_indiana_cloud \
+  --cloud \
+  --cloud-config ixa_epi_covid.cloud_config.toml
+```
+
+Cleanup uses the shared calibration-tools cleanup CLI:
+
+```bash
+python -m calibrationtools.cloud.cleanup \
+  --cloud-config ixa_epi_covid.cloud_config.toml \
+  --session-id <session-id> \
+  --dry-run
+```
+
 ## General Disclaimer
 This repository was created for use by CDC programs to collaborate on public health related projects in support of the [CDC mission](https://www.cdc.gov/about/organization/mission.htm).  GitHub is not hosted by the CDC, but is a third party website used by CDC and its partners to share information and collaborate on software. CDC use of GitHub does not imply an endorsement of any one particular service, product, or enterprise.
 

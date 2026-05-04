@@ -1,6 +1,13 @@
 import tomllib
 from pathlib import Path
 
+from calibrationtools.cloud.config import (
+    CloudAutoSizeMemoryScope,
+    CloudOutputMode,
+    CSVTableOrientation,
+    load_cloud_model_config,
+)
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -9,16 +16,29 @@ def _load_config(name: str) -> dict:
         return tomllib.load(fp)
 
 
-def test_only_cloud_controller_mrp_config_uses_inline_runtime():
-    cloud_config = _load_config("ixa_epi_covid.mrp.cloud.toml")
-
-    assert cloud_config["runtime"]["spec"] == "inline"
-    assert (
-        cloud_config["runtime"]["callable"]
-        == "ixa_epi_covid.cloud.mrp_executor:execute_cloud_run"
+def test_cloud_config_uses_model_facing_schema():
+    cloud_config = load_cloud_model_config(
+        REPO_ROOT / "ixa_epi_covid.cloud_config.toml"
     )
-    assert "command" not in cloud_config["runtime"]
-    assert "args" not in cloud_config["runtime"]
+
+    assert cloud_config.build_context == REPO_ROOT
+    assert cloud_config.dockerfile == REPO_ROOT / "Dockerfile.cloud"
+    assert cloud_config.runtime_settings.task_mrp_config_path == (
+        "/app/ixa_epi_covid.mrp.task.toml"
+    )
+    assert cloud_config.runtime_settings.max_parallel_output_downloads == 8
+    assert cloud_config.output.filename == "output.csv"
+    assert cloud_config.output.mode is CloudOutputMode.CSV_TABLE
+    assert cloud_config.output.output_name == "aggregated_deaths_report"
+    assert cloud_config.output.orientation is CSVTableOrientation.COLUMNS
+    assert cloud_config.auto_size.probe == "local_task"
+    assert cloud_config.auto_size.local_mrp_config_path == (
+        REPO_ROOT / "ixa_epi_covid.mrp.toml"
+    )
+    assert (
+        cloud_config.auto_size.memory_scope
+        is CloudAutoSizeMemoryScope.PROCESS_TREE
+    )
 
 
 def test_local_task_and_docker_mrp_configs_remain_process_backed():

@@ -135,3 +135,17 @@ def test_script_wrapper_exports_packaged_entrypoint():
     from ixa_epi_covid.phase1.calibrate import run_phase1_calibration
 
     assert module.main is run_phase1_calibration
+
+
+def test_phase1_rows_to_report_casts_csv_table_strings():
+    report = core.phase1_rows_to_report(
+        {
+            "t_lower": ["0.0"],
+            "t_upper": ["1.0"],
+            "count": ["2"],
+        }
+    )
+
+    assert report["t_lower"].to_list() == [0.0]
+    assert report["t_upper"].to_list() == [1.0]
+    assert report["count"].to_list() == [2]

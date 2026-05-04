@@ -27,6 +27,8 @@ RUN useradd --create-home --shell /bin/bash appuser
 
 COPY --from=python-builder /app /app
 COPY --from=rust-builder /app/target/release/ixa-epi-covid /usr/local/bin/ixa-epi-covid
+RUN mkdir -p /app/target/release
+COPY --from=rust-builder /app/target/release/ixa-epi-covid /app/target/release/ixa-epi-covid
 COPY ixa_epi_covid.mrp.task.toml /app/ixa_epi_covid.mrp.task.toml
 COPY experiments/phase1/input/default_params.json /app/default_params.json
 

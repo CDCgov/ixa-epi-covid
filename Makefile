@@ -168,7 +168,7 @@ calibrate-phase-1-docker: docker-build-cloud-image
 # Run phase-1 calibration through the Azure/cloud-backed MRP path. This target
 # requires the cloudops dependency group, so bootstrap with uv-sync-cloud first.
 calibrate-phase-1-cloud: uv-sync-cloud build-rust-release
-	uv run python ./scripts/phase_1_calibration.py -c $(PHASE1_PROD_CONFIG) -o ./experiments/phase1/calibration/output_indiana_cloud --max-workers $(MAX_WORKERS) --cloud $(AUTO_SIZE) --artifacts-dir $(CLOUD_ARTIFACTS_DIR) --repo-root . --dockerfile ./Dockerfile.cloud
+	uv run python ./scripts/phase_1_calibration.py -c $(PHASE1_PROD_CONFIG) -o ./experiments/phase1/calibration/output_indiana_cloud --max-workers $(MAX_WORKERS) --cloud --cloud-config ixa_epi_covid.cloud_config.toml $(AUTO_SIZE) --artifacts-dir $(CLOUD_ARTIFACTS_DIR)
 
 projections-phase-1: $(TARGET_RESULTS)
 	uv run python ./scripts/phase_1_projection.py -d output_indiana --max-workers $(MAX_WORKERS)

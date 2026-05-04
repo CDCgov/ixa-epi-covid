@@ -1,67 +1,64 @@
-import polars as pl
+from pathlib import Path
 
-from ixa_epi_covid.cloud import auto_size
-from ixa_epi_covid.model_execution import CANONICAL_OUTPUT_FILENAME
+from calibrationtools.cloud import auto_size
+from calibrationtools.cloud.config import CloudAutoSizeMemoryScope
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_auto_size_probe_runs_phase1_model_and_writes_canonical_output(
-    monkeypatch,
-    tmp_path,
-):
-    calls: dict[str, object] = {}
-    report = pl.DataFrame(
-        {
-            "t_lower": [0.0],
-            "t_upper": [1.0],
-            "count": [1],
-        }
-    )
-
-    def fake_execute_phase1_model(model_inputs):
-        calls["model_inputs"] = model_inputs
-        return {"aggregated_deaths_report": report}
-
-    monkeypatch.setattr(
-        auto_size,
-        "execute_phase1_model",
-        fake_execute_phase1_model,
-    )
-
+def test_auto_size_uses_configured_local_task_probe(monkeypatch, tmp_path):
+    synth_population = tmp_path / "synth.csv"
+    synth_population.write_text("person_id\n1\n", encoding="utf-8")
     base_inputs = {
         "config_inputs": {
-            "exe_file": "./target/release/ixa-epi-covid",
-            "output_dir": "original-output",
-            "outputs_to_read": ["aggregated_deaths_report"],
+            "output_dir": str(tmp_path / "output"),
         },
         "ixa_inputs": {
             "epimodel.GlobalParams": {
-                "seed": 1,
-                "aggregated_deaths_report": {
-                    "filename": "aggregated_deaths_report.csv",
-                },
+                "synth_population_file": str(synth_population),
                 "imported_cases_timeseries": {
-                    "filename": "imported_cases_timeseries.csv",
+                    "filename": str(tmp_path / "imported_cases_timeseries.csv"),
                 },
             }
         },
     }
+    calls: dict[str, object] = {}
 
-    auto_size.run_probe_simulation(
-        base_inputs,
-        "auto-size-probe",
-        tmp_path,
+    def fake_run_local_task_memory_probe(
+        cloud_config_path,
+        local_mrp_config_path,
+        probe_inputs,
+        *,
+        memory_scope,
+    ):
+        calls["cloud_config_path"] = cloud_config_path
+        calls["local_mrp_config_path"] = local_mrp_config_path
+        calls["probe_inputs"] = probe_inputs
+        calls["memory_scope"] = memory_scope
+        return 512 * 1024 * 1024
+
+    monkeypatch.setattr(
+        auto_size,
+        "run_local_task_memory_probe",
+        fake_run_local_task_memory_probe,
     )
 
-    model_inputs = calls["model_inputs"]
-    assert model_inputs["config_inputs"]["output_dir"] == str(tmp_path)
-    assert model_inputs["ixa_inputs"]["epimodel.GlobalParams"][
-        "aggregated_deaths_report"
-    ]["filename"] == str(tmp_path / "aggregated_deaths_report.csv")
-    assert model_inputs["ixa_inputs"]["epimodel.GlobalParams"][
-        "imported_cases_timeseries"
-    ]["filename"] == str(tmp_path / "imported_cases_timeseries.csv")
-    assert (
-        (tmp_path / CANONICAL_OUTPUT_FILENAME)
-        .read_text(encoding="utf-8")
-        .startswith("t_lower,t_upper,count")
+    sizing = auto_size.resolve_cloud_sizing_from_config(
+        cloud_config_path=REPO_ROOT / "ixa_epi_covid.cloud_config.toml",
+        base_inputs=base_inputs,
+        auto_size=True,
+        cloud=True,
+        max_concurrent_simulations=10,
+        max_concurrent_simulations_explicit=True,
     )
+
+    assert calls["cloud_config_path"] == (
+        REPO_ROOT / "ixa_epi_covid.cloud_config.toml"
+    )
+    assert calls["local_mrp_config_path"] == (
+        REPO_ROOT / "ixa_epi_covid.mrp.toml"
+    )
+    assert calls["probe_inputs"] is base_inputs
+    assert calls["memory_scope"] is CloudAutoSizeMemoryScope.PROCESS_TREE
+    assert sizing.max_concurrent_simulations == 10
+    assert sizing.task_slots_per_node_override is not None

@@ -176,12 +176,26 @@ def phase1_report_to_rows(report: pl.DataFrame) -> dict[str, list[Any]]:
 
 
 def phase1_rows_to_report(
-    report: pl.DataFrame | dict[str, list[Any]],
+    report: pl.DataFrame | dict[str, list[Any]] | list[dict[str, Any]],
 ) -> pl.DataFrame:
     """Normalize a phase-1 report payload into a Polars DataFrame."""
-    if isinstance(report, pl.DataFrame):
-        return report
-    return pl.DataFrame(report)
+    frame = report if isinstance(report, pl.DataFrame) else pl.DataFrame(report)
+    casts = []
+    if "t_lower" in frame.columns:
+        casts.append(pl.col("t_lower").cast(pl.Float64))
+    if "t_upper" in frame.columns:
+        casts.append(pl.col("t_upper").cast(pl.Float64))
+    if "count" in frame.columns:
+        casts.append(pl.col("count").cast(pl.Int64))
+    if not casts:
+        return frame
+    try:
+        return frame.with_columns(casts)
+    except Exception as exc:
+        raise ValueError(
+            "Phase-1 report columns t_lower, t_upper, and count must be "
+            "numeric or numeric strings."
+        ) from exc
 
 
 def write_canonical_output_csv(
