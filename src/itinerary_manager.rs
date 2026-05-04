@@ -63,13 +63,11 @@ where
     }
 }
 
-impl<P> DummyTrait for PersonPropertyModifier<'static, P> 
+impl<P> ItineraryModifierTrait for PersonPropertyItineraryModifier<'static, P> 
 where 
     P: Property<Person> + std::fmt::Debug, 
     P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
+    
     fn get_itinerary(
         &self,
         context: &Context,
