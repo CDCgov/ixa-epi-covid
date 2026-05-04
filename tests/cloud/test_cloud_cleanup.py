@@ -13,6 +13,23 @@ def test_makefile_population_rule_uses_packaged_entrypoint():
     assert "scripts/create_synthetic_population.py" not in makefile
 
 
+def test_makefile_cloud_cleanup_targets_use_shared_cli():
+    makefile = (Path(__file__).resolve().parents[2] / "Makefile").read_text(
+        encoding="utf-8"
+    )
+
+    assert "cloud-list:" in makefile
+    assert "cloud-cleanup-plan:" in makefile
+    assert "cloud-cleanup:" in makefile
+    assert "calibrationtools.cloud.cleanup" in makefile
+    assert "CURRENT_CLOUD_USER := $(shell python3 -c" in makefile
+    assert "CLOUD_USER ?= $(CURRENT_CLOUD_USER)" in makefile
+    assert "--user $(CLOUD_USER)" in makefile
+    assert "--dry-run" in makefile
+    assert "--yes" not in makefile
+    assert "ixa_epi_covid.cloud.cleanup" not in makefile
+
+
 def test_shared_cleanup_parser_uses_session_id_and_dry_run():
     args = shared_cleanup.parse_args(
         ["--session-id", "session-1", "--dry-run"],
