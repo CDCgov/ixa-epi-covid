@@ -3,6 +3,7 @@ pub mod error;
 pub mod infection_importation;
 pub mod infection_propagation_loop;
 pub mod infectiousness_manager;
+pub mod itinerary_manager;
 pub mod model;
 pub mod natural_history_parameter_manager;
 pub mod parameters;
@@ -13,7 +14,6 @@ pub mod reports;
 mod setting_code;
 pub mod settings;
 pub mod symptom_status_manager;
-pub mod itinerary_manager;
 
 pub use model::initialize_model;
 pub use parameters::ContextParametersExt;
