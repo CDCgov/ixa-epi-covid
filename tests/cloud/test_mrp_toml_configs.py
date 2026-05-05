@@ -56,3 +56,16 @@ def test_local_task_and_docker_mrp_configs_remain_process_backed():
         assert config["runtime"]["spec"] == "process"
         assert config["runtime"]["command"] == command
         assert "callable" not in config["runtime"]
+
+
+def test_docker_mrp_config_runs_task_runner_directly():
+    config = _load_config("ixa_epi_covid.mrp.docker.toml")
+    command = " ".join(config["runtime"]["args"])
+
+    assert "docker run --rm -i" in command
+    assert "ixa-epi-covid-cloud:latest" in command
+    assert (
+        "ixa-epi-covid-cloud:latest /app/.venv/bin/python "
+        "-m ixa_epi_covid.mrp_task_runner"
+    ) in command
+    assert "mrp run /app/ixa_epi_covid.mrp.task.toml" not in command

@@ -4,6 +4,7 @@ import argparse
 import json
 import timeit
 import warnings
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +47,7 @@ from .core import (
 
 DEFAULT_MAX_CONCURRENT_SIMULATIONS = 10
 DEFAULT_ARTIFACTS_DIR = Path("artifacts")
+DOCKER_IXA_EXECUTABLE = "/app/target/release/ixa-epi-covid"
 PHASE1_ENTROPY = 0x2D845A9183A835EC4A777F6C7403A6D0
 
 
@@ -211,6 +213,27 @@ def resolve_cloud_sizing(
     )
 
 
+def apply_local_docker_runtime_overrides(
+    model_inputs: dict[str, Any],
+    *,
+    docker: bool,
+    cloud: bool,
+    mrp_config: str | Path | None,
+) -> dict[str, Any]:
+    """Return model inputs adjusted for the built-in local Docker runtime."""
+    if not docker or cloud or mrp_config is not None:
+        return model_inputs
+
+    resolved_inputs = deepcopy(model_inputs)
+    config_inputs = resolved_inputs.get("config_inputs")
+    if not isinstance(config_inputs, dict):
+        raise ValueError(
+            "Docker phase-1 calibration inputs must include config_inputs."
+        )
+    config_inputs["exe_file"] = DOCKER_IXA_EXECUTABLE
+    return resolved_inputs
+
+
 def resolve_model_runner(
     args: argparse.Namespace,
     *,
@@ -316,6 +339,12 @@ def _run_calibration_from_args(args: argparse.Namespace):
     mrp_defaults = config.get_mrp_defaults_for_output(
         output_dir,
         outputs_to_read=[PHASE1_OUTPUT_NAME],
+    )
+    mrp_defaults = apply_local_docker_runtime_overrides(
+        mrp_defaults,
+        docker=args.docker,
+        cloud=args.cloud,
+        mrp_config=args.mrp_config,
     )
 
     priors = load_priors(config.priors_file)

@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 
+from ixa_epi_covid.phase1 import calibrate
 from ixa_epi_covid.phase1 import core
 
 
@@ -149,3 +150,60 @@ def test_phase1_rows_to_report_casts_csv_table_strings():
     assert report["t_lower"].to_list() == [0.0]
     assert report["t_upper"].to_list() == [1.0]
     assert report["count"].to_list() == [2]
+
+
+def test_local_docker_runtime_overrides_container_executable():
+    model_inputs = {
+        "config_inputs": {
+            "exe_file": "./target/release/ixa-epi-covid",
+            "output_dir": "output",
+        },
+        "other": {"value": 1},
+    }
+
+    updated = calibrate.apply_local_docker_runtime_overrides(
+        model_inputs,
+        docker=True,
+        cloud=False,
+        mrp_config=None,
+    )
+
+    assert (
+        updated["config_inputs"]["exe_file"] == calibrate.DOCKER_IXA_EXECUTABLE
+    )
+    assert (
+        model_inputs["config_inputs"]["exe_file"]
+        == "./target/release/ixa-epi-covid"
+    )
+    assert updated["other"] == model_inputs["other"]
+
+
+def test_local_docker_runtime_overrides_only_builtin_docker_mode():
+    model_inputs = {
+        "config_inputs": {
+            "exe_file": "./target/release/ixa-epi-covid",
+        }
+    }
+
+    direct_inputs = calibrate.apply_local_docker_runtime_overrides(
+        model_inputs,
+        docker=False,
+        cloud=False,
+        mrp_config=None,
+    )
+    cloud_inputs = calibrate.apply_local_docker_runtime_overrides(
+        model_inputs,
+        docker=True,
+        cloud=True,
+        mrp_config=None,
+    )
+    custom_mrp_inputs = calibrate.apply_local_docker_runtime_overrides(
+        model_inputs,
+        docker=True,
+        cloud=False,
+        mrp_config=Path("custom.toml"),
+    )
+
+    assert direct_inputs == model_inputs
+    assert cloud_inputs == model_inputs
+    assert custom_mrp_inputs == model_inputs
