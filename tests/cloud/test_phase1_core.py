@@ -2,8 +2,7 @@ import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 
-from ixa_epi_covid.phase1 import calibrate
-from ixa_epi_covid.phase1 import core
+from ixa_epi_covid.phase1 import calibrate, core
 
 
 def test_resolve_synth_population_file_uses_env_copy(monkeypatch, tmp_path):
