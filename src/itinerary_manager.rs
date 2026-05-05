@@ -13,6 +13,8 @@ pub enum ItineraryModifierType {
     SchoolClosure,
     WorkClosure,
     Weekend,
+    ShelterInPlace,
+    WeekendAndShelterInPlace,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
@@ -215,7 +217,7 @@ mod test {
     use crate::parameters::{GlobalParams, Params, SettingProperties};
     use crate::population_loader::Alive;
     use crate::settings::SettingCategory;
-    use ixa::HashMap;
+    use ixa::{HashMap, impl_derived_property};
 
     fn setup(home_ratio: f64, school_ratio: f64, work_ratio: f64, community_ratio: f64) -> Context {
         let mut context = Context::new();
@@ -438,6 +440,85 @@ mod test {
         context.add_plan(8.0, move |context| {
             context.remove_itinerary_modifier_by_property::<Age>(Age(11));
             assert_eq!(context.get_dominant_itinerary_modifier(p1), None);
+        });
+        context.execute();
+    }
+
+    #[test]
+    fn example_with_shelter_in_place_and_weekend() {
+        let mut context = setup(0.25, 0.25, 0.25, 0.25);
+
+        #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+        pub struct AgeAndAlive(pub bool);
+
+        impl_derived_property!(AgeAndAlive, Person, [Age, Alive], [], |age, alive| {
+            AgeAndAlive(age.0 == 21 && alive.0)
+        });
+
+        let sip_modifier = ItineraryModifier {
+            ranking: 1,
+            itinerary_ratios: ItineraryRatios {
+                itinerary_ratios: [0.75, 0.0, 0.0, 0.25],
+            },
+            modifier_type: ItineraryModifierType::ShelterInPlace,
+        };
+
+        let weekend_modifier = ItineraryModifier {
+            ranking: 1,
+            itinerary_ratios: ItineraryRatios {
+                itinerary_ratios: [0.5, 0.0, 0.0, 0.5],
+            },
+            modifier_type: ItineraryModifierType::Weekend,
+        };
+
+        let weekend_and_sip_modifier = ItineraryModifier {
+            ranking: 2,
+            itinerary_ratios: ItineraryRatios {
+                itinerary_ratios: [0.9, 0.0, 0.0, 0.1],
+            },
+            modifier_type: ItineraryModifierType::WeekendAndShelterInPlace,
+        };
+
+        let p1 = context.add_entity::<Person, _>((Age(21),)).unwrap();
+        let p2 = context.add_entity::<Person, _>((Age(11),)).unwrap();
+
+        context.add_plan(2.0, move |context| {
+            assert_eq!(context.get_dominant_itinerary_modifier(p1), None);
+            assert_eq!(context.get_dominant_itinerary_modifier(p2), None);
+            context.register_itinerary_modifier(Age(21), sip_modifier);
+            assert_eq!(
+                context.get_dominant_itinerary_modifier(p1),
+                Some(sip_modifier)
+            );
+            assert_eq!(context.get_dominant_itinerary_modifier(p2), None);
+        });
+
+        context.add_plan(4.0, move |context| {
+            context.register_itinerary_modifier(Alive(true), weekend_modifier);
+            context.register_itinerary_modifier(AgeAndAlive(true), weekend_and_sip_modifier);
+            assert_eq!(
+                context.get_dominant_itinerary_modifier(p1),
+                Some(weekend_and_sip_modifier)
+            );
+            assert_eq!(
+                context.get_dominant_itinerary_modifier(p2),
+                Some(weekend_modifier)
+            );
+        });
+        context.add_plan(6.0, move |context| {
+            context.remove_itinerary_modifier_by_property::<Alive>(Alive(true));
+            context.remove_itinerary_modifier_by_property::<AgeAndAlive>(AgeAndAlive(true));
+            assert_eq!(
+                context.get_dominant_itinerary_modifier(p1),
+                Some(sip_modifier)
+            );
+            assert_eq!(context.get_dominant_itinerary_modifier(p2), None);
+        });
+
+        context.add_plan(8.0, move |context| {
+            context.remove_itinerary_modifier_by_property::<Age>(Age(21));
+            assert_eq!(context.get_dominant_itinerary_modifier(p1), None);
+            assert_eq!(context.get_dominant_itinerary_modifier(p2), None);
         });
         context.execute();
     }
