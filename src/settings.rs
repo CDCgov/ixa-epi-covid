@@ -7,6 +7,7 @@ use std::{
 };
 use strum::{EnumCount as EnumCountMacro, EnumIter, IntoEnumIterator};
 
+use crate::itinerary_manager::ContextItineraryModifierExt;
 pub(crate) use crate::{
     ContextParametersExt, Params,
     error::ModelError,
@@ -126,7 +127,7 @@ impl ContextSettingExtPrivate for Context {}
 
 #[allow(private_bounds)]
 pub trait ContextSettingExt:
-    PluginContext + ContextEntitiesExt + ContextSettingExtPrivate + ContextParametersExt
+    PluginContext + ContextEntitiesExt + ContextSettingExtPrivate + ContextParametersExt + ContextItineraryModifierExt
 {
     fn register_setting_global_properties(&mut self) {
         let Params {
@@ -179,7 +180,7 @@ pub trait ContextSettingExt:
     ) -> Result<Vec<(SettingCode, f64, f64)>, ModelError> {
         let mut active_settings = Vec::new();
         let setting_ids = self.get_property::<Person, SettingIds>(person_id);
-        let itinerary_ratios = self.get_property::<Person, ItineraryRatios>(person_id);
+        let itinerary_ratios = self.get_dominant_itinerary_modifier_ratios(person_id);
 
         for category in SettingCategory::iter() {
             if let Some(id) = setting_ids.setting_ids[category] {

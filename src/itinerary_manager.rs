@@ -5,7 +5,7 @@ use std::{
     collections::HashMap,
 };
 
-use crate::population_loader::{Person, PersonId};
+use crate::{Age, error::ModelError, population_loader::{Alive, Person, PersonId}};
 use crate::settings::ItineraryRatios;
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy, Eq, Hash)]
@@ -187,6 +187,7 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
 
     fn get_itinerary_modifiers(&self, person_id: PersonId) -> Vec<ItineraryModifier>;
     fn get_dominant_itinerary_modifier(&self, person_id: PersonId) -> Option<ItineraryModifier>;
+    fn get_dominant_itinerary_modifier_ratios(&self, person_id: PersonId) -> ItineraryRatios;
 }
 impl ContextItineraryModifierExt for Context {
     // This needs to be here to have access to the concrete context type for the get_itinerary trait method
@@ -206,6 +207,51 @@ impl ContextItineraryModifierExt for Context {
     fn get_dominant_itinerary_modifier(&self, person_id: PersonId) -> Option<ItineraryModifier> {
         self.get_itinerary_modifiers(person_id).into_iter().max()
     }
+
+    fn get_dominant_itinerary_modifier_ratios(&self, person_id: PersonId) -> ItineraryRatios {
+        self.get_dominant_itinerary_modifier(person_id)
+            .map(|modifier| modifier.itinerary_ratios)
+            .unwrap_or(self.get_property::<Person, ItineraryRatios>(person_id))
+    }
+
+}
+
+pub fn init(context: &mut Context) -> Result<(), ModelError> {
+    let weekend_modifier = ItineraryModifier {
+        ranking: 2,
+        itinerary_ratios: ItineraryRatios {
+            itinerary_ratios: [0.5, 0.0, 0.0, 0.5],
+        },
+        modifier_type: ItineraryModifierType::Weekend,
+    };
+
+    let school_closure_modifier = ItineraryModifier {
+        ranking: 1,
+        itinerary_ratios: ItineraryRatios {
+            itinerary_ratios: [0.75, 0.0, 0.0, 0.25],
+        },
+        modifier_type: ItineraryModifierType::SchoolClosure,
+    }; 
+    
+    for i in (0..=100).step_by(7) {
+        context.add_plan(i as f64, move |context| {
+            context.register_itinerary_modifier(Alive(true), weekend_modifier);
+        });
+        context.add_plan(i as f64 + 2.0, move |context| {
+            context.remove_itinerary_modifier_by_property::<Alive>(Alive(true));
+        });
+    }
+
+    for age in 5..=18 {
+        context.add_plan(3.0, move |context| {
+            context.register_itinerary_modifier(Age(age), school_closure_modifier);
+        });
+        context.add_plan(30.0, move |context| {
+            context.remove_itinerary_modifier_by_property::<Age>(Age(age));
+        });
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
