@@ -144,11 +144,12 @@ def test_direct_runner_honors_staged_input_output_and_run_id(
         "imported_cases_timeseries"
     ]["filename"] == str(output_dir / "imported_cases_timeseries.csv")
     assert (output_dir / "output.csv").exists()
-    assert output[PHASE1_OUTPUT_NAME].to_dict(as_series=False) == {
+    assert output[PHASE1_OUTPUT_NAME] == {
         "t_lower": [0.0],
         "t_upper": [1.0],
         "count": [1],
     }
+    json.dumps(output)
 
 
 def test_get_mrp_defaults_for_output_includes_population_proportion(

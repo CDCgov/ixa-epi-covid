@@ -1,4 +1,5 @@
 **/profiling.json
+artifacts/
 experiments/**/simulations/
 experiments/**/calibration/
 .codex

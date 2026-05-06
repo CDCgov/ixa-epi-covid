@@ -1,5 +1,6 @@
 STATE ?=WY
 SIZE ?= 1000
+RUFF_VERSION ?= 0.14.6
 
 # Normalize SIZE to use underscores (e.g., 1000 -> 1_000, 1000000 -> 1_000_000)
 NORMALIZED_SIZE := $(shell python3 -c "print(f'{int(\"$(SIZE)\".replace(\"_\",\"\")):_}')")
@@ -75,10 +76,10 @@ test:
 	uv run pytest
 
 lint:
-	uv run --with ruff ruff check --line-length 79 .
+	uv run --with ruff==$(RUFF_VERSION) ruff check --line-length 79 .
 
 format-check:
-	uv run --with ruff ruff format --check --line-length 79 .
+	uv run --with ruff==$(RUFF_VERSION) ruff format --check --line-length 79 .
 
 typecheck:
 	uv run --with ty ty check --ignore=unresolved-import
@@ -158,7 +159,7 @@ CLOUD_CLEANUP_ACR ?= --skip-acr
 CLOUD_CLEANUP_FILTERS = $(if $(SESSION_ID),--session-id $(SESSION_ID)) $(if $(CLOUD_USER),--user $(CLOUD_USER)) $(if $(IMAGE_TAG),--image-tag $(IMAGE_TAG)) $(CLOUD_CLEANUP_ACR)
 PHASE1_PROD_CONFIG ?= ./experiments/phase1/input/prod-config.yaml
 PHASE1_DEV_CONFIG ?= ./experiments/phase1/input/dev-config.yaml
-CLOUD_ARTIFACTS_DIR ?= ./experiments/phase1/calibration/cloud_artifacts
+CLOUD_ARTIFACTS_DIR ?= ./experiments/phase1/calibration/artifacts
 TARGET_RESULTS = ./experiments/phase1/calibration/output_indiana/results.pkl
 
 define require_session_id

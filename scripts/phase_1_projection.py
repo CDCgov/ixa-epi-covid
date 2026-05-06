@@ -13,10 +13,10 @@ import seaborn as sns
 from calibrationtools import (
     CalibrationResults,
     Particle,
+    ParticleReader,
     SamplerReporter,
     run_coroutine_from_sync,
 )
-from particle_reader import ParticleReader
 
 from ixa_epi_covid import CovidModel, update_epimodel_output_dir
 from ixa_epi_covid.config_parser import CovidModelConfig

@@ -38,7 +38,7 @@ class IxaEpiCovidDirectRunner:
         input_path: str | Path | None = None,
         output_dir: str | Path | None = None,
         run_id: str | None = None,
-    ) -> dict[str, pl.DataFrame]:
+    ) -> dict[str, dict[str, list[Any]]]:
         resolved_inputs = self._resolve_inputs(
             model_inputs,
             input_path=input_path,
@@ -51,7 +51,10 @@ class IxaEpiCovidDirectRunner:
                 Path(output_dir) / CANONICAL_OUTPUT_FILENAME,
                 outputs,
             )
-        return outputs
+        return {
+            output_name: phase1_report_to_rows(report)
+            for output_name, report in outputs.items()
+        }
 
     @staticmethod
     def _resolve_inputs(

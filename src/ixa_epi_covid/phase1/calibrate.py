@@ -46,7 +46,7 @@ from .core import (
 )
 
 DEFAULT_MAX_CONCURRENT_SIMULATIONS = 10
-DEFAULT_ARTIFACTS_DIR = Path("artifacts")
+DEFAULT_ARTIFACTS_DIR = Path("experiments/phase1/calibration/artifacts")
 DOCKER_IXA_EXECUTABLE = "/app/target/release/ixa-epi-covid"
 PHASE1_ENTROPY = 0x2D845A9183A835EC4A777F6C7403A6D0
 
@@ -353,8 +353,13 @@ def _run_calibration_from_args(args: argparse.Namespace):
         particle_param_names=list(priors["priors"].keys()) + ["seed"],
     )
 
-    cloud_sizing = resolve_cloud_sizing(args, base_inputs=mrp_defaults)
-    print_cloud_auto_size_summary(cloud_sizing)
+    if args.cloud:
+        cloud_sizing = resolve_cloud_sizing(args, base_inputs=mrp_defaults)
+        print_cloud_auto_size_summary(cloud_sizing)
+        max_concurrent_simulations = cloud_sizing.max_concurrent_simulations
+    else:
+        cloud_sizing = None
+        max_concurrent_simulations = resolve_max_concurrent_simulations(args)
 
     model_runner = resolve_model_runner(
         args,
@@ -379,9 +384,7 @@ def _run_calibration_from_args(args: argparse.Namespace):
             outputs_to_distance=outputs_to_distance,
             target_data=config.target_data,
             model_runner=model_runner,
-            max_concurrent_simulations=(
-                cloud_sizing.max_concurrent_simulations
-            ),
+            max_concurrent_simulations=max_concurrent_simulations,
             entropy=PHASE1_ENTROPY,
             print_generation_progress=args.print_task_progress,
             artifacts_dir=resolved_artifacts_dir,
