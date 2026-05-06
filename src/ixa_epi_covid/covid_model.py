@@ -53,7 +53,7 @@ class CovidModel(MRPModel):
             / n_age_groups
         )
 
-        proportion_asymptomatic = ixa_inputs["epimodel.GlobalParams"][
+        proportion_symptomatic = ixa_inputs["epimodel.GlobalParams"][
             "probability_mild_given_infect"
         ]
         symptomatic_reporting_prob = model_inputs["importation_inputs"][
@@ -63,7 +63,7 @@ class CovidModel(MRPModel):
         importation_params = {
             "symptomatic_reporting_prob": symptomatic_reporting_prob,
             "case_fatality_ratio": case_fatality_ratio,
-            "proportion_asymptomatic": proportion_asymptomatic,
+            "proportion_asymptomatic": 1.0 - proportion_symptomatic,
         }
 
         importation_filename = ixa_inputs["epimodel.GlobalParams"][
