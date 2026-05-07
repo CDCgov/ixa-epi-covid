@@ -1,6 +1,7 @@
 use ixa::HashMap;
 use ixa::prelude::*;
 use serde::{Deserialize, Serialize};
+use smallvec::SmallVec;
 use std::{
     fmt::Debug,
     ops::{Index, IndexMut},
@@ -10,7 +11,7 @@ use strum::{EnumCount as EnumCountMacro, EnumIter, IntoEnumIterator};
 pub(crate) use crate::{
     ContextParametersExt, Params,
     error::ModelError,
-    population_loader::{ItineraryRatios, Person, PersonId, SettingIds},
+    population_loader::{Itinerary, Person, PersonId},
     setting_code::SettingCode,
 };
 
@@ -74,8 +75,8 @@ define_data_plugin!(SettingMembershipPlugin, SettingMembership, |context| {
     let person_iter = context.get_entity_iterator::<Person>();
 
     for person_id in person_iter {
-        let settings: SettingIds = context.get_property(person_id);
-        membership.add_members(&settings.setting_ids, person_id);
+        let itinerary: Itinerary = context.get_property(person_id);
+        membership.add_members(&itinerary.setting_ids, person_id);
     }
 
     membership
@@ -173,17 +174,17 @@ pub trait ContextSettingExt:
         membership.member_count(setting)
     }
 
+    #[allow(clippy::type_complexity)]
     fn get_active_settings_for_person(
         &self,
         person_id: PersonId,
-    ) -> Result<Vec<(SettingCode, f64, f64)>, ModelError> {
-        let mut active_settings = Vec::new();
-        let setting_ids = self.get_property::<Person, SettingIds>(person_id);
-        let itinerary_ratios = self.get_property::<Person, ItineraryRatios>(person_id);
+    ) -> Result<SmallVec<[(SettingCode, f64, f64); SETTING_COUNT]>, ModelError> {
+        let mut active_settings = SmallVec::<[(SettingCode, f64, f64); SETTING_COUNT]>::new();
+        let itinerary = self.get_property::<Person, Itinerary>(person_id);
 
         for category in SettingCategory::iter() {
-            if let Some(id) = setting_ids.setting_ids[category] {
-                let ratio = itinerary_ratios.itinerary_ratios[category];
+            if let Some(id) = itinerary.setting_ids[category] {
+                let ratio = itinerary.itinerary_ratios[category];
                 let multiplier = self.calculate_multiplier(id)?;
                 active_settings.push((id, ratio, multiplier));
             }
@@ -306,11 +307,10 @@ pub trait ContextSettingExt:
 
         let normalized_itinerary_ratios = itinerary_ratios.map(|ratio| ratio / sum_ratio);
 
-        self.set_property::<Person, SettingIds>(person_id, SettingIds { setting_ids });
-        self.set_property::<Person, ItineraryRatios>(
+        self.set_property::<Person, Itinerary>(
             person_id,
-            ItineraryRatios {
-                // This field is a `[f64; 4]`
+            Itinerary {
+                setting_ids,
                 itinerary_ratios: normalized_itinerary_ratios,
             },
         );
@@ -407,10 +407,12 @@ mod test {
         for setting_code in assignments {
             setting_ids[setting_code.category()] = Some(*setting_code);
         }
-        context.set_property::<Person, SettingIds>(person_id, SettingIds { setting_ids });
-        context.set_property::<Person, ItineraryRatios>(
+        context.set_property::<Person, Itinerary>(
             person_id,
-            ItineraryRatios { itinerary_ratios },
+            Itinerary {
+                setting_ids,
+                itinerary_ratios,
+            },
         );
     }
 
@@ -622,12 +624,9 @@ mod test {
         let setting_code = make_home_id(b"160379602000010");
         context.add_person_to_settings(person_id, Some(setting_code), None, None, None);
         let home_id = context.get_property::<Person, HomeId>(person_id).0.unwrap();
-        let setting_ids = context
-            .get_property::<Person, SettingIds>(person_id)
-            .setting_ids;
-        let itinerary_ratios = context
-            .get_property::<Person, ItineraryRatios>(person_id)
-            .itinerary_ratios;
+        let itinerary = context.get_property::<Person, Itinerary>(person_id);
+        let setting_ids = itinerary.setting_ids;
+        let itinerary_ratios = itinerary.itinerary_ratios;
         assert_eq!(setting_ids[SettingCategory::Home], Some(home_id));
         println!("itinerary_ratios: {:?}", itinerary_ratios);
         assert_eq!(itinerary_ratios[SettingCategory::Home], 1.0);
