@@ -197,7 +197,7 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
     }
 
     fn get_itinerary_modifiers(&self, person_id: PersonId) -> Vec<ItineraryModifier>;
-    fn get_dominant_itinerary_modifier(&self, person_id: PersonId) -> Option<ItineraryModifier>;
+    fn get_modified_itinerary(&self, person_id: PersonId) -> Option<ItineraryModifier>;
 }
 impl ContextItineraryModifierExt for Context {
     // This needs to be here to have access to the concrete context type for the get_itinerary trait method
@@ -214,7 +214,7 @@ impl ContextItineraryModifierExt for Context {
     }
 
     // This needs to be here to have access to the concrete context type for the get_itinerary trait method
-    fn get_dominant_itinerary_modifier(&self, person_id: PersonId) -> Option<ItineraryModifier> {
+    fn get_modified_itinerary(&self, person_id: PersonId) -> Option<ItineraryModifier> {
         self.get_itinerary_modifiers(person_id).into_iter().max()
     }
 }
@@ -268,18 +268,18 @@ mod test {
         context.register_itinerary_modifier(Age(11), school_closure_modifier);
         let p1 = context.add_entity::<Person, _>((Age(10),)).unwrap();
         let p2 = context.add_entity::<Person, _>((Age(11),)).unwrap();
-        let dominant_modifier_p1 = context.get_dominant_itinerary_modifier(p1);
-        let dominant_modifier_p2 = context.get_dominant_itinerary_modifier(p2);
+        let dominant_modifier_p1 = context.get_modified_itinerary(p1);
+        let dominant_modifier_p2 = context.get_modified_itinerary(p2);
         assert_eq!(dominant_modifier_p1, None);
         assert_eq!(dominant_modifier_p2, Some(school_closure_modifier));
 
         context.register_itinerary_modifier(Age(10), school_closure_modifier);
         assert_eq!(
-            context.get_dominant_itinerary_modifier(p1),
+            context.get_modified_itinerary(p1),
             Some(school_closure_modifier)
         );
         assert_eq!(
-            context.get_dominant_itinerary_modifier(p2),
+            context.get_modified_itinerary(p2),
             Some(school_closure_modifier)
         );
     }
@@ -325,18 +325,18 @@ mod test {
         let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
         let p2 = context.add_entity::<Person, _>((Age(10),)).unwrap();
         assert_eq!(
-            context.get_dominant_itinerary_modifier(p1),
+            context.get_modified_itinerary(p1),
             Some(school_closure_modifier)
         );
         assert_eq!(
-            context.get_dominant_itinerary_modifier(p2),
+            context.get_modified_itinerary(p2),
             Some(school_closure_modifier)
         );
         // This would remove all age based itinerary modifiers that is not ideal.
         context.remove_itinerary_modifier_by_property::<Age>(Age(11));
-        assert_eq!(context.get_dominant_itinerary_modifier(p1), None);
+        assert_eq!(context.get_modified_itinerary(p1), None);
         assert_eq!(
-            context.get_dominant_itinerary_modifier(p2),
+            context.get_modified_itinerary(p2),
             Some(school_closure_modifier)
         );
     }
@@ -361,16 +361,13 @@ mod test {
         context.register_itinerary_modifier(Age(11), school_closure_modifier);
         context.register_itinerary_modifier(Age(11), weekend_modifier);
         let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
-        assert_eq!(
-            context.get_dominant_itinerary_modifier(p1),
-            Some(weekend_modifier)
-        );
+        assert_eq!(context.get_modified_itinerary(p1), Some(weekend_modifier));
         context.remove_itinerary_modifier_by_property_and_type::<Age>(
             Age(11),
             ItineraryModifierType::Weekend,
         );
         assert_eq!(
-            context.get_dominant_itinerary_modifier(p1),
+            context.get_modified_itinerary(p1),
             Some(school_closure_modifier)
         );
     }
@@ -396,7 +393,7 @@ mod test {
         context.register_itinerary_modifier(Age(11), work_closure_modifier);
         let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
         assert_eq!(
-            context.get_dominant_itinerary_modifier(p1),
+            context.get_modified_itinerary(p1),
             Some(work_closure_modifier)
         );
     }
