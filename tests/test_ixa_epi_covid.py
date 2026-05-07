@@ -77,6 +77,32 @@ def test_update_epimodel_output_dir():
     ]
 
 
+def test_get_mrp_defaults_for_output_includes_population_proportion(
+    valid_config,
+    monkeypatch,
+    tmp_path,
+):
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".yaml", delete=False
+    ) as tmp:
+        yaml.dump(valid_config, tmp)
+        tmp_path_config = tmp.name
+
+    monkeypatch.setattr(
+        "ixa_epi_covid.config_parser.get_state_proportion_population_data",
+        lambda state, year: 0.123,
+    )
+
+    config = CovidModelConfig(tmp_path_config)
+
+    params = config.get_mrp_defaults_for_output(
+        tmp_path / "output",
+        outputs_to_read=["aggregated_deaths_report"],
+    )
+
+    assert params["importation_inputs"]["population_proportion"] == 0.123
+
+
 def test_covid_model_config_validation(valid_config):
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".yaml", delete=False

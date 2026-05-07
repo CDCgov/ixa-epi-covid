@@ -1,5 +1,8 @@
 **/profiling.json
+artifacts/
 experiments/**/simulations/
+experiments/**/calibration/
+.codex
 
 # IDE and Platform
 .vscode
@@ -45,6 +48,8 @@ experiments/**/simulations/
 # !your_data_directory/
 !input/people_test.csv
 !input/symptom_delay_median_iqr.csv
+!packages/importation/src/importation/data/
+!packages/importation/src/importation/data/*.csv
 !tests/data/*
 
 

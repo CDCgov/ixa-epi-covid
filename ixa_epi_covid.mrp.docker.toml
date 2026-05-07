@@ -1,0 +1,17 @@
+input = "experiments/phase1/input/default_params.json"
+
+[model]
+spec = "ixa_epi_covid_phase1"
+version = "0.1.0"
+
+[runtime]
+spec = "process"
+command = "sh"
+args = [
+  "-c",
+  "exec docker run --rm -i --user \"$(id -u):$(id -g)\" -v \"$PWD:/work\" -w /work ixa-epi-covid-cloud:latest /app/.venv/bin/python -m ixa_epi_covid.covid_model",
+]
+
+[output]
+spec = "filesystem"
+dir = "./output"

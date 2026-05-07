@@ -1,6 +1,3 @@
-default_language_version:
-  python: python3.12
-
 repos:
 #####
 # Basic file cleanliness
@@ -49,7 +46,9 @@ repos:
     rev: v0.4.3.9017
     hooks:
     -   id: style-files
+        stages: [manual]
     -   id: lintr
+        stages: [manual]
 #####
 # Java
 - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks

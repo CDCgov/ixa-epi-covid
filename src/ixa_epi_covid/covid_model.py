@@ -7,97 +7,91 @@ import polars as pl
 from importation import ImportationModel, get_linelist_data
 from mrp import MRPModel
 
+PHASE1_OUTPUT_NAME = "aggregated_deaths_report"
+CANONICAL_OUTPUT_FILENAME = "output.csv"
+
 
 class CovidModel(MRPModel):
-    def run(self):
-        pass
+    """IXA COVID model adapter used by local calibration and MRP tasks."""
+
+    def run(self) -> None:
+        """Run the MRP task and write the canonical phase-1 CSV output."""
+        outputs = self.simulate(self.input)
+        report = outputs[PHASE1_OUTPUT_NAME]
+        self.write_csv(
+            CANONICAL_OUTPUT_FILENAME,
+            {column: report[column].to_list() for column in report.columns},
+        )
 
     @staticmethod
-    def simulate(model_inputs: dict[str, Any]) -> pl.DataFrame:
+    def simulate(model_inputs: dict[str, Any]) -> dict[str, pl.DataFrame]:
+        """Run one phase-1 model simulation and return configured reports."""
         ixa_inputs = model_inputs["ixa_inputs"]
         config_inputs = model_inputs["config_inputs"]
         importation_inputs = model_inputs["importation_inputs"]
 
-        # Write the ixa inputs to the specified file location so that downstream errors can be re-tried
-        input_file_path = Path(config_inputs["output_dir"], "input.json")
+        output_dir = Path(config_inputs["output_dir"])
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write the IXA inputs for downstream error reproduction.
+        input_file_path = output_dir / "input.json"
         ixa_inputs["epimodel.GlobalParams"]["seed"] = int(
             ixa_inputs["epimodel.GlobalParams"]["seed"]
         )
-        with open(input_file_path, "w") as f:
-            json.dump(ixa_inputs, f, indent=4)
-
-        ## Generate the importation time series from relevant ixa parameters --------------
-        # Calculate the probability that an inidivdual will die given that they are symptomatic
-        # This calculation assumes that individuals are evenly distributed by age group
-        n_age_groups = len(
-            ixa_inputs["epimodel.GlobalParams"]["symptom_age_groups"]
+        input_file_path.write_text(
+            json.dumps(ixa_inputs, indent=4),
+            encoding="utf-8",
         )
+
+        global_params = ixa_inputs["epimodel.GlobalParams"]
+
+        # Calculate the probability that an individual will die given that
+        # they are symptomatic. This assumes individuals are evenly
+        # distributed by age group.
+        n_age_groups = len(global_params["symptom_age_groups"])
         case_fatality_ratio = (
-            sum(
-                ixa_inputs["epimodel.GlobalParams"][
-                    "probability_severe_given_mild"
-                ].values()
-            )
+            sum(global_params["probability_severe_given_mild"].values())
             / n_age_groups
-            * sum(
-                ixa_inputs["epimodel.GlobalParams"][
-                    "probability_critical_given_severe"
-                ].values()
-            )
+            * sum(global_params["probability_critical_given_severe"].values())
             / n_age_groups
-            * sum(
-                ixa_inputs["epimodel.GlobalParams"][
-                    "probability_dead_given_critical"
-                ].values()
-            )
+            * sum(global_params["probability_dead_given_critical"].values())
             / n_age_groups
         )
 
-        proportion_symptomatic = ixa_inputs["epimodel.GlobalParams"][
-            "probability_mild_given_infect"
-        ]
-        symptomatic_reporting_prob = model_inputs["importation_inputs"][
-            "symptomatic_reporting_prob"
-        ]
+        proportion_symptomatic = global_params["probability_mild_given_infect"]
 
         importation_params = {
-            "symptomatic_reporting_prob": symptomatic_reporting_prob,
+            "symptomatic_reporting_prob": importation_inputs[
+                "symptomatic_reporting_prob"
+            ],
             "case_fatality_ratio": case_fatality_ratio,
             "proportion_asymptomatic": 1.0 - proportion_symptomatic,
         }
 
-        importation_filename = ixa_inputs["epimodel.GlobalParams"][
-            "imported_cases_timeseries"
-        ]["filename"]
+        importation_filename = Path(
+            global_params["imported_cases_timeseries"]["filename"]
+        )
 
-        # Create the model object
         importation_model = ImportationModel(
             data=get_linelist_data(),
             parameters=importation_params,
             national_model="multinomial",
             state_model="proportional",
-            seed=ixa_inputs["epimodel.GlobalParams"][
-                "seed"
-            ],  # Optional argument to set the model seed
+            seed=global_params["seed"],
         )
 
-        # Generate timeseries data from the model object for state and optional year
         timeseries_data = importation_model.sample_state_importation_incidence(
             state=importation_inputs["state"],
             year=importation_inputs.get("year"),
         )
-
-        # Store timeseries at appropriate location accessible to ixa
         timeseries_data.write_csv(importation_filename)
 
-        ## Run the ixa transmission model ------------------------
-        # Write command to call the ixa model binaries
         cmd = [
             config_inputs["exe_file"],
             "--config",
             str(input_file_path),
             "--output",
-            config_inputs["output_dir"],
+            str(output_dir),
             "--force-overwrite",
             "--no-stats",
         ]
@@ -111,22 +105,27 @@ class CovidModel(MRPModel):
             print("Standard error:", e.stderr)
             raise e
 
-        # Read the model incidence report from the specified location and return as a DataFrame
         outputs = {}
-        for output in config_inputs["outputs_to_read"]:
-            fp = ixa_inputs["epimodel.GlobalParams"][output]["filename"]
-            if Path(config_inputs["output_dir"], fp).exists():
-                outputs.update(
-                    {
-                        output: pl.read_csv(
-                            Path(config_inputs["output_dir"], fp)
-                        )
-                    }
-                )
-            elif Path(fp).exists():
-                outputs.update({output: pl.read_csv(Path(fp))})
+        for output_name in config_inputs["outputs_to_read"]:
+            filename = global_params[output_name]["filename"]
+            output_path = output_dir / filename
+            if output_path.exists():
+                outputs[output_name] = pl.read_csv(output_path)
+            elif Path(filename).exists():
+                outputs[output_name] = pl.read_csv(Path(filename))
             else:
                 raise FileNotFoundError(
-                    f"Expected output file {fp} not found. Looked in {config_inputs['output_dir']}"
+                    f"Expected output file {filename} not found. "
+                    f"Looked in {output_dir}."
                 )
         return outputs
+
+
+def main() -> int:
+    """Run the model from ``python -m ixa_epi_covid.covid_model``."""
+    CovidModel().run()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
