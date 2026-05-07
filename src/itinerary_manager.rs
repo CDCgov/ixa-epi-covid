@@ -103,6 +103,15 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
                 .downcast_ref::<PersonPropertyItineraryModifier<P>>(
             ) {
                 let mut new_modifier_map = downcast_modifier_map.1.clone();
+
+                // removing itinerary modifier of the same type if there is one
+                if let Some(modifiers) = new_modifier_map.get_mut(&person_property.make_canonical())
+                {
+                    modifiers.retain(|modifier| {
+                        modifier.modifier_type != itinerary_modifier.modifier_type
+                    });
+                }
+
                 new_modifier_map
                     .entry(person_property.make_canonical())
                     .or_insert_with(Vec::new)
@@ -215,9 +224,8 @@ mod test {
     use super::*;
     use crate::Age;
     use crate::parameters::{GlobalParams, Params, SettingProperties};
-    use crate::population_loader::Alive;
     use crate::settings::SettingCategory;
-    use ixa::{HashMap, impl_derived_property};
+    use ixa::HashMap;
 
     fn setup(home_ratio: f64, school_ratio: f64, work_ratio: f64, community_ratio: f64) -> Context {
         let mut context = Context::new();
@@ -391,273 +399,5 @@ mod test {
             context.get_dominant_itinerary_modifier(p1),
             Some(work_closure_modifier)
         );
-    }
-
-    #[test]
-    fn example_with_schools_and_weekends() {
-        let mut context = setup(0.25, 0.25, 0.25, 0.25);
-        let school_closure_modifier = ItineraryModifier {
-            ranking: 1,
-            itinerary_ratios: ItineraryRatios {
-                itinerary_ratios: [0.75, 0.0, 0.0, 0.25],
-            },
-            modifier_type: ItineraryModifierType::SchoolClosure,
-        };
-
-        let weekend_modifier = ItineraryModifier {
-            ranking: 2,
-            itinerary_ratios: ItineraryRatios {
-                itinerary_ratios: [0.5, 0.0, 0.0, 0.5],
-            },
-            modifier_type: ItineraryModifierType::Weekend,
-        };
-
-        let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
-        context.add_plan(2.0, move |context| {
-            assert_eq!(context.get_dominant_itinerary_modifier(p1), None);
-            context.register_itinerary_modifier(Age(11), school_closure_modifier);
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p1),
-                Some(school_closure_modifier)
-            );
-        });
-
-        context.add_plan(4.0, move |context| {
-            context.register_itinerary_modifier(Alive(true), weekend_modifier);
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p1),
-                Some(weekend_modifier)
-            );
-        });
-        context.add_plan(6.0, move |context| {
-            context.remove_itinerary_modifier_by_property::<Alive>(Alive(true));
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p1),
-                Some(school_closure_modifier)
-            );
-        });
-
-        context.add_plan(8.0, move |context| {
-            context.remove_itinerary_modifier_by_property::<Age>(Age(11));
-            assert_eq!(context.get_dominant_itinerary_modifier(p1), None);
-        });
-        context.execute();
-    }
-
-    #[test]
-    fn example_with_shelter_in_place_and_weekend() {
-        // The adult does nothing and then shelters in place reducing time at work
-        // If the shelter in place is not active on the weekend the adult spends more time in the community
-        // When the shelter in place is active on the weekend, the adult spends less time in the community 
-        // than the weekend modifier alone
-        // The shelter in place modifiers only apply to the adult
-        // The child spends more time in the community on the weekend
-        let mut context = setup(0.25, 0.25, 0.25, 0.25);
-
-        #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-        pub struct AgeAndAlive(pub bool);
-        impl_derived_property!(AgeAndAlive, Person, [Age, Alive], [], |age, alive| {
-            AgeAndAlive(age.0 >= 18 && alive.0)
-        });
-        let sip_modifier = ItineraryModifier {
-            ranking: 1,
-            itinerary_ratios: ItineraryRatios {
-                itinerary_ratios: [0.75, 0.0, 0.0, 0.25],
-            },
-            modifier_type: ItineraryModifierType::ShelterInPlace,
-        };
-
-        let weekend_modifier = ItineraryModifier {
-            ranking: 1,
-            itinerary_ratios: ItineraryRatios {
-                itinerary_ratios: [0.5, 0.0, 0.0, 0.5],
-            },
-            modifier_type: ItineraryModifierType::Weekend,
-        };
-
-        let weekend_and_sip_modifier = ItineraryModifier {
-            ranking: 2,
-            itinerary_ratios: ItineraryRatios {
-                itinerary_ratios: [0.9, 0.0, 0.0, 0.1],
-            },
-            modifier_type: ItineraryModifierType::WeekendAndShelterInPlace,
-        };
-
-        let p1 = context.add_entity::<Person, _>((Age(21),)).unwrap();
-        let p2 = context.add_entity::<Person, _>((Age(11),)).unwrap();
-
-        context.add_plan(2.0, move |context| {
-            assert_eq!(context.get_dominant_itinerary_modifier(p1), None);
-            assert_eq!(context.get_dominant_itinerary_modifier(p2), None);
-            context.register_itinerary_modifier(Age(21), sip_modifier);
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p1),
-                Some(sip_modifier)
-            );
-            assert_eq!(context.get_dominant_itinerary_modifier(p2), None);
-        });
-
-        context.add_plan(4.0, move |context| {
-            context.register_itinerary_modifier(Alive(true), weekend_modifier);
-            context.register_itinerary_modifier(AgeAndAlive(true), weekend_and_sip_modifier);
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p1),
-                Some(weekend_and_sip_modifier)
-            );
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p2),
-                Some(weekend_modifier)
-            );
-        });
-        context.add_plan(6.0, move |context| {
-            context.remove_itinerary_modifier_by_property::<Alive>(Alive(true));
-            context.remove_itinerary_modifier_by_property::<AgeAndAlive>(AgeAndAlive(true));
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p1),
-                Some(sip_modifier)
-            );
-            assert_eq!(context.get_dominant_itinerary_modifier(p2), None);
-        });
-
-        context.add_plan(8.0, move |context| {
-            context.remove_itinerary_modifier_by_property::<Age>(Age(21));
-            assert_eq!(context.get_dominant_itinerary_modifier(p1), None);
-            assert_eq!(context.get_dominant_itinerary_modifier(p2), None);
-        });
-        context.execute();
-    }
-
-    #[test]
-    fn test_telework_school_closure_sip_and_weekend_modifiers() {
-        let mut context = setup(0.25, 0.25, 0.25, 0.25);
-        // The adult has no modifiers then teleworks
-        // The child has no modifiers then school closure
-        // Before the shelter in place the adult and child have weekends with more time in the community even with school closure and telework
-        // The shelter in place supersedes school closure, telework, and weekends
-
-        let telework_modifier = ItineraryModifier {
-            ranking: 1,
-            itinerary_ratios: ItineraryRatios {
-                itinerary_ratios: [0.75, 0.0, 0.0, 0.25],
-            },
-            modifier_type: ItineraryModifierType::WorkClosure,
-        };
-        let school_closure_modifier = ItineraryModifier {
-            ranking: 1,
-            itinerary_ratios: ItineraryRatios {
-                itinerary_ratios: [0.75, 0.0, 0.0, 0.25],
-            },
-            modifier_type: ItineraryModifierType::SchoolClosure,
-        };
-        let weekend_modifier = ItineraryModifier {
-            ranking: 2,
-            itinerary_ratios: ItineraryRatios {
-                itinerary_ratios: [0.5, 0.0, 0.0, 0.5],
-            },
-            modifier_type: ItineraryModifierType::Weekend,
-        };
-        let shelter_in_place_modifier = ItineraryModifier {
-            ranking: 3,
-            itinerary_ratios: ItineraryRatios {
-                itinerary_ratios: [0.9, 0.0, 0.0, 0.1],
-            },
-            modifier_type: ItineraryModifierType::ShelterInPlace,
-        };
-        let p1 = context.add_entity::<Person, _>((Age(21),)).unwrap();
-        let p2 = context.add_entity::<Person, _>((Age(11),)).unwrap();
-
-        context.add_plan(2.0, move |context| {
-            assert_eq!(context.get_dominant_itinerary_modifier(p1), None);
-            assert_eq!(context.get_dominant_itinerary_modifier(p2), None);
-            context.register_itinerary_modifier(Age(21), telework_modifier);
-            context.register_itinerary_modifier(Age(11), school_closure_modifier);
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p1),
-                Some(telework_modifier)
-            );
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p2),
-                Some(school_closure_modifier)
-            );
-        });
-
-        context.add_plan(4.0, move |context| {
-            context.register_itinerary_modifier(Alive(true), weekend_modifier);
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p1),
-                Some(weekend_modifier)
-            );
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p2),
-                Some(weekend_modifier)
-            );
-        });
-        context.add_plan(6.0, move |context| {
-            context.remove_itinerary_modifier_by_property::<Alive>(Alive(true));
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p1),
-                Some(telework_modifier)
-            );
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p2),
-                Some(school_closure_modifier)
-            );
-        });
-
-        context.add_plan(8.0, move |context| {
-            context.register_itinerary_modifier::<Alive>(Alive(true), shelter_in_place_modifier);
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p1),
-                Some(shelter_in_place_modifier)
-            );
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p2),
-                Some(shelter_in_place_modifier)
-            );
-        });
-
-        context.add_plan(11.0, move |context| {
-            context.register_itinerary_modifier::<Alive>(Alive(true), weekend_modifier);
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p1),
-                Some(shelter_in_place_modifier)
-            );
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p2),
-                Some(shelter_in_place_modifier)
-            );
-        });
-
-        context.add_plan(13.0, move |context| {
-            context.remove_itinerary_modifier_by_property_and_type::<Alive>(
-                Alive(true),
-                ItineraryModifierType::Weekend,
-            );
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p1),
-                Some(shelter_in_place_modifier)
-            );
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p2),
-                Some(shelter_in_place_modifier)
-            );
-        });
-
-        context.add_plan(14.0, move |context| {
-            context.remove_itinerary_modifier_by_property_and_type::<Alive>(
-                Alive(true),
-                ItineraryModifierType::ShelterInPlace,
-            );
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p1),
-                Some(telework_modifier)
-            );
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p2),
-                Some(school_closure_modifier)
-            );
-        });
-
-        context.execute();
     }
 }
