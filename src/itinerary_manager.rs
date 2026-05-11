@@ -6,8 +6,7 @@ use std::{
 };
 
 use crate::population_loader::{Person, PersonId};
-use crate::settings::ItineraryRatios;
-use crate::{population_loader::{Person, PersonId}, settings::SETTING_COUNT};
+use crate::{settings::SETTING_COUNT};
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
 pub struct ActivityTransitionMatix {
@@ -58,26 +57,6 @@ where
     P: Property<Person> + std::fmt::Debug,
     P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
 {
-    fn get_itineraries(
-        &self,
-        context: &Context,
-        person_id: PersonId,
-    ) -> Option<Vec<ItineraryModifier>> {
-        let (_person_property, modifier_map) = self;
-        let property_val = context.get_property::<Person, P>(person_id);
-        modifier_map.get(&property_val.make_canonical()).cloned()
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
-impl<P> ItineraryModifierTrait for PersonPropertyItineraryModifier<'static, P>
-where
-    P: Property<Person> + std::fmt::Debug,
-    P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-{
     fn get_itinerary_modifiers(
         &self,
         context: &Context,
@@ -85,10 +64,7 @@ where
     ) -> Option<Vec<ItineraryModifier>> {
         let (_person_property, modifier_map) = self;
         let property_val = context.get_property::<Person, P>(person_id);
-        match modifier_map.get(&property_val.make_canonical()) {
-            Some(value) => Some(value.clone()),
-            None => None,
-        }
+        modifier_map.get(&property_val.make_canonical()).cloned()
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -114,11 +90,8 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
         person_property: P,
         itinerary_modifier: ItineraryModifier,
     ) where
-    ) where
         P::CanonicalValue: std::hash::Hash + Eq,
     {
-        if let Some(modifier_map) = self
-            .get_data_mut(ItineraryModifierPlugin)
         if let Some(modifier_map) = self
             .get_data_mut(ItineraryModifierPlugin)
             .itinerary_modifier_map
@@ -128,19 +101,7 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
                 .as_any()
                 .downcast_ref::<PersonPropertyItineraryModifier<P>>(
             ) {
-            .get(&TypeId::of::<P>())
-        {
-            if let Some(downcast_modifier_map) = modifier_map
-                .as_any()
-                .downcast_ref::<PersonPropertyItineraryModifier<P>>(
-            ) {
                 let mut new_modifier_map = downcast_modifier_map.1.clone();
-                new_modifier_map
-                    .entry(person_property.make_canonical())
-                    .or_insert_with(Vec::new)
-                    .push(itinerary_modifier);
-                let new_person_property_modifier: PersonPropertyItineraryModifier<P> =
-                    (downcast_modifier_map.0, new_modifier_map);
                 new_modifier_map
                     .entry(person_property.make_canonical())
                     .or_insert_with(Vec::new)
@@ -158,13 +119,8 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
                     person_property.make_canonical(),
                     Vec::from([itinerary_modifier]),
                 )]),
-                HashMap::from_iter([(
-                    person_property.make_canonical(),
-                    Vec::from([itinerary_modifier]),
-                )]),
             );
             // Insert the boxed modifier into the itinerary modifier map
-            let _ = self
             let _ = self
                 .get_data_mut(ItineraryModifierPlugin)
                 .itinerary_modifier_map
@@ -180,34 +136,25 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
     {
         let modifier_map = self
             .get_data_mut(ItineraryModifierPlugin)
-    fn remove_itinerary_modifier_by_property<P: Property<Person> + 'static>(
-        &mut self,
-        property_value: P::CanonicalValue,
-    ) where
-        <P as ixa::prelude::Property<Person>>::CanonicalValue: std::hash::Hash + Eq,
-    {
-        let modifier_map = self
-            .get_data_mut(ItineraryModifierPlugin)
             .itinerary_modifier_map
             .get(&TypeId::of::<P>());
-        if let Some(property_modifier_map) = modifier_map {
-            if let Some(downcast_property_modifier_map) = property_modifier_map
+        if let Some(property_modifier_map) = modifier_map
+            && let Some(downcast_property_modifier_map) = property_modifier_map
                 .as_any()
                 .downcast_ref::<PersonPropertyItineraryModifier<P>>(
-            ) {
-                let mut new_property_modifier_map = downcast_property_modifier_map.1.clone();
-                new_property_modifier_map.remove(&property_value);
-                let new_person_property_modifier: PersonPropertyItineraryModifier<P> =
-                    (downcast_property_modifier_map.0, new_property_modifier_map);
-                self.get_data_mut(ItineraryModifierPlugin)
-                    .itinerary_modifier_map
-                    .insert(TypeId::of::<P>(), Box::new(new_person_property_modifier));
-            }
+            )
+        {
+            let mut new_property_modifier_map = downcast_property_modifier_map.1.clone();
+            new_property_modifier_map.remove(&property_value);
+            let new_person_property_modifier: PersonPropertyItineraryModifier<P> =
+                (downcast_property_modifier_map.0, new_property_modifier_map);
+            self.get_data_mut(ItineraryModifierPlugin)
+                .itinerary_modifier_map
+                .insert(TypeId::of::<P>(), Box::new(new_person_property_modifier));
         }
     }
 
     fn get_itinerary_modifiers(&self, person_id: PersonId) -> Vec<ItineraryModifier>;
-    fn combine_itinerary_modifiers(&self, person_id: PersonId) -> Option<ItineraryModifier>;
 }
 impl ContextItineraryModifierExt for Context {
     // This needs to be here to have access to the concrete context type for the get_itinerary trait method
@@ -221,15 +168,6 @@ impl ContextItineraryModifierExt for Context {
             }
         }
         modifiers
-    }
-
-    fn combine_itinerary_modifiers(&self, person_id: PersonId) -> Option<ItineraryModifier> {
-        let modifiers = self.get_itinerary_modifiers(person_id);
-        if modifiers.is_empty() {
-            None
-        } else {
-            None
-        }
     }
 }
 
