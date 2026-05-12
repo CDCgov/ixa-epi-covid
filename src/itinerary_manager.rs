@@ -66,6 +66,10 @@ impl ActivityTransitionMatrix {
     }
 
     fn calculate_absorption_probabilities(&mut self) {
+        // Aborbing probabilities are calculated using the 
+        // formula N * R, where N is the fundamental matrix (I - Q)^-1, I is the identity matrix, 
+        // Q is the transient matrix, and R is the absorbing matrix. 
+
         // Create identity matrix I
         let mut identity = [[0.0; SETTING_COUNT]; SETTING_COUNT];
         for i in 0..SETTING_COUNT {
@@ -430,100 +434,101 @@ mod test {
 
         context.register_itinerary_modifier(Age(10), weekend_modifier);
         assert_eq!(context.get_itinerary_modifiers(p1), vec![weekend_modifier]);
-        assert_eq!(context.get_itinerary_modifiers(p2), vec![weekend_modifier]);
+        assert_eq!(context.get_itinerary_modifiers(p2), vec![weekend_modifier]);      
+        
     }
 
-    #[test]
-    fn test_register_multiple_itinerary_modifiers() {
-        let mut context = setup();
+        #[test]
+        fn test_register_multiple_itinerary_modifiers() {
+            let mut context = setup();
+            
+            let weekend_transient_matrix = [
+                [0.0, 0.0, 0.0, 0.0],
+                [0.5, 0.0, 0.0, 0.5],
+                [0.5, 0.0, 0.0, 0.5],
+                [0.0, 0.0, 0.0, 0.0],
+            ];
 
-        let weekend_transient_matrix = [
-            [0.0, 0.0, 0.0, 0.0],
-            [0.5, 0.0, 0.0, 0.5],
-            [0.5, 0.0, 0.0, 0.5],
-            [0.0, 0.0, 0.0, 0.0],
-        ];
+            let weekend_activity_transition_matrix = ActivityTransitionMatrix {
+                transient_matrix: weekend_transient_matrix,
+                absorption_probabilities: None,
+            };
 
-        let weekend_activity_transition_matrix = ActivityTransitionMatrix {
-            transient_matrix: weekend_transient_matrix,
-            absorption_probabilities: None,
-        };
+            let weekend_modifier = ItineraryModifier {
+                modifier_activity: ItineraryActivity::Activity(weekend_activity_transition_matrix),
+            };
 
-        let weekend_modifier = ItineraryModifier {
-            modifier_activity: ItineraryActivity::Activity(weekend_activity_transition_matrix),
-        };
+            let school_transient_matrix = [
+                [0.0, 0.0, 0.0, 0.0],
+                [0.75, 0.0, 0.0, 0.25],
+                [0.75, 0.0, 0.0, 0.25],
+                [0.75, 0.0, 0.0, 0.25],
+            ];
 
-        let school_transient_matrix = [
-            [0.0, 0.0, 0.0, 0.0],
-            [0.75, 0.0, 0.0, 0.25],
-            [0.75, 0.0, 0.0, 0.25],
-            [0.75, 0.0, 0.0, 0.25],
-        ];
+            let school_activity_transition_matrix = ActivityTransitionMatrix {
+                transient_matrix: school_transient_matrix,
+                absorption_probabilities: None,
+            };
 
-        let school_activity_transition_matrix = ActivityTransitionMatrix {
-            transient_matrix: school_transient_matrix,
-            absorption_probabilities: None,
-        };
+            let school_modifier = ItineraryModifier {
+                modifier_activity: ItineraryActivity::Activity(school_activity_transition_matrix),
+            };
+            
+            context.register_itinerary_modifier(Age(11), weekend_modifier);
+            context.register_itinerary_modifier(Age(11), school_modifier);
+            let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
+            let modifiers = context.get_itinerary_modifiers(p1);
+            assert_eq!(modifiers.len(), 2);
+            assert!(modifiers.contains(&school_modifier));
+            assert!(modifiers.contains(&weekend_modifier));
+        }
 
-        let school_modifier = ItineraryModifier {
-            modifier_activity: ItineraryActivity::Activity(school_activity_transition_matrix),
-        };
+        #[test]
+        fn test_itinerary_modifier_removal_by_property() {
+            let mut context = setup();
+            let weekend_transient_matrix = [
+                [0.0, 0.0, 0.0, 0.0],
+                [0.5, 0.0, 0.0, 0.5],
+                [0.5, 0.0, 0.0, 0.5],
+                [0.0, 0.0, 0.0, 0.0],
+            ];
 
-        context.register_itinerary_modifier(Age(11), weekend_modifier);
-        context.register_itinerary_modifier(Age(11), school_modifier);
-        let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
-        let modifiers = context.get_itinerary_modifiers(p1);
-        assert_eq!(modifiers.len(), 2);
-        assert!(modifiers.contains(&school_modifier));
-        assert!(modifiers.contains(&weekend_modifier));
-    }
+            let weekend_activity_transition_matrix = ActivityTransitionMatrix {
+                transient_matrix: weekend_transient_matrix,
+                absorption_probabilities: None,
+            };
 
-    #[test]
-    fn test_itinerary_modifier_removal_by_property() {
-        let mut context = setup();
-        let weekend_transient_matrix = [
-            [0.0, 0.0, 0.0, 0.0],
-            [0.5, 0.0, 0.0, 0.5],
-            [0.5, 0.0, 0.0, 0.5],
-            [0.0, 0.0, 0.0, 0.0],
-        ];
+            let weekend_modifier = ItineraryModifier {
+                modifier_activity: ItineraryActivity::Activity(weekend_activity_transition_matrix),
+            };
+            context.register_itinerary_modifier(Age(10), weekend_modifier);
+            context.register_itinerary_modifier(Age(11), weekend_modifier);
+            let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
+            let p2 = context.add_entity::<Person, _>((Age(10),)).unwrap();
+            let modifiers_p1 = context.get_itinerary_modifiers(p1);
+            assert_eq!(modifiers_p1.len(), 1);
+            assert!(modifiers_p1.contains(&weekend_modifier));
 
-        let weekend_activity_transition_matrix = ActivityTransitionMatrix {
-            transient_matrix: weekend_transient_matrix,
-            absorption_probabilities: None,
-        };
+            let modifiers_p2 = context.get_itinerary_modifiers(p2);
+            assert_eq!(modifiers_p2.len(), 1);
+            assert!(modifiers_p2.contains(&weekend_modifier));
 
-        let weekend_modifier = ItineraryModifier {
-            modifier_activity: ItineraryActivity::Activity(weekend_activity_transition_matrix),
-        };
-        context.register_itinerary_modifier(Age(10), weekend_modifier);
-        context.register_itinerary_modifier(Age(11), weekend_modifier);
-        let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
-        let p2 = context.add_entity::<Person, _>((Age(10),)).unwrap();
-        let modifiers_p1 = context.get_itinerary_modifiers(p1);
-        assert_eq!(modifiers_p1.len(), 1);
-        assert!(modifiers_p1.contains(&weekend_modifier));
+            // This would remove all age based itinerary modifiers that is not ideal.
+            context.remove_itinerary_modifier_by_property::<Age>(Age(11));
+            let modifiers_p1 = context.get_itinerary_modifiers(p1);
+            assert_eq!(modifiers_p1.len(), 0);
 
-        let modifiers_p2 = context.get_itinerary_modifiers(p2);
-        assert_eq!(modifiers_p2.len(), 1);
-        assert!(modifiers_p2.contains(&weekend_modifier));
-
-        // This would remove all age based itinerary modifiers that is not ideal.
-        context.remove_itinerary_modifier_by_property::<Age>(Age(11));
-        let modifiers_p1 = context.get_itinerary_modifiers(p1);
-        assert_eq!(modifiers_p1.len(), 0);
-
-        let modifiers_p2 = context.get_itinerary_modifiers(p2);
-        assert_eq!(modifiers_p2.len(), 1);
-        assert!(modifiers_p2.contains(&weekend_modifier));
-    }
+            let modifiers_p2 = context.get_itinerary_modifiers(p2);
+            assert_eq!(modifiers_p2.len(), 1);
+            assert!(modifiers_p2.contains(&weekend_modifier));
+        }
     #[test]
     fn test_shelter_in_place_and_weekends() {
-        // We have a shelter in place + a weekend. Shelter in place moves the time spent doing 50%
-        // of community activities to doing home activities. Weekends change time spent doing school/work
-        // activities to doing activities in the home or community. We will assume that time is split equally
+        // We have a shelter in place + a weekend. Shelter in place moves the time spent doing 50% 
+        // of community activities to doing home activities. Weekends change time spent doing school/work 
+        // activities to doing activities in the home or community. We will assume that time is split equally 
         // between home and the community.
-        // If your initial itinerary was Home (0.3) Work (0.0) School (0.5) Com (0.2).
+        // If your initial itinerary was Home (0.3) Work (0.0) School (0.5) Com (0.2). 
         // Under shelter in place your itinerary would be Home (0.9) Work (0.0) School (0.0) Com (0.1)
         // Under weekend your itinerary would be Home (0.55) Work (0.0) School (0.0) Com (0.45)
         // Under both shelter in place and weekend Home (0.775) Work (0.0) School (0.0) Com (0.225)
@@ -595,15 +600,16 @@ mod test {
                 itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
             },
         );
+        
     }
 
     #[test]
     fn test_isolation_and_weekends() {
-        // We have isolation + weekend. Isolation changes the location of all activities
-        // to home. Weekends change time spent doing school/work activities to doing activities
-        // in the home or community. We will assume that time is split equally between home and
+        // We have isolation + weekend. Isolation changes the location of all activities 
+        // to home. Weekends change time spent doing school/work activities to doing activities 
+        // in the home or community. We will assume that time is split equally between home and 
         // the community.
-        // If your initial itinerary was Home (0.25) Work (0.25) School (0.25) Com (0.25).
+        // If your initial itinerary was Home (0.25) Work (0.25) School (0.25) Com (0.25). 
         // Under isolation your itinerary would be Home (1) Work (0.0) School (0.0) Com (0.0)
         // Under weekend your itinerary would be Home (0.5) Work (0.0) School (0.0) Com (0.5)
         // Under both isolation and weekend Home (1) Work (0.0) School (0.0) Com (0.0)
