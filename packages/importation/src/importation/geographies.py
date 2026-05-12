@@ -42,7 +42,7 @@ def get_total_state_population_data(
     """
     filename = f"state_population_data_{year if year else 'latest'}.csv"
     filepath = Path(".cache") / filename
-    if filepath.exists():
+    if filepath.exists() and cache:
         return pl.read_csv(filepath)
     else:
         api_key = get_api_key()
