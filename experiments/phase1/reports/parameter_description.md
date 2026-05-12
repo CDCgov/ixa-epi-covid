@@ -21,6 +21,8 @@ Updated for phase 1 calibration as of April 28th, 2026
 
 ## Parameter Values
 
+*See `symptom_status_params.qmd` for discussion of how delay distribution parameters were derived.*
+
 | Parameter                                     | Value or Prior                       | Value Source |
 |-----------------------------------------------|--------------------------------------|--------------|
 | `infectiousness_rate_fn (rate)`               | `LogNormal (mean -1.5, std_dev 0.5)` | Scaled to duration in order to produce an $R_0$ of approximately 2.1 |
