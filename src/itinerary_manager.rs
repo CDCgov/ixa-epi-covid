@@ -5,32 +5,182 @@ use std::{
     collections::HashMap,
 };
 
-use crate::population_loader::{Person, PersonId};
-use crate::{settings::SETTING_COUNT};
+use crate::settings::SETTING_COUNT;
+use crate::{
+    population_loader::{Person, PersonId},
+    settings::ItineraryRatios,
+};
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub struct ActivityTransitionMatix {
+pub struct ActivityTransitionMatrix {
     transient_matrix: [[f64; SETTING_COUNT]; SETTING_COUNT],
-    absorbing_matrix: [[f64; SETTING_COUNT]; SETTING_COUNT],
+    absorption_probabilities: Option<[[f64; SETTING_COUNT]; SETTING_COUNT]>,
 }
 
-// impl ActivityTransitionMatix {
-//     pub fn normalize(&self) -> ActivityTransitionMatix {
-//         let normalized = 
-//     }
-// }
+#[allow(dead_code)]
+#[allow(clippy::needless_range_loop)]
+impl ActivityTransitionMatrix {
+    pub fn normalize(&mut self) {
+        let mut normalized_transient_matrix = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+        for i in 0..SETTING_COUNT {
+            let row_sum: f64 = self.transient_matrix[i].iter().sum();
+            if row_sum > 1.0 {
+                for j in 0..SETTING_COUNT {
+                    normalized_transient_matrix[i][j] = self.transient_matrix[i][j] / row_sum;
+                }
+            } else {
+                for j in 0..SETTING_COUNT {
+                    normalized_transient_matrix[i][j] = self.transient_matrix[i][j];
+                }
+            }
+        }
+        self.transient_matrix = normalized_transient_matrix;
+    }
+
+    pub fn get_absorbing_matrix(&self) -> [[f64; SETTING_COUNT]; SETTING_COUNT] {
+        let mut absorbing_matrix = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+        for i in 0..SETTING_COUNT {
+            let row_sum: f64 = self.transient_matrix[i].iter().sum();
+            absorbing_matrix[i][i] = 1.0 - row_sum;
+        }
+        absorbing_matrix
+    }
+
+    pub fn layer(
+        &self,
+        activity_transition_matrix: &ActivityTransitionMatrix,
+    ) -> ActivityTransitionMatrix {
+        let mut layered_transient_matrix = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+
+        for i in 0..SETTING_COUNT {
+            for j in 0..SETTING_COUNT {
+                layered_transient_matrix[i][j] =
+                    self.transient_matrix[i][j] + activity_transition_matrix.transient_matrix[i][j];
+            }
+        }
+
+        ActivityTransitionMatrix {
+            transient_matrix: layered_transient_matrix,
+            absorption_probabilities: None,
+        }
+    }
+
+    fn calculate_absorption_probabilities(&mut self) {
+        // Create identity matrix I
+        let mut identity = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+        for i in 0..SETTING_COUNT {
+            identity[i][i] = 1.0;
+        }
+
+        // Calculate I - Q (where Q is the transient matrix)
+        let mut i_minus_q = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+        for i in 0..SETTING_COUNT {
+            for j in 0..SETTING_COUNT {
+                i_minus_q[i][j] = identity[i][j] - self.transient_matrix[i][j];
+            }
+        }
+
+        // Invert (I - Q) to get the fundamental matrix N
+        // Using Gaussian elimination with partial pivoting
+        let n = i_minus_q;
+
+        // Create augmented identity matrix for inversion
+        let mut aug = [[0.0; 2 * SETTING_COUNT]; SETTING_COUNT];
+        for i in 0..SETTING_COUNT {
+            for j in 0..SETTING_COUNT {
+                aug[i][j] = n[i][j];
+                aug[i][j + SETTING_COUNT] = if i == j { 1.0 } else { 0.0 };
+            }
+        }
+
+        // Forward elimination with partial pivoting
+        for col in 0..SETTING_COUNT {
+            // Find pivot
+            let mut pivot_row = col;
+            let mut max_val = aug[col][col].abs();
+            for row in col + 1..SETTING_COUNT {
+                if aug[row][col].abs() > max_val {
+                    max_val = aug[row][col].abs();
+                    pivot_row = row;
+                }
+            }
+
+            // Swap rows
+            if pivot_row != col {
+                aug.swap(col, pivot_row);
+            }
+
+            // Scale pivot row
+            let pivot = aug[col][col];
+            if pivot.abs() > f64::EPSILON {
+                for j in 0..2 * SETTING_COUNT {
+                    aug[col][j] /= pivot;
+                }
+
+                // Eliminate column
+                for row in 0..SETTING_COUNT {
+                    if row != col {
+                        let factor = aug[row][col];
+                        for j in 0..2 * SETTING_COUNT {
+                            aug[row][j] -= factor * aug[col][j];
+                        }
+                    }
+                }
+            }
+        }
+
+        let absorbing_matrix = self.get_absorbing_matrix();
+
+        // Extract inverted matrix and calculate absorption probabilities
+        let mut absorption_probs = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+        for i in 0..SETTING_COUNT {
+            for j in 0..SETTING_COUNT {
+                for k in 0..SETTING_COUNT {
+                    absorption_probs[i][j] += aug[i][k + SETTING_COUNT] * absorbing_matrix[k][j];
+                }
+            }
+        }
+
+        self.absorption_probabilities = Some(absorption_probs);
+    }
+
+    pub fn apply(&mut self, current_itinerary: &[f64; SETTING_COUNT]) -> [f64; SETTING_COUNT] {
+        if self.absorption_probabilities.is_none() {
+            self.calculate_absorption_probabilities();
+        }
+        let absorption_probs = self.absorption_probabilities.unwrap();
+        let mut new_itinerary = [0.0; SETTING_COUNT];
+        for j in 0..SETTING_COUNT {
+            for i in 0..SETTING_COUNT {
+                new_itinerary[j] += current_itinerary[i] * absorption_probs[i][j];
+            }
+        }
+        new_itinerary
+    }
+}
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
 pub struct LocationTransitionMatrix {
     matrix: [[f64; SETTING_COUNT]; SETTING_COUNT],
 }
+#[allow(clippy::needless_range_loop)]
+impl LocationTransitionMatrix {
+    pub fn apply(&self, current_itinerary: &[f64; SETTING_COUNT]) -> [f64; SETTING_COUNT] {
+        let mut new_itinerary = [0.0; SETTING_COUNT];
+        for j in 0..SETTING_COUNT {
+            for i in 0..SETTING_COUNT {
+                new_itinerary[j] += current_itinerary[i] * self.matrix[i][j];
+            }
+        }
+        new_itinerary
+    }
+}
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
 pub enum ItineraryActivity {
-    Activity(ActivityTransitionMatix),
+    Activity(ActivityTransitionMatrix),
     Location(LocationTransitionMatrix),
 }
-
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
 pub struct ItineraryModifier {
@@ -155,6 +305,7 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
     }
 
     fn get_itinerary_modifiers(&self, person_id: PersonId) -> Vec<ItineraryModifier>;
+    fn get_modified_itinerary(&self, person_id: PersonId) -> [f64; SETTING_COUNT];
 }
 impl ContextItineraryModifierExt for Context {
     // This needs to be here to have access to the concrete context type for the get_itinerary trait method
@@ -169,7 +320,50 @@ impl ContextItineraryModifierExt for Context {
         }
         modifiers
     }
+
+    fn get_modified_itinerary(&self, person_id: PersonId) -> [f64; SETTING_COUNT] {
+        let base_itinerary = self.get_property::<Person, ItineraryRatios>(person_id);
+        let modifiers = self.get_itinerary_modifiers(person_id);
+        let activity_modifiers: Vec<ItineraryModifier> = modifiers
+            .iter()
+            .filter(|modifier| matches!(modifier.modifier_activity, ItineraryActivity::Activity(_)))
+            .cloned()
+            .collect();
+        let location_modifiers: Vec<ItineraryModifier> = modifiers
+            .into_iter()
+            .filter(|modifier| matches!(modifier.modifier_activity, ItineraryActivity::Location(_)))
+            .collect();
+
+        let mut layered_activity_matrix: Option<ActivityTransitionMatrix> = None;
+        for modifier in activity_modifiers {
+            if let ItineraryActivity::Activity(activity_matrix) = modifier.modifier_activity {
+                layered_activity_matrix = Some(match layered_activity_matrix {
+                    Some(existing) => existing.layer(&activity_matrix),
+                    None => activity_matrix,
+                });
+            }
+        }
+
+        let mut modified_itinerary = [0.0; SETTING_COUNT];
+        if let Some(mut layered_activity_matrix) = layered_activity_matrix {
+            layered_activity_matrix.normalize();
+            layered_activity_matrix.calculate_absorption_probabilities();
+            modified_itinerary = layered_activity_matrix.apply(&base_itinerary.itinerary_ratios);
+        }
+        println!(
+            "Itinerary after applying activity modifiers: {:?}",
+            modified_itinerary
+        );
+        for modifier in location_modifiers {
+            if let ItineraryActivity::Location(location_matrix) = modifier.modifier_activity {
+                modified_itinerary = location_matrix.apply(&modified_itinerary);
+            }
+        }
+        modified_itinerary
+    }
 }
+
+// need method to check communitivity of location modifier matrices
 
 #[cfg(test)]
 mod test {
@@ -179,7 +373,7 @@ mod test {
     use crate::settings::SettingCategory;
     use ixa::HashMap;
 
-    fn setup(home_ratio: f64, school_ratio: f64, work_ratio: f64, community_ratio: f64) -> Context {
+    fn setup() -> Context {
         let mut context = Context::new();
         let parameters = Params {
             settings_properties: HashMap::from_iter(
@@ -193,10 +387,10 @@ mod test {
                 .collect::<HashMap<_, _>>(),
             ),
             itinerary_ratios: HashMap::from_iter([
-                (SettingCategory::Home, home_ratio),
-                (SettingCategory::School, school_ratio),
-                (SettingCategory::Work, work_ratio),
-                (SettingCategory::Community, community_ratio),
+                (SettingCategory::Home, 0.25),
+                (SettingCategory::School, 0.25),
+                (SettingCategory::Work, 0.25),
+                (SettingCategory::Community, 0.25),
             ]),
             ..Default::default()
         };
@@ -209,190 +403,264 @@ mod test {
 
     #[test]
     fn test_itinerary_modifier_registration() {
-        let mut context = setup(0.25, 0.25, 0.25, 0.25);
-        let school_closure_modifier = ItineraryModifier {
-            ranking: 1,
-            itinerary_ratios: ItineraryRatios {
-                itinerary_ratios: [0.75, 0.0, 0.0, 0.25],
-            },
+        let mut context = setup();
+        let weekend_transient_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [0.5, 0.0, 0.0, 0.5],
+            [0.5, 0.0, 0.0, 0.5],
+            [0.0, 0.0, 0.0, 0.0],
+        ];
+
+        let weekend_activity_transition_matrix = ActivityTransitionMatrix {
+            transient_matrix: weekend_transient_matrix,
+            absorption_probabilities: None,
         };
-        context.register_itinerary_modifier(Age(11), school_closure_modifier);
+
+        let weekend_modifier = ItineraryModifier {
+            modifier_activity: ItineraryActivity::Activity(weekend_activity_transition_matrix),
+        };
+
+        context.register_itinerary_modifier(Age(11), weekend_modifier);
         let p1 = context.add_entity::<Person, _>((Age(10),)).unwrap();
         let p2 = context.add_entity::<Person, _>((Age(11),)).unwrap();
-        let dominant_modifier_p1 = context.get_dominant_itinerary_modifier(p1);
-        let dominant_modifier_p2 = context.get_dominant_itinerary_modifier(p2);
-        assert_eq!(dominant_modifier_p1, None);
-        assert_eq!(dominant_modifier_p2, Some(school_closure_modifier));
+        let modifiers_p1 = context.get_itinerary_modifiers(p1);
+        let modifiers_p2 = context.get_itinerary_modifiers(p2);
+        assert_eq!(modifiers_p1.len(), 0);
+        assert_eq!(modifiers_p2, vec![weekend_modifier]);
 
-        context.register_itinerary_modifier(Age(10), school_closure_modifier);
-        assert_eq!(
-            context.get_dominant_itinerary_modifier(p1),
-            Some(school_closure_modifier)
-        );
-        assert_eq!(
-            context.get_dominant_itinerary_modifier(p2),
-            Some(school_closure_modifier)
-        );
+        context.register_itinerary_modifier(Age(10), weekend_modifier);
+        assert_eq!(context.get_itinerary_modifiers(p1), vec![weekend_modifier]);
+        assert_eq!(context.get_itinerary_modifiers(p2), vec![weekend_modifier]);
     }
 
     #[test]
     fn test_register_multiple_itinerary_modifiers() {
-        let mut context = setup(0.25, 0.25, 0.25, 0.25);
-        let school_closure_modifier = ItineraryModifier {
-            ranking: 1,
-            itinerary_ratios: ItineraryRatios {
-                itinerary_ratios: [0.75, 0.0, 0.0, 0.25],
-            },
+        let mut context = setup();
+
+        let weekend_transient_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [0.5, 0.0, 0.0, 0.5],
+            [0.5, 0.0, 0.0, 0.5],
+            [0.0, 0.0, 0.0, 0.0],
+        ];
+
+        let weekend_activity_transition_matrix = ActivityTransitionMatrix {
+            transient_matrix: weekend_transient_matrix,
+            absorption_probabilities: None,
         };
-        let work_closure_modifier = ItineraryModifier {
-            ranking: 2,
-            itinerary_ratios: ItineraryRatios {
-                itinerary_ratios: [0.75, 0.0, 0.25, 0.0],
-            },
+
+        let weekend_modifier = ItineraryModifier {
+            modifier_activity: ItineraryActivity::Activity(weekend_activity_transition_matrix),
         };
-        context.register_itinerary_modifier(Age(11), school_closure_modifier);
-        context.register_itinerary_modifier(Age(11), work_closure_modifier);
+
+        let school_transient_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [0.75, 0.0, 0.0, 0.25],
+            [0.75, 0.0, 0.0, 0.25],
+            [0.75, 0.0, 0.0, 0.25],
+        ];
+
+        let school_activity_transition_matrix = ActivityTransitionMatrix {
+            transient_matrix: school_transient_matrix,
+            absorption_probabilities: None,
+        };
+
+        let school_modifier = ItineraryModifier {
+            modifier_activity: ItineraryActivity::Activity(school_activity_transition_matrix),
+        };
+
+        context.register_itinerary_modifier(Age(11), weekend_modifier);
+        context.register_itinerary_modifier(Age(11), school_modifier);
         let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
         let modifiers = context.get_itinerary_modifiers(p1);
         assert_eq!(modifiers.len(), 2);
-        assert!(modifiers.contains(&school_closure_modifier));
-        assert!(modifiers.contains(&work_closure_modifier));
+        assert!(modifiers.contains(&school_modifier));
+        assert!(modifiers.contains(&weekend_modifier));
     }
 
     #[test]
     fn test_itinerary_modifier_removal_by_property() {
-        let mut context = setup(0.25, 0.25, 0.25, 0.25);
-        let school_closure_modifier = ItineraryModifier {
-            ranking: 1,
-            itinerary_ratios: ItineraryRatios {
-                itinerary_ratios: [0.75, 0.0, 0.0, 0.25],
-            },
-        };
-        context.register_itinerary_modifier(Age(10), school_closure_modifier);
-        context.register_itinerary_modifier(Age(11), school_closure_modifier);
-        let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
-        let p2 = context.add_entity::<Person, _>((Age(10),)).unwrap();
-        assert_eq!(
-            context.get_dominant_itinerary_modifier(p1),
-            Some(school_closure_modifier)
-        );
-        assert_eq!(
-            context.get_dominant_itinerary_modifier(p2),
-            Some(school_closure_modifier)
-        );
-        // This would remove all age based itinerary modifiers that is not ideal.
-        context.remove_itinerary_modifier_by_property::<Age>(Age(11));
-        assert_eq!(context.get_dominant_itinerary_modifier(p1), None);
-        assert_eq!(
-            context.get_dominant_itinerary_modifier(p2),
-            Some(school_closure_modifier)
-        );
-    }
+        let mut context = setup();
+        let weekend_transient_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [0.5, 0.0, 0.0, 0.5],
+            [0.5, 0.0, 0.0, 0.5],
+            [0.0, 0.0, 0.0, 0.0],
+        ];
 
-    #[test]
-    fn test_itinerary_modifier_removal_by_property_and_type() {
-        let mut context = setup(0.25, 0.25, 0.25, 0.25);
-        let school_closure_modifier = ItineraryModifier {
-            ranking: 1,
-            itinerary_ratios: ItineraryRatios {
-                itinerary_ratios: [0.75, 0.0, 0.0, 0.25],
-            },
+        let weekend_activity_transition_matrix = ActivityTransitionMatrix {
+            transient_matrix: weekend_transient_matrix,
+            absorption_probabilities: None,
         };
+
         let weekend_modifier = ItineraryModifier {
-            ranking: 2,
-            itinerary_ratios: ItineraryRatios {
-                itinerary_ratios: [0.5, 0.0, 0.0, 0.5],
-            },
+            modifier_activity: ItineraryActivity::Activity(weekend_activity_transition_matrix),
         };
-        context.register_itinerary_modifier(Age(11), school_closure_modifier);
+        context.register_itinerary_modifier(Age(10), weekend_modifier);
         context.register_itinerary_modifier(Age(11), weekend_modifier);
         let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
-        assert_eq!(
-            context.get_dominant_itinerary_modifier(p1),
-            Some(weekend_modifier)
-        );
-        context.remove_itinerary_modifier_by_property_and_type::<Age>(
-            Age(11),
-            ItineraryModifierType::Weekend,
-        );
-        assert_eq!(
-            context.get_dominant_itinerary_modifier(p1),
-            Some(school_closure_modifier)
-        );
-    }
+        let p2 = context.add_entity::<Person, _>((Age(10),)).unwrap();
+        let modifiers_p1 = context.get_itinerary_modifiers(p1);
+        assert_eq!(modifiers_p1.len(), 1);
+        assert!(modifiers_p1.contains(&weekend_modifier));
 
-    #[test]
-    fn test_itinerary_modifier_dominance() {
-        let mut context = setup(0.25, 0.25, 0.25, 0.25);
-        let school_closure_modifier = ItineraryModifier {
-            ranking: 1,
-            itinerary_ratios: ItineraryRatios {
-                itinerary_ratios: [0.75, 0.0, 0.0, 0.25],
-            },
-        };
-        let work_closure_modifier = ItineraryModifier {
-            ranking: 2,
-            itinerary_ratios: ItineraryRatios {
-                itinerary_ratios: [0.75, 0.0, 0.25, 0.0],
-            },
-        };
-        context.register_itinerary_modifier(Age(11), school_closure_modifier);
-        context.register_itinerary_modifier(Age(11), work_closure_modifier);
-        let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
-        assert_eq!(
-            context.get_dominant_itinerary_modifier(p1),
-            Some(work_closure_modifier)
-        );
-    }
+        let modifiers_p2 = context.get_itinerary_modifiers(p2);
+        assert_eq!(modifiers_p2.len(), 1);
+        assert!(modifiers_p2.contains(&weekend_modifier));
 
+        // This would remove all age based itinerary modifiers that is not ideal.
+        context.remove_itinerary_modifier_by_property::<Age>(Age(11));
+        let modifiers_p1 = context.get_itinerary_modifiers(p1);
+        assert_eq!(modifiers_p1.len(), 0);
+
+        let modifiers_p2 = context.get_itinerary_modifiers(p2);
+        assert_eq!(modifiers_p2.len(), 1);
+        assert!(modifiers_p2.contains(&weekend_modifier));
+    }
     #[test]
-    fn example_with_schools_and_weekends() {
-        let mut context = setup(0.25, 0.25, 0.25, 0.25);
-        let school_closure_modifier = ItineraryModifier {
-            ranking: 1,
-            itinerary_ratios: ItineraryRatios {
-                itinerary_ratios: [0.75, 0.0, 0.0, 0.25],
-            },
-            modifier_type: ItineraryModifierType::SchoolClosure,
+    fn test_shelter_in_place_and_weekends() {
+        // We have a shelter in place + a weekend. Shelter in place moves the time spent doing 50%
+        // of community activities to doing home activities. Weekends change time spent doing school/work
+        // activities to doing activities in the home or community. We will assume that time is split equally
+        // between home and the community.
+        // If your initial itinerary was Home (0.3) Work (0.0) School (0.5) Com (0.2).
+        // Under shelter in place your itinerary would be Home (0.9) Work (0.0) School (0.0) Com (0.1)
+        // Under weekend your itinerary would be Home (0.55) Work (0.0) School (0.0) Com (0.45)
+        // Under both shelter in place and weekend Home (0.775) Work (0.0) School (0.0) Com (0.225)
+        // The solution for comparison is worked by hand
+
+        let mut context = setup();
+        let weekend_transient_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [0.5, 0.0, 0.0, 0.5],
+            [0.5, 0.0, 0.0, 0.5],
+            [0.0, 0.0, 0.0, 0.0],
+        ];
+
+        let sip_transient_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.5, 0.0, 0.0, 0.0],
+        ];
+
+        let sip_location_matrix = [
+            [1.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let weekend_activity_transition_matrix = ActivityTransitionMatrix {
+            transient_matrix: weekend_transient_matrix,
+            absorption_probabilities: None,
+        };
+
+        let sip_activity_transition_matrix = ActivityTransitionMatrix {
+            transient_matrix: sip_transient_matrix,
+            absorption_probabilities: None,
+        };
+
+        let sip_location_transition_matrix = LocationTransitionMatrix {
+            matrix: sip_location_matrix,
         };
 
         let weekend_modifier = ItineraryModifier {
-            ranking: 2,
-            itinerary_ratios: ItineraryRatios {
-                itinerary_ratios: [0.5, 0.0, 0.0, 0.5],
-            },
-            modifier_type: ItineraryModifierType::Weekend,
+            modifier_activity: ItineraryActivity::Activity(weekend_activity_transition_matrix),
         };
 
+        let sip_modifier = ItineraryModifier {
+            modifier_activity: ItineraryActivity::Activity(sip_activity_transition_matrix),
+        };
+
+        let itinerary_modifier = ItineraryModifier {
+            modifier_activity: ItineraryActivity::Location(sip_location_transition_matrix),
+        };
+        context.register_itinerary_modifier(Age(11), weekend_modifier);
+        let p1 = context.add_entity::<Person, _>((Age(10),)).unwrap();
+        let p2 = context.add_entity::<Person, _>((Age(11),)).unwrap();
+        let modifiers_p1 = context.get_itinerary_modifiers(p1);
+        let modifiers_p2 = context.get_itinerary_modifiers(p2);
+        assert_eq!(modifiers_p1.len(), 0);
+        assert_eq!(modifiers_p2, vec![weekend_modifier]);
+
+        context.register_itinerary_modifier(Age(10), weekend_modifier);
+        assert_eq!(context.get_itinerary_modifiers(p1), vec![weekend_modifier]);
+        assert_eq!(context.get_itinerary_modifiers(p2), vec![weekend_modifier]);
+
+        context.register_itinerary_modifier(Age(11), sip_modifier);
+        context.register_itinerary_modifier(Age(11), itinerary_modifier);
+        context.set_property(
+            p2,
+            ItineraryRatios {
+                itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
+            },
+        );
+    }
+
+    #[test]
+    fn test_isolation_and_weekends() {
+        // We have isolation + weekend. Isolation changes the location of all activities
+        // to home. Weekends change time spent doing school/work activities to doing activities
+        // in the home or community. We will assume that time is split equally between home and
+        // the community.
+        // If your initial itinerary was Home (0.25) Work (0.25) School (0.25) Com (0.25).
+        // Under isolation your itinerary would be Home (1) Work (0.0) School (0.0) Com (0.0)
+        // Under weekend your itinerary would be Home (0.5) Work (0.0) School (0.0) Com (0.5)
+        // Under both isolation and weekend Home (1) Work (0.0) School (0.0) Com (0.0)
+        // THe solution for comparison is worked by hand
+
+        let mut context = setup();
+        let weekend_transient_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [0.5, 0.0, 0.0, 0.5],
+            [0.5, 0.0, 0.0, 0.5],
+            [0.0, 0.0, 0.0, 0.0],
+        ];
+
+        let isolation_transient_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+        ];
+
+        let weekend_activity_transition_matrix = ActivityTransitionMatrix {
+            transient_matrix: weekend_transient_matrix,
+            absorption_probabilities: None,
+        };
+
+        let isolation_activity_transition_matrix = ActivityTransitionMatrix {
+            transient_matrix: isolation_transient_matrix,
+            absorption_probabilities: None,
+        };
+
+        let weekend_modifier = ItineraryModifier {
+            modifier_activity: ItineraryActivity::Activity(weekend_activity_transition_matrix),
+        };
+
+        let isolation_modifier = ItineraryModifier {
+            modifier_activity: ItineraryActivity::Activity(isolation_activity_transition_matrix),
+        };
         let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
-        context.add_plan(2.0, move |context| {
-            assert_eq!(context.get_dominant_itinerary_modifier(p1), None);
-            context.register_itinerary_modifier(Age(11), school_closure_modifier);
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p1),
-                Some(school_closure_modifier)
-            );
-        });
-
-        context.add_plan(4.0, move |context| {
-            context.register_itinerary_modifier(Alive(true), weekend_modifier);
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p1),
-                Some(weekend_modifier)
-            );
-        });
-        context.add_plan(6.0, move |context| {
-            context.remove_itinerary_modifier_by_property::<Alive>(Alive(true));
-            assert_eq!(
-                context.get_dominant_itinerary_modifier(p1),
-                Some(school_closure_modifier)
-            );
-        });
-
-        context.add_plan(8.0, move |context| {
-            context.remove_itinerary_modifier_by_property::<Age>(Age(11));
-            assert_eq!(context.get_dominant_itinerary_modifier(p1), None);
-        });
-        context.execute();
+        context.register_itinerary_modifier(Age(11), weekend_modifier);
+        context.register_itinerary_modifier(Age(11), isolation_modifier);
+        context.set_property(
+            p1,
+            ItineraryRatios {
+                itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
+            },
+        );
+        println!(
+            "Modifiers for p1: {:?}",
+            context.get_itinerary_modifiers(p1)
+        );
+        println!(
+            "Base itinerary for p1: {:?}",
+            context.get_property::<Person, ItineraryRatios>(p1)
+        );
+        println!(
+            "Modified itinerary for p1: {:?}",
+            context.get_modified_itinerary(p1)
+        );
     }
 }
