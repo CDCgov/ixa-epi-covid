@@ -11,13 +11,13 @@
 8. `itinerary modifier`: a paired set of an action modifier and a space usage modifier that change how an individual spends their time across locations.
 
 ## Definition
-Imagine we have a person who spends their time doing $m$ actions across $n$ locations. Call the proportion of time that a person spends in each location of their activity space an "itinerary". An itinerary for person $i$ is the matrix $A_i$, which is an $n \times 1$ matrix. The proportion of time that a person spends doing each action is the matrix $B_i$, which is a $m\times 1$ matrix. In order to arrive at $A_i$ from $B_i$, we require information on the proportion of an action that a person does across locations in their activity space. We call this the space assignment matrix, $M_i$, which is an $m \times n$ matrix. We can therefore say that
+Imagine we have a person who spends their time doing $m$ actions across $n$ locations. Call the proportion of time that a person spends in each location of their activity space an "itinerary". An itinerary for person $i$ is the matrix $A_i$, which is an $n \times 1$ matrix. The proportion of time that a person spends doing each action is the matrix $B_i$, which is an $m\times 1$ matrix. In order to arrive at $A_i$ from $B_i$, we require information on the proportion of an action that a person does across locations in their activity space. We call this the space assignment matrix, $M_i$, which is an $m \times n$ matrix. We can therefore say that
 
 $$ A = M B, $$
 
 removing subscripts for clarity.
 
-Both the space assignment matrix $M$ and the action vector can be modified. Space usage modifiers are $n \times n$ transition matrices, the columns of which each sum to one. Action modifiers are $m \times m$ transition matrices, the columns of which each sum to one. If we define matrix $Q$ to be the product of all active space usage modifiers and deine matrix $R$ to be the product of all active action modifiers, then the realized itinerary $\hat{A}$ of a person becomes
+Both the space assignment matrix $M$ and the action vector can be modified. Space usage modifiers are $n \times n$ transition matrices, the columns of which each sum to one. Action modifiers are $m \times m$ transition matrices, the columns of which each sum to one. If we define matrix $Q$ to be the product of all active space usage modifiers and define matrix $R$ to be the product of all active action modifiers, then the realized itinerary $\hat{A}$ of a person becomes
 
 $$ \hat{A} = QMRB $$
 
@@ -26,7 +26,7 @@ Setting $Q=I$ and $R=I$ in the above equation, where $I$ is the identity matrix,
 ### Arbitrary example
 A person has action vector
 
-$$ B = \begin{array}{|c|} p_i \\ p_j \\ p_k \\ \end{array} $$
+$$ B = \begin{array}{|c|} p_i \\\ p_j \\\ p_k \\\ \end{array} $$
 
 for $m=3$ actions: $i, j$, and $k$. Their space assignment matrix $M$ for four locations ($w, x, y,$ and $z$) is
 
@@ -66,7 +66,7 @@ $$ M = \begin{array}{|cccc|}
 
 $$ A = MB = IB = B  $$
 
-We apply a policy "isolation", comprised of space usage modifier $Q_{\text{isolate}}$, which moves school and work actions to take place at home, and $R_{\text{isolate}}$, which reduces time spent doing Community in half.
+We apply an itinerary modifier "isolation", comprised of space usage modifier $Q_{\text{isolate}}$, which moves school and work actions to take place at home, and action modifier $R_{\text{isolate}}$, which reduces time spent doing Community in half.
 
 $$ Q_{\text{isolate}} = \begin{array}{|cccc|}
 1.0 & 1.0 & 1.0 & 0 \\
