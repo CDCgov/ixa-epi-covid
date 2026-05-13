@@ -26,7 +26,7 @@ Setting $Q=I$ and $R=I$ in the above equation, where $I$ is the identity matrix,
 ### Arbitrary example
 A person has action vector
 
-$$ B = \begin{array}{|c|} p_i \\ p_j \\ p_k \\\end{array} $$
+$$ B = \begin{array}{|c|} p_i \\ p_j \\ p_k \\ \end{array} $$
 
 for $m=3$ actions: $i, j$, and $k$. Their space assignment matrix $M$ for four locations ($w, x, y,$ and $z$) is
 
@@ -54,7 +54,7 @@ p_jq_{j,z} + p_kq_{k,z} \\
 A person has $n=4$ spaces that they could use: (Home, Work, School, Community). They do $m=4$ actions: (Home, Work, School, Community). We define
 
 $$ B = \begin{array}{|c|}
-0.3 \\ 0.0 \\ 0.5 \\ 0.2
+0.3 \\\ 0.0 \\\ 0.5 \\\ 0.2
 \end{array}$$
 
 $$ M = \begin{array}{|cccc|}
@@ -99,7 +99,7 @@ $$\hat{A}=Q_{\text{isolate}}MR_{\text{obs}}B=\begin{array}{|cccc|}
 0 & 0 & 0 & 0\\
 0 & 0.25 & 0.25 & 0.5 \\
 \end{array}\times\begin{array}{|c|}
-0.3 \\ 0.0 \\ 0.5 \\ 0.2
+0.3 \\\ 0.0 \\\ 0.5 \\\ 0.2
 \end{array}=\begin{array}{|c|}
-0.775 \\ 0.0 \\ 0.0 \\ 0.225 \\
+0.775 \\\ 0.0 \\\ 0.0 \\\ 0.225 \\\
 \end{array}$$
