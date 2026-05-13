@@ -26,7 +26,7 @@ Setting $Q=I$ and $R=I$ in the above equation, where $I$ is the identity matrix,
 ### Arbitrary example
 A person has action vector
 
-$$ B = \begin{matrix} p_i \\ p_j \\ p_k \end{matrix} $$
+$$ B = \begin{matrix} p_i & \\ p_j & \\ p_k & \end{matrix} $$
 
 for $m=3$ actions: $i, j$, and $k$. Their space assignment matrix $M$ for four locations ($w, x, y,$ and $z$) is
 
@@ -43,13 +43,18 @@ where $q_{a,s}$ is the proportion of action $a$ spent in location $s$.
 
 Multiplying the action vector by the space assignment matrix, we get the itinerary
 
-$$ A = \begin{matrix} p_iq_{i,w} \\ p_jq_{j,x} \\ p_kq_{k,y} \\ p_jq_{j,z} + p_kq_{k,z} \end{matrix} $$
+$$ A = \begin{matrix}
+p_iq_{i,w} & \\
+p_jq_{j,x} & \\
+p_kq_{k,y} & \\
+p_jq_{j,z} + p_kq_{k,z} &
+\end{matrix} $$
 
 ### Example 1: isolation space usage modifier + weekend action modifier
 A person has $n=4$ spaces that they could use: (Home, Work, School, Community). They do $m=4$ actions: (Home, Work, School, Community). We define
 
 $$ B = \begin{matrix}
-0.3 \\ 0.0 \\ 0.5 \\ 0.2
+0.3 & \\ 0.0 & \\ 0.5 & \\ 0.2 &
 \end{matrix}$$
 
 $$ M = \begin{matrix}
@@ -89,5 +94,5 @@ $$ R_{\text{weekend}} = \begin{matrix}
 We assert that $R_{\text{weekend}}$ is basal, meaning that "isolate" action changes modify "weekend" actions and that "weekend" actions do not modify "isolate" actions, such that the observed space usage modifier $R_{\text{obs}}=R_{\text{isolate}}R_{\text{weekend}}$. We can now calculate the realized itinerary $\hat{A}$ as
 
 $$\hat{A}=Q_{\text{isolate}}MR_{\text{obs}}B=Q_{\text{isolate}}R_{\text{obs}}B=\begin{matrix}
-0.775 \\ 0.0 \\ 0.0 \\ 0.225
+0.775 & \\ 0.0 & \\ 0.0 & \\ 0.225 &
 \end{matrix}$$$
