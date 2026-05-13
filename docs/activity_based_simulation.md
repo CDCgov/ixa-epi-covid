@@ -50,7 +50,7 @@ p_kq_{k,y} \\
 p_jq_{j,z} + p_kq_{k,z} \\
 \end{array} $$
 
-### Example 1: isolation space usage modifier + weekend action modifier
+### Example 1: isolation itinerary modifier + weekend action modifier
 A person has $n=4$ spaces that they could use: (Home, Work, School, Community). They do $m=4$ actions: (Home, Work, School, Community). We define
 
 $$ B = \begin{array}{|c|}
