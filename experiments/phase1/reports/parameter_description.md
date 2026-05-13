@@ -23,7 +23,7 @@ This document serves to collect the rationale for parameter values and the assum
 | `aggregated_deaths_report`    | Configuration for the aggregated deaths report, including whether to write, filename, and period.|
 | `first_death_terminates_run`  | Boolean indicating whether the simulation terminates upon the first observed death.            |
 
-Because we specify a constant rate function for infectiousness, an approximation to $R_0$ can be calculated by multiplying the rate by the duration. This value yields the minimum total number of infection attempts that each infectious individual will make from their exposure time until they recover. This is a lower bound on $R_0$ because density-dependent transmission specified by settings properties can lead to higher infection attempt emission events as a function of the scaling factor and number of contacts in a setting.
+Because we specify a constant rate function for infectiousness, an approximation to $R_0$ can be calculated by multiplying the rate by the duration. This value yields the minimum total number of infection attempts that each infectious individual will make from their exposure time until they recover. This is a lower bound on the maximum rate of infection attempts because density-dependent transmission specified by settings properties can lead to higher infection attempt emission events as a function of the scaling factor and number of contacts in a setting. This is an approximation to $R_0$, which can be increased by these density-dependent factors or decreased by heterogeneity in the contact structure.
 
 ## Parameter Values
 
@@ -31,7 +31,7 @@ Because we specify a constant rate function for infectiousness, an approximation
 
 | Parameter                                     | Value or Prior                       | Value Source |
 |-----------------------------------------------|--------------------------------------|--------------|
-| `infectiousness_rate_fn (rate)`               | `LogNormal (mean -1.5, std_dev 0.5)` | Scaling by duration, $R_0$ has a mean value of 3.0 and a mode of 2.1 in settings without density-dependent transmission based on the wild-type variant and early reviews like [Billah et al 2020](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0242128) |
+| `infectiousness_rate_fn (rate)`               | `LogNormal (mean -1.5, std_dev 0.5)` | Scaling by duration, approximate $R_0$ has a mean value of 3.0 and a mode of 2.1 in settings without density-dependent transmission based on the wild-type variant and early reviews like [Billah et al 2020](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0242128) |
 | `infectiousness_rate_fn (duration)`           | `12.0`                               | Generation interval maximum from early reviews like [Griffin et al 2020](https://bmjopen.bmj.com/content/10/11/e040263.abstract)|
 | `symptomatic_reporting_prob`                  | `Beta (alpha 5, beta 5)`             | [Perkins et al. 2020](https://www.pnas.org/doi/epdf/10.1073/pnas.2005476117) |
 | `probability_mild_given_infect`               | `Beta (alpha 7, beta 3)`             | Reasonable prior belief that 60%-80% of individuals will develop symptoms; in line with estimate in [CDC COVID-19 Pandemic Planning Scenarios](https://archive.cdc.gov/www_cdc_gov/coronavirus/2019-ncov/hcp/planning-scenarios.html) |
