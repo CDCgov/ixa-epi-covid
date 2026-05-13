@@ -23,7 +23,7 @@ This document serves to collect the rationale for parameter values and the assum
 | `aggregated_deaths_report`    | Configuration for the aggregated deaths report, including whether to write, filename, and period.|
 | `first_death_terminates_run`  | Boolean indicating whether the simulation terminates upon the first observed death.            |
 
-Because we specify a constant rate function for infectiousness, an approximation to $R_0$ can be calculated by multiplying the rate by the duration. This value yields the minimum total number of infection attempts that each infectious individual will make from their exposure time until they recover. This is a lower bound on $R_0$ because density-dependent transmission specified by settings properties can lead to higher infeciton attempt emission events as a function of the scaling factor and number of contacts in a setting.
+Because we specify a constant rate function for infectiousness, an approximation to $R_0$ can be calculated by multiplying the rate by the duration. This value yields the minimum total number of infection attempts that each infectious individual will make from their exposure time until they recover. This is a lower bound on $R_0$ because density-dependent transmission specified by settings properties can lead to higher infection attempt emission events as a function of the scaling factor and number of contacts in a setting.
 
 ## Parameter Values
 
