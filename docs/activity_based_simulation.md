@@ -26,73 +26,80 @@ Setting $Q=I$ and $R=I$ in the above equation, where $I$ is the identity matrix,
 ### Arbitrary example
 A person has action vector
 
-$$ B = \begin{matrix} p_i & \\ p_j & \\ p_k & \end{matrix} $$
+$$ B = \begin{array}{|c|} p_i \\ p_j \\ p_k \\\end{array} $$
 
 for $m=3$ actions: $i, j$, and $k$. Their space assignment matrix $M$ for four locations ($w, x, y,$ and $z$) is
 
 $$
-M = \begin{matrix}
+M = \begin{array}{|ccc|}
 q_{i,w}=1 & 0 & 0 \\
 0 & q_{j,x} & 0 \\
 0 & 0 & q_{k,y} \\
 0 & q_{j,z} & q_{k,z} \\
-\end{matrix}
+\end{array}
 $$
 
 where $q_{a,s}$ is the proportion of action $a$ spent in location $s$.
 
 Multiplying the action vector by the space assignment matrix, we get the itinerary
 
-$$ A = \begin{matrix}
-p_iq_{i,w} & \\
-p_jq_{j,x} & \\
-p_kq_{k,y} & \\
-p_jq_{j,z} + p_kq_{k,z} &
-\end{matrix} $$
+$$ A = \begin{array}{|c|}
+p_iq_{i,w} \\
+p_jq_{j,x} \\
+p_kq_{k,y} \\
+p_jq_{j,z} + p_kq_{k,z} \\
+\end{array} $$
 
 ### Example 1: isolation space usage modifier + weekend action modifier
 A person has $n=4$ spaces that they could use: (Home, Work, School, Community). They do $m=4$ actions: (Home, Work, School, Community). We define
 
-$$ B = \begin{matrix}
-0.3 & \\ 0.0 & \\ 0.5 & \\ 0.2 &
-\end{matrix}$$
+$$ B = \begin{array}{|c|}
+0.3 \\ 0.0 \\ 0.5 \\ 0.2
+\end{array}$$
 
-$$ M = \begin{matrix}
+$$ M = \begin{array}{|cccc|}
 1.0 & 0 & 0 & 0 \\
 0 & 1.0 & 0 & 0 \\
 0 & 0 & 1.0 & 0\\
 0 & 0 & 0 & 1.0 \\
-\end{matrix}$$
+\end{array}$$
 
 $$ A = MB = IB = B  $$
 
 We apply a policy "isolation", comprised of space usage modifier $Q_{\text{isolate}}$, which moves school and work actions to take place at home, and $R_{\text{isolate}}$, which reduces time spent doing Community in half.
 
-$$ Q_{\text{isolate}} = \begin{matrix}
+$$ Q_{\text{isolate}} = \begin{array}{|cccc|}
 1.0 & 1.0 & 1.0 & 0 \\
 0 & 0 & 0 & 0 \\
 0 & 0 & 0 & 0\\
 0 & 0 & 0 & 1.0 \\
-\end{matrix}$$
+\end{array}$$
 
-$$ R_{\text{isolate}} = \begin{matrix}
+$$ R_{\text{isolate}} = \begin{array}{|cccc|}
 1.0 & 0 & 0 & 0.5 \\
 0 & 1.0 & 0 & 0 \\
 0 & 0 & 1.0 & 0\\
 0 & 0 & 0 & 0.5 \\
-\end{matrix}$$
+\end{array}$$
 
 We also have a weekend action modifier, $R_{\text{weekend}}$, which re-allocates time spent doing work and school to be split evenly across home and community
 
-$$ R_{\text{weekend}} = \begin{matrix}
+$$ R_{\text{weekend}} = \begin{array}{|cccc|}
 1.0 & 0.5 & 0.5 & 0 \\
 0 & 0 & 0 & 0 \\
 0 & 0 & 0 & 0\\
 0 & 0.5 & 0.5 & 1.0 \\
-\end{matrix}$$
+\end{array}$$
 
 We assert that $R_{\text{weekend}}$ is basal, meaning that "isolate" action changes modify "weekend" actions and that "weekend" actions do not modify "isolate" actions, such that the observed space usage modifier $R_{\text{obs}}=R_{\text{isolate}}R_{\text{weekend}}$. We can now calculate the realized itinerary $\hat{A}$ as
 
-$$\hat{A}=Q_{\text{isolate}}MR_{\text{obs}}B=Q_{\text{isolate}}R_{\text{obs}}B=\begin{matrix}
-0.775 & \\ 0.0 & \\ 0.0 & \\ 0.225 &
-\end{matrix}$$$
+$$\hat{A}=Q_{\text{isolate}}MR_{\text{obs}}B=\begin{array}{|cccc|}
+1.0 & 0.75 & 0.75 & 0.5 \\
+0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0\\
+0 & 0.25 & 0.25 & 0.5 \\
+\end{array}\times\begin{array}{|c|}
+0.3 \\ 0.0 \\ 0.5 \\ 0.2
+\end{array}=\begin{array}{|c|}
+0.775 \\ 0.0 \\ 0.0 \\ 0.225 \\
+\end{array}$$
