@@ -3,6 +3,7 @@
         "seed": 1234,
         "max_time": 100.0,
         "synth_population_file": "input/people_test.csv",
+        "mobility_flow_file": "input/distance_df.csv",
         "initial_prevalence": 0.1,
         "imported_cases_timeseries": {
             "include": true,

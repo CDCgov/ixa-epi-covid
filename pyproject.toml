@@ -20,7 +20,8 @@ dependencies = [
     "seaborn>=0.13.2",
     "us>=3.2.0",
     "cfa-mrp",
-    "calibrationtools"
+    "calibrationtools",
+    "tqdm>=4.67.3",
 ]
 
 [build-system]

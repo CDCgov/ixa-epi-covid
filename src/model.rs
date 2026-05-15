@@ -1,10 +1,9 @@
 use std::path::PathBuf;
 
 use ixa::{ExecutionPhase, prelude::*};
-
+#[allow(unused_imports)]
 use crate::{
-    abort_run, error::ModelError, infection_importation, infection_propagation_loop, parameters,
-    population_loader, reports, settings, symptom_status_manager,
+    abort_run, community_mobility, error::ModelError, infection_importation, infection_propagation_loop, parameters, population_loader, reports, settings, symptom_status_manager
 };
 
 pub fn initialize_model(
@@ -12,6 +11,7 @@ pub fn initialize_model(
     seed: u64,
     max_time: f64,
     synth_population_override: Option<PathBuf>,
+
 ) -> Result<(), ModelError> {
     // Initialize the random number generator with the provided seed
     context.init_random(seed);
@@ -27,6 +27,7 @@ pub fn initialize_model(
         ExecutionPhase::Last,
     );
     context.set_start_time(-1000.);
+    community_mobility::init(context)?;
     settings::init(context)?;
     info!("Settings initialized");
     population_loader::init(context, synth_population_override)?;

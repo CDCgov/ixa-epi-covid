@@ -8,6 +8,7 @@ use std::{
 };
 use strum::{EnumCount as EnumCountMacro, EnumIter, IntoEnumIterator};
 
+use crate::community_mobility::ContextMobilityExt;
 pub(crate) use crate::{
     ContextParametersExt, Params,
     error::ModelError,
@@ -111,7 +112,7 @@ pub const SETTING_COUNT: usize = SettingCategory::COUNT;
 define_global_property!(SettingAlphas, [f64; SETTING_COUNT]);
 define_global_property!(SettingRatios, [f64; SETTING_COUNT]);
 
-trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextParametersExt {
+trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextParametersExt + ContextMobilityExt {
     #[allow(dead_code)]
     fn get_setting_ratio(&self, setting_category: SettingCategory) -> Result<f64, ModelError> {
         let ratios = self.get_global_property_value(SettingRatios).unwrap();
@@ -268,11 +269,25 @@ pub trait ContextSettingExt:
         let sum_weights: f64 = weights_vec.iter().sum();
         if sum_weights > 0.0 {
             let setting_index = self.sample_weighted(SettingRng, &weights_vec);
-            Ok(active_settings[setting_index].0)
+            self.get_setting_by_community_mobility(active_settings[setting_index].0)
         } else {
             let setting_index = self.sample_range(SettingRng, 0..active_settings.len());
-            Ok(active_settings[setting_index].0)
+            self.get_setting_by_community_mobility(active_settings[setting_index].0)
         }
+    }
+
+    fn get_setting_by_community_mobility(&self, setting: SettingCode) -> Result<SettingCode, ModelError> {
+        if setting.category() != SettingCategory::Community {
+            let fips_code = setting.0;
+            println!("Community contact about to be resampled {:?}", fips_code);
+            let output = self.sample_desitination(fips_code)
+                .ok_or_else(|| ModelError::ModelError(format!("No mobility data found for community: {:?}", setting)))?;
+            println!("Resampled community contact destination: {:?}", output);
+            Ok(SettingCode(output))
+        } else {
+            Ok(setting)
+        }
+        
     }
 
     fn add_person_to_settings(
