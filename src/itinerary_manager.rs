@@ -11,76 +11,96 @@ use crate::{
     settings::ItineraryRatios,
 };
 
+const TRANSIENT_STATE_COUNT: usize = SETTING_COUNT * 2;
+
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub struct ActivityTransitionMatrix {
-    transient_matrix: [[f64; SETTING_COUNT]; SETTING_COUNT],
-    absorption_probabilities: Option<[[f64; SETTING_COUNT]; SETTING_COUNT]>,
+pub struct ItineraryTransitionMatrix {
+    activity_matrix: [[f64; SETTING_COUNT]; SETTING_COUNT],
+    location_matrix: [[f64; SETTING_COUNT]; SETTING_COUNT],
+    absorption_probabilities: Option<[[f64; TRANSIENT_STATE_COUNT]; SETTING_COUNT]>,
 }
 
 #[allow(dead_code)]
 #[allow(clippy::needless_range_loop)]
-impl ActivityTransitionMatrix {
+impl ItineraryTransitionMatrix {
     pub fn normalize(&mut self) {
-        let mut normalized_transient_matrix = [[0.0; SETTING_COUNT]; SETTING_COUNT];
-        for i in 0..SETTING_COUNT {
-            let row_sum: f64 = self.transient_matrix[i].iter().sum();
-            if row_sum > 1.0 {
-                for j in 0..SETTING_COUNT {
-                    normalized_transient_matrix[i][j] = self.transient_matrix[i][j] / row_sum;
-                }
-            } else {
-                for j in 0..SETTING_COUNT {
-                    normalized_transient_matrix[i][j] = self.transient_matrix[i][j];
+        let normalize_matrix = |matrix: &mut [[f64; SETTING_COUNT]; SETTING_COUNT]| {
+            for i in 0..SETTING_COUNT {
+                let row_sum: f64 = matrix[i].iter().sum();
+                if row_sum > 1.0 {
+                    for j in 0..SETTING_COUNT {
+                        matrix[i][j] /= row_sum;
+                    }
                 }
             }
-        }
-        self.transient_matrix = normalized_transient_matrix;
+        };
+
+        normalize_matrix(&mut self.activity_matrix);
+        normalize_matrix(&mut self.location_matrix);
     }
 
-    pub fn get_absorbing_matrix(&self) -> [[f64; SETTING_COUNT]; SETTING_COUNT] {
-        let mut absorbing_matrix = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+    pub fn build_transient_and_absorbing_matrix(&self) -> ([[f64; TRANSIENT_STATE_COUNT]; TRANSIENT_STATE_COUNT], [[f64; TRANSIENT_STATE_COUNT]; SETTING_COUNT]) {
+        let mut transient_matrix = [[0.0; TRANSIENT_STATE_COUNT]; TRANSIENT_STATE_COUNT];
+        let mut absorbing_matrix = [[0.0; TRANSIENT_STATE_COUNT]; SETTING_COUNT];
+        let activity_row_sums : Vec<f64> = self.activity_matrix.iter().map(|row| row.iter().sum()).collect();
         for i in 0..SETTING_COUNT {
-            let row_sum: f64 = self.transient_matrix[i].iter().sum();
-            absorbing_matrix[i][i] = 1.0 - row_sum;
+            for j in 0..SETTING_COUNT {
+                transient_matrix[i][j] =
+                    self.activity_matrix[i][j];
+                transient_matrix[i][j + SETTING_COUNT] =
+                    1.0 - activity_row_sums[i];
+                transient_matrix[i + SETTING_COUNT][j + SETTING_COUNT] =
+                    self.location_matrix[i][j];
+            }
         }
-        absorbing_matrix
+        let transient_row_sums : Vec<f64> = transient_matrix.iter().map(|row| row.iter().sum()).collect();
+        for i in 0..SETTING_COUNT {
+            absorbing_matrix[i + SETTING_COUNT][i] = 1.0 - transient_row_sums[i + SETTING_COUNT];
+        }
+        (transient_matrix, absorbing_matrix)
     }
 
     pub fn layer(
         &self,
-        activity_transition_matrix: &ActivityTransitionMatrix,
-    ) -> ActivityTransitionMatrix {
-        let mut layered_transient_matrix = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+        itinerary_transition_matrix: &ItineraryTransitionMatrix,
+    ) -> ItineraryTransitionMatrix {
+        let mut layered_activity_matrix = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+        let mut layered_location_matrix = [[0.0; SETTING_COUNT]; SETTING_COUNT];
 
         for i in 0..SETTING_COUNT {
             for j in 0..SETTING_COUNT {
-                layered_transient_matrix[i][j] =
-                    self.transient_matrix[i][j] + activity_transition_matrix.transient_matrix[i][j];
+                layered_activity_matrix[i][j] =
+                    self.activity_matrix[i][j] + itinerary_transition_matrix.activity_matrix[i][j];
+                layered_location_matrix[i][j] =
+                    self.location_matrix[i][j] + itinerary_transition_matrix.location_matrix[i][j];
             }
         }
 
-        ActivityTransitionMatrix {
-            transient_matrix: layered_transient_matrix,
+        ItineraryTransitionMatrix {
+            activity_matrix: layered_activity_matrix,
+            location_matrix: layered_location_matrix,
             absorption_probabilities: None,
         }
     }
 
     fn calculate_absorption_probabilities(&mut self) {
-        // Aborbing probabilities are calculated using the 
-        // formula N * R, where N is the fundamental matrix (I - Q)^-1, I is the identity matrix, 
-        // Q is the transient matrix, and R is the absorbing matrix. 
+        // Aborbing probabilities are calculated using the
+        // formula N * R, where N is the fundamental matrix (I - Q)^-1, I is the identity matrix,
+        // Q is the transient matrix, and R is the absorbing matrix.
+
+        let (transient_matrix, absorbing_matrix) = self.build_transient_and_absorbing_matrix();
 
         // Create identity matrix I
-        let mut identity = [[0.0; SETTING_COUNT]; SETTING_COUNT];
-        for i in 0..SETTING_COUNT {
+        let mut identity = [[0.0; TRANSIENT_STATE_COUNT]; TRANSIENT_STATE_COUNT];
+        for i in 0..TRANSIENT_STATE_COUNT {
             identity[i][i] = 1.0;
         }
 
         // Calculate I - Q (where Q is the transient matrix)
-        let mut i_minus_q = [[0.0; SETTING_COUNT]; SETTING_COUNT];
-        for i in 0..SETTING_COUNT {
-            for j in 0..SETTING_COUNT {
-                i_minus_q[i][j] = identity[i][j] - self.transient_matrix[i][j];
+        let mut i_minus_q = [[0.0; TRANSIENT_STATE_COUNT]; TRANSIENT_STATE_COUNT];
+        for i in 0..TRANSIENT_STATE_COUNT {
+            for j in 0..TRANSIENT_STATE_COUNT {
+                i_minus_q[i][j] = identity[i][j] - transient_matrix[i][j];
             }
         }
 
@@ -89,20 +109,20 @@ impl ActivityTransitionMatrix {
         let n = i_minus_q;
 
         // Create augmented identity matrix for inversion
-        let mut aug = [[0.0; 2 * SETTING_COUNT]; SETTING_COUNT];
-        for i in 0..SETTING_COUNT {
-            for j in 0..SETTING_COUNT {
+        let mut aug = [[0.0; 2 * TRANSIENT_STATE_COUNT]; TRANSIENT_STATE_COUNT];
+        for i in 0..TRANSIENT_STATE_COUNT {
+            for j in 0..TRANSIENT_STATE_COUNT {
                 aug[i][j] = n[i][j];
-                aug[i][j + SETTING_COUNT] = if i == j { 1.0 } else { 0.0 };
+                aug[i][j + TRANSIENT_STATE_COUNT] = if i == j { 1.0 } else { 0.0 };
             }
         }
 
         // Forward elimination with partial pivoting
-        for col in 0..SETTING_COUNT {
+        for col in 0..TRANSIENT_STATE_COUNT {
             // Find pivot
             let mut pivot_row = col;
             let mut max_val = aug[col][col].abs();
-            for row in col + 1..SETTING_COUNT {
+            for row in col + 1..TRANSIENT_STATE_COUNT {
                 if aug[row][col].abs() > max_val {
                     max_val = aug[row][col].abs();
                     pivot_row = row;
@@ -117,15 +137,15 @@ impl ActivityTransitionMatrix {
             // Scale pivot row
             let pivot = aug[col][col];
             if pivot.abs() > f64::EPSILON {
-                for j in 0..2 * SETTING_COUNT {
+                for j in 0..2 * TRANSIENT_STATE_COUNT {
                     aug[col][j] /= pivot;
                 }
 
                 // Eliminate column
-                for row in 0..SETTING_COUNT {
+                for row in 0..TRANSIENT_STATE_COUNT {
                     if row != col {
                         let factor = aug[row][col];
-                        for j in 0..2 * SETTING_COUNT {
+                        for j in 0..2 * TRANSIENT_STATE_COUNT {
                             aug[row][j] -= factor * aug[col][j];
                         }
                     }
@@ -133,13 +153,11 @@ impl ActivityTransitionMatrix {
             }
         }
 
-        let absorbing_matrix = self.get_absorbing_matrix();
-
         // Extract inverted matrix and calculate absorption probabilities
-        let mut absorption_probs = [[0.0; SETTING_COUNT]; SETTING_COUNT];
-        for i in 0..SETTING_COUNT {
+        let mut absorption_probs = [[0.0; SETTING_COUNT * 2]; SETTING_COUNT];
+        for i in 0..SETTING_COUNT * 2 {
             for j in 0..SETTING_COUNT {
-                for k in 0..SETTING_COUNT {
+                for k in 0..SETTING_COUNT * 2 {
                     absorption_probs[i][j] += aug[i][k + SETTING_COUNT] * absorbing_matrix[k][j];
                 }
             }
@@ -434,101 +452,100 @@ mod test {
 
         context.register_itinerary_modifier(Age(10), weekend_modifier);
         assert_eq!(context.get_itinerary_modifiers(p1), vec![weekend_modifier]);
-        assert_eq!(context.get_itinerary_modifiers(p2), vec![weekend_modifier]);      
-        
+        assert_eq!(context.get_itinerary_modifiers(p2), vec![weekend_modifier]);
     }
 
-        #[test]
-        fn test_register_multiple_itinerary_modifiers() {
-            let mut context = setup();
-            
-            let weekend_transient_matrix = [
-                [0.0, 0.0, 0.0, 0.0],
-                [0.5, 0.0, 0.0, 0.5],
-                [0.5, 0.0, 0.0, 0.5],
-                [0.0, 0.0, 0.0, 0.0],
-            ];
+    #[test]
+    fn test_register_multiple_itinerary_modifiers() {
+        let mut context = setup();
 
-            let weekend_activity_transition_matrix = ActivityTransitionMatrix {
-                transient_matrix: weekend_transient_matrix,
-                absorption_probabilities: None,
-            };
+        let weekend_transient_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [0.5, 0.0, 0.0, 0.5],
+            [0.5, 0.0, 0.0, 0.5],
+            [0.0, 0.0, 0.0, 0.0],
+        ];
 
-            let weekend_modifier = ItineraryModifier {
-                modifier_activity: ItineraryActivity::Activity(weekend_activity_transition_matrix),
-            };
+        let weekend_activity_transition_matrix = ActivityTransitionMatrix {
+            transient_matrix: weekend_transient_matrix,
+            absorption_probabilities: None,
+        };
 
-            let school_transient_matrix = [
-                [0.0, 0.0, 0.0, 0.0],
-                [0.75, 0.0, 0.0, 0.25],
-                [0.75, 0.0, 0.0, 0.25],
-                [0.75, 0.0, 0.0, 0.25],
-            ];
+        let weekend_modifier = ItineraryModifier {
+            modifier_activity: ItineraryActivity::Activity(weekend_activity_transition_matrix),
+        };
 
-            let school_activity_transition_matrix = ActivityTransitionMatrix {
-                transient_matrix: school_transient_matrix,
-                absorption_probabilities: None,
-            };
+        let school_transient_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [0.75, 0.0, 0.0, 0.25],
+            [0.75, 0.0, 0.0, 0.25],
+            [0.75, 0.0, 0.0, 0.25],
+        ];
 
-            let school_modifier = ItineraryModifier {
-                modifier_activity: ItineraryActivity::Activity(school_activity_transition_matrix),
-            };
-            
-            context.register_itinerary_modifier(Age(11), weekend_modifier);
-            context.register_itinerary_modifier(Age(11), school_modifier);
-            let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
-            let modifiers = context.get_itinerary_modifiers(p1);
-            assert_eq!(modifiers.len(), 2);
-            assert!(modifiers.contains(&school_modifier));
-            assert!(modifiers.contains(&weekend_modifier));
-        }
+        let school_activity_transition_matrix = ActivityTransitionMatrix {
+            transient_matrix: school_transient_matrix,
+            absorption_probabilities: None,
+        };
 
-        #[test]
-        fn test_itinerary_modifier_removal_by_property() {
-            let mut context = setup();
-            let weekend_transient_matrix = [
-                [0.0, 0.0, 0.0, 0.0],
-                [0.5, 0.0, 0.0, 0.5],
-                [0.5, 0.0, 0.0, 0.5],
-                [0.0, 0.0, 0.0, 0.0],
-            ];
+        let school_modifier = ItineraryModifier {
+            modifier_activity: ItineraryActivity::Activity(school_activity_transition_matrix),
+        };
 
-            let weekend_activity_transition_matrix = ActivityTransitionMatrix {
-                transient_matrix: weekend_transient_matrix,
-                absorption_probabilities: None,
-            };
+        context.register_itinerary_modifier(Age(11), weekend_modifier);
+        context.register_itinerary_modifier(Age(11), school_modifier);
+        let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
+        let modifiers = context.get_itinerary_modifiers(p1);
+        assert_eq!(modifiers.len(), 2);
+        assert!(modifiers.contains(&school_modifier));
+        assert!(modifiers.contains(&weekend_modifier));
+    }
 
-            let weekend_modifier = ItineraryModifier {
-                modifier_activity: ItineraryActivity::Activity(weekend_activity_transition_matrix),
-            };
-            context.register_itinerary_modifier(Age(10), weekend_modifier);
-            context.register_itinerary_modifier(Age(11), weekend_modifier);
-            let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
-            let p2 = context.add_entity::<Person, _>((Age(10),)).unwrap();
-            let modifiers_p1 = context.get_itinerary_modifiers(p1);
-            assert_eq!(modifiers_p1.len(), 1);
-            assert!(modifiers_p1.contains(&weekend_modifier));
+    #[test]
+    fn test_itinerary_modifier_removal_by_property() {
+        let mut context = setup();
+        let weekend_transient_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [0.5, 0.0, 0.0, 0.5],
+            [0.5, 0.0, 0.0, 0.5],
+            [0.0, 0.0, 0.0, 0.0],
+        ];
 
-            let modifiers_p2 = context.get_itinerary_modifiers(p2);
-            assert_eq!(modifiers_p2.len(), 1);
-            assert!(modifiers_p2.contains(&weekend_modifier));
+        let weekend_activity_transition_matrix = ActivityTransitionMatrix {
+            transient_matrix: weekend_transient_matrix,
+            absorption_probabilities: None,
+        };
 
-            // This would remove all age based itinerary modifiers that is not ideal.
-            context.remove_itinerary_modifier_by_property::<Age>(Age(11));
-            let modifiers_p1 = context.get_itinerary_modifiers(p1);
-            assert_eq!(modifiers_p1.len(), 0);
+        let weekend_modifier = ItineraryModifier {
+            modifier_activity: ItineraryActivity::Activity(weekend_activity_transition_matrix),
+        };
+        context.register_itinerary_modifier(Age(10), weekend_modifier);
+        context.register_itinerary_modifier(Age(11), weekend_modifier);
+        let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
+        let p2 = context.add_entity::<Person, _>((Age(10),)).unwrap();
+        let modifiers_p1 = context.get_itinerary_modifiers(p1);
+        assert_eq!(modifiers_p1.len(), 1);
+        assert!(modifiers_p1.contains(&weekend_modifier));
 
-            let modifiers_p2 = context.get_itinerary_modifiers(p2);
-            assert_eq!(modifiers_p2.len(), 1);
-            assert!(modifiers_p2.contains(&weekend_modifier));
-        }
+        let modifiers_p2 = context.get_itinerary_modifiers(p2);
+        assert_eq!(modifiers_p2.len(), 1);
+        assert!(modifiers_p2.contains(&weekend_modifier));
+
+        // This would remove all age based itinerary modifiers that is not ideal.
+        context.remove_itinerary_modifier_by_property::<Age>(Age(11));
+        let modifiers_p1 = context.get_itinerary_modifiers(p1);
+        assert_eq!(modifiers_p1.len(), 0);
+
+        let modifiers_p2 = context.get_itinerary_modifiers(p2);
+        assert_eq!(modifiers_p2.len(), 1);
+        assert!(modifiers_p2.contains(&weekend_modifier));
+    }
     #[test]
     fn test_shelter_in_place_and_weekends() {
-        // We have a shelter in place + a weekend. Shelter in place moves the time spent doing 50% 
-        // of community activities to doing home activities. Weekends change time spent doing school/work 
-        // activities to doing activities in the home or community. We will assume that time is split equally 
+        // We have a shelter in place + a weekend. Shelter in place moves the time spent doing 50%
+        // of community activities to doing home activities. It also moves work and school activities to home
+        //  Weekends change time spent doing school/work         // activities to doing activities in the home or community. We will assume that time is split equally
         // between home and the community.
-        // If your initial itinerary was Home (0.3) Work (0.0) School (0.5) Com (0.2). 
+        // If your initial itinerary was Home (0.3) Work (0.0) School (0.5) Com (0.2).
         // Under shelter in place your itinerary would be Home (0.9) Work (0.0) School (0.0) Com (0.1)
         // Under weekend your itinerary would be Home (0.55) Work (0.0) School (0.0) Com (0.45)
         // Under both shelter in place and weekend Home (0.775) Work (0.0) School (0.0) Com (0.225)
@@ -600,16 +617,15 @@ mod test {
                 itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
             },
         );
-        
     }
 
     #[test]
     fn test_isolation_and_weekends() {
-        // We have isolation + weekend. Isolation changes the location of all activities 
-        // to home. Weekends change time spent doing school/work activities to doing activities 
-        // in the home or community. We will assume that time is split equally between home and 
+        // We have isolation + weekend. Isolation changes the location of all activities
+        // to home. Weekends change time spent doing school/work activities to doing activities
+        // in the home or community. We will assume that time is split equally between home and
         // the community.
-        // If your initial itinerary was Home (0.25) Work (0.25) School (0.25) Com (0.25). 
+        // If your initial itinerary was Home (0.25) Work (0.25) School (0.25) Com (0.25).
         // Under isolation your itinerary would be Home (1) Work (0.0) School (0.0) Com (0.0)
         // Under weekend your itinerary would be Home (0.5) Work (0.0) School (0.0) Com (0.5)
         // Under both isolation and weekend Home (1) Work (0.0) School (0.0) Com (0.0)
