@@ -53,6 +53,7 @@ pub fn init(context: &mut Context, file_name: &str) -> Result<(), ModelError> {
 
 #[cfg(test)]
 mod test {
+    use crate::population_loader::Person;
     use crate::{
         Age,
         infectiousness_manager::InfectionContextExt,
@@ -64,7 +65,7 @@ mod test {
     };
     use ixa::{
         Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt,
-        ContextReportExt, assert_almost_eq, csv,
+        ContextReportExt, assert_almost_eq, csv, with,
     };
     use std::path::PathBuf;
     use tempfile::tempdir;
@@ -99,8 +100,8 @@ mod test {
         let config = context.report_options();
         config.directory(path.clone());
 
-        let source: PersonId = context.add_entity((Age(30),)).unwrap();
-        let target: PersonId = context.add_entity((Age(30),)).unwrap();
+        let source: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
+        let target: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         let home: SettingCode = SettingCode::arbitrary_home_code();
         let setting = Some(home);
         let infection_time = 1.0;

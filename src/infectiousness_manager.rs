@@ -1,6 +1,7 @@
-use ixa::{impl_derived_property, prelude::*};
+use ixa::prelude::*;
 use rand_distr::Exp;
 use serde::{Deserialize, Serialize};
+use std::hash::{Hash, Hasher};
 
 use crate::{
     population_loader::PersonId,
@@ -12,7 +13,7 @@ use crate::population_loader::Person;
 
 use ixa::profiling::{increment_named_count, open_span};
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub enum InfectionData {
     Susceptible,
     Infectious {
@@ -26,21 +27,83 @@ pub enum InfectionData {
     },
 }
 
+impl PartialEq for InfectionData {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Susceptible, Self::Susceptible) => true,
+            (
+                Self::Infectious {
+                    infection_time,
+                    infected_by,
+                    infection_setting_id,
+                },
+                Self::Infectious {
+                    infection_time: other_infection_time,
+                    infected_by: other_infected_by,
+                    infection_setting_id: other_infection_setting_id,
+                },
+            ) => {
+                infection_time.to_bits() == other_infection_time.to_bits()
+                    && infected_by == other_infected_by
+                    && infection_setting_id == other_infection_setting_id
+            }
+            (
+                Self::Recovered {
+                    infection_time,
+                    recovery_time,
+                },
+                Self::Recovered {
+                    infection_time: other_infection_time,
+                    recovery_time: other_recovery_time,
+                },
+            ) => {
+                infection_time.to_bits() == other_infection_time.to_bits()
+                    && recovery_time.to_bits() == other_recovery_time.to_bits()
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Eq for InfectionData {}
+
+impl Hash for InfectionData {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Self::Susceptible => {}
+            Self::Infectious {
+                infection_time,
+                infected_by,
+                infection_setting_id,
+            } => {
+                infection_time.to_bits().hash(state);
+                infected_by.hash(state);
+                infection_setting_id.hash(state);
+            }
+            Self::Recovered {
+                infection_time,
+                recovery_time,
+            } => {
+                infection_time.to_bits().hash(state);
+                recovery_time.to_bits().hash(state);
+            }
+        }
+    }
+}
+
 impl_property!(
     InfectionData,
     Person,
     default_const = InfectionData::Susceptible
 );
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Copy, Hash, Eq)]
-pub enum InfectionStatus {
-    Susceptible,
-    Infectious,
-    Recovered,
-}
-
-impl_derived_property!(
-    InfectionStatus,
+define_derived_property!(
+    enum InfectionStatus {
+        Susceptible,
+        Infectious,
+        Recovered,
+    },
     Person,
     [InfectionData],
     [],
@@ -273,7 +336,7 @@ mod test {
     #[test]
     fn test_infect_person() {
         let mut context = setup_context();
-        let p1: PersonId = context.add_entity((Age(30),)).unwrap();
+        let p1: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         context.add_plan(2.0, move |context| {
             context.infect_person(p1, None, None);
         });
@@ -290,7 +353,7 @@ mod test {
     #[test]
     fn test_recover_person() {
         let mut context = setup_context();
-        let p1: PersonId = context.add_entity((Age(30),)).unwrap();
+        let p1: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         context.add_plan(2.0, move |context| {
             context.infect_person(p1, None, None);
         });
@@ -312,7 +375,7 @@ mod test {
     #[test]
     fn test_get_elapsed_infection_time() {
         let mut context = setup_context();
-        let p1: PersonId = context.add_entity((Age(30),)).unwrap();
+        let p1: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         context.add_plan(2.0, move |context| {
             context.infect_person(p1, None, None);
         });
@@ -327,7 +390,7 @@ mod test {
     #[test]
     fn test_calc_total_infectiousness_multiplier() {
         let mut context = setup_context();
-        let p1: PersonId = context.add_entity((Age(30),)).unwrap();
+        let p1: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
 
         assert_almost_eq!(max_total_infectiousness_multiplier(&context, p1), 0.0, 0.0);
     }
@@ -335,9 +398,9 @@ mod test {
     #[test]
     fn test_calc_total_infectiousness_multiplier_with_contact() {
         let mut context = setup_context();
-        let p1: PersonId = context.add_entity((Age(30),)).unwrap();
+        let p1: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
-        let p2: PersonId = context.add_entity((Age(30),)).unwrap();
+        let p2: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p2).unwrap();
 
         assert_almost_eq!(max_total_infectiousness_multiplier(&context, p1), 1.0, 0.0);
@@ -348,12 +411,12 @@ mod test {
     /// Test has potential to stochastically fail if exponential draw is longer than infectious duration
     fn test_forecast() {
         let mut context = setup_context();
-        let p1: PersonId = context.add_entity((Age(30),)).unwrap();
+        let p1: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
         // Add two additional contacts, which should make the factor 2
-        let p2: PersonId = context.add_entity((Age(30),)).unwrap();
+        let p2: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p2).unwrap();
-        let p3: PersonId = context.add_entity((Age(30),)).unwrap();
+        let p3: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p3).unwrap();
 
         context.infect_person(p1, None, None);
@@ -367,11 +430,11 @@ mod test {
     #[should_panic = "Person 0: Forecasted infectiousness must always be greater than or equal to current infectiousness. Current: 1, Forecasted: 0.9"]
     fn test_assert_evaluate_fails_when_forecast_smaller() {
         let mut context = setup_context();
-        let p1: PersonId = context.add_entity((Age(30),)).unwrap();
+        let p1: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
         context.infect_person(p1, None, None);
         // We need to add another person so that our total infectiousness is 1.
-        let p2: PersonId = context.add_entity((Age(30),)).unwrap();
+        let p2: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p2).unwrap();
 
         let invalid_forecast = 1.0 - 0.1;
@@ -381,10 +444,10 @@ mod test {
     #[test]
     fn test_evaluate_still_succeeds_when_forecast_slightly_bigger() {
         let mut context = setup_context();
-        let p1: PersonId = context.add_entity((Age(30),)).unwrap();
+        let p1: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
         context.infect_person(p1, None, None);
-        let p2: PersonId = context.add_entity((Age(30),)).unwrap();
+        let p2: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         set_homogeneous_mixing_itinerary(&mut context, p2).unwrap();
 
         let still_valid_forecast = 1.0 - 9e-11;
@@ -394,8 +457,8 @@ mod test {
     #[test]
     fn test_infected_options() {
         let mut context = setup_context();
-        let index: PersonId = context.add_entity((Age(30),)).unwrap();
-        let contact: PersonId = context.add_entity((Age(30),)).unwrap();
+        let index: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
+        let contact: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         let home_id = SettingCode::arbitrary_home_code();
         let infection_setting_id = Some(home_id);
         context.infect_person(contact, Some(index), infection_setting_id);

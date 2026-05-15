@@ -73,7 +73,9 @@ mod test {
     };
 
     use super::*;
+    use crate::population_loader::Person;
     use ixa::assert_almost_eq;
+
     struct TestRateFn;
 
     impl InfectiousnessRateFn for TestRateFn {
@@ -107,7 +109,7 @@ mod test {
     #[test]
     fn test_add_rate_fn_and_get_random() {
         let mut context = init_context();
-        let person: PersonId = context.add_entity((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
 
         let rate_fn = TestRateFn {};
         context.add_rate_fn(rate_fn);

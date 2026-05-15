@@ -224,8 +224,8 @@ mod test {
         let config = context.report_options();
         config.directory(path.clone());
 
-        let source: PersonId = context.add_entity((Age(42),)).unwrap();
-        let target: PersonId = context.add_entity((Age(43),)).unwrap();
+        let source: PersonId = context.add_entity(with!(Person, Age(42))).unwrap();
+        let target: PersonId = context.add_entity(with!(Person, Age(43))).unwrap();
         let home: SettingCode = SettingCode::arbitrary_home_code();
         let setting = Some(home);
         let infection_time = 1.0;
@@ -283,8 +283,8 @@ mod test {
         let config = context.report_options();
         config.directory(path.clone());
 
-        let source: PersonId = context.add_entity((Age(42),)).unwrap();
-        let target: PersonId = context.add_entity((Age(43),)).unwrap();
+        let source: PersonId = context.add_entity(with!(Person, Age(42))).unwrap();
+        let target: PersonId = context.add_entity(with!(Person, Age(43))).unwrap();
         let home: SettingCode = SettingCode::arbitrary_home_code();
         let setting = Some(home);
         let infection_time = 1.0;

@@ -252,9 +252,22 @@ pub trait ContextSettingExt:
     }
 
     fn calculate_multiplier(&self, setting: SettingCode) -> Result<f64, ModelError> {
-        let size = self.get_setting_size(setting) as f64 - 1.0;
         let alpha = self.get_setting_alpha(setting.category())?;
-        Ok(size.powf(alpha))
+        match alpha {
+            0.0 => {
+                // (n-1)^0 = 1
+                Ok(1.0)
+            }
+            1.0 => {
+                let size = self.get_setting_size(setting);
+                Ok((size - 1) as f64)
+            }
+            alpha => {
+                let size = self.get_setting_size(setting);
+                let size = (size - 1) as f64;
+                Ok(size.powf(alpha))
+            }
+        }
     }
 
     fn sample_active_setting(&self, person_id: PersonId) -> Result<SettingCode, ModelError> {
@@ -432,9 +445,9 @@ mod test {
         let community_code = home_code.extract_community();
         let work_code = SettingCode::arbitrary_workplace_code();
 
-        let person1 = context.add_entity::<Person, _>((Age(20),)).unwrap();
-        let person2 = context.add_entity::<Person, _>((Age(21),)).unwrap();
-        let person3 = context.add_entity::<Person, _>((Age(22),)).unwrap();
+        let person1 = context.add_entity(with!(Person, Age(20))).unwrap();
+        let person2 = context.add_entity(with!(Person, Age(21))).unwrap();
+        let person3 = context.add_entity(with!(Person, Age(22))).unwrap();
         context.add_person_to_settings(person1, Some(home_code), None, None, Some(community_code));
         context.add_person_to_settings(person2, Some(home_code), None, None, Some(community_code));
         context.add_person_to_settings(person3, None, Some(work_code), None, None);
@@ -450,7 +463,7 @@ mod test {
     #[test]
     fn test_sample_person_from_home() {
         let mut context = setup_test_context(0.0);
-        let person_id = context.add_entity::<Person, _>((Age(20),)).unwrap();
+        let person_id = context.add_entity(with!(Person, Age(20))).unwrap();
         context.add_person_to_settings(
             person_id,
             Some(make_home_id(b"160379602000011")),
@@ -466,7 +479,7 @@ mod test {
     #[test]
     fn test_sample_person_from_work() {
         let mut context = setup_test_context(0.0);
-        let person_id = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person_id = context.add_entity(with!(Person, Age(30))).unwrap();
         context.add_person_to_settings(
             person_id,
             None,
@@ -482,7 +495,7 @@ mod test {
     #[test]
     fn test_sample_person_from_school() {
         let mut context = setup_test_context(0.0);
-        let person_id = context.add_entity::<Person, _>((Age(10),)).unwrap();
+        let person_id = context.add_entity(with!(Person, Age(10))).unwrap();
         context.add_person_to_settings(
             person_id,
             None,
@@ -501,7 +514,7 @@ mod test {
     #[test]
     fn test_sample_person_from_community() {
         let mut context = setup_test_context(0.0);
-        let person_id = context.add_entity::<Person, _>((Age(40),)).unwrap();
+        let person_id = context.add_entity(with!(Person, Age(40))).unwrap();
         context.add_person_to_settings(
             person_id,
             None,
@@ -521,8 +534,8 @@ mod test {
     fn test_get_setting_size() {
         let mut context = setup_test_context(0.0);
         let home_id = SettingCode::arbitrary_home_code();
-        let person1 = context.add_entity::<Person, _>((Age(20),)).unwrap();
-        let person2 = context.add_entity::<Person, _>((Age(21),)).unwrap();
+        let person1 = context.add_entity(with!(Person, Age(20))).unwrap();
+        let person2 = context.add_entity(with!(Person, Age(21))).unwrap();
         assign_person_settings(&mut context, person1, &[home_id], [1.0, 0.0, 0.0, 0.0]);
         assign_person_settings(&mut context, person2, &[home_id], [1.0, 0.0, 0.0, 0.0]);
         let size = context.get_setting_size(home_id);
@@ -540,7 +553,7 @@ mod test {
     fn test_get_active_settings_for_person() {
         let mut context = setup_test_context(0.5);
         let home_id = SettingCode::arbitrary_home_code();
-        let person_id = context.add_entity::<Person, _>((Age(22),)).unwrap();
+        let person_id = context.add_entity(with!(Person, Age(22))).unwrap();
         assign_person_settings(&mut context, person_id, &[home_id], [0.25, 0.0, 0.0, 0.0]);
         let active = context.get_active_settings_for_person(person_id).unwrap();
         assert_eq!(active.len(), 1);
@@ -555,9 +568,9 @@ mod test {
         let mut context = setup_test_context(alpha);
         let home_id = SettingCode::arbitrary_home_code();
         let work_id = home_id.as_arbitrary_workplace_code();
-        let p1 = context.add_entity::<Person, _>((Age(23),)).unwrap();
-        let p2 = context.add_entity::<Person, _>((Age(23),)).unwrap();
-        let p3 = context.add_entity::<Person, _>((Age(23),)).unwrap();
+        let p1 = context.add_entity(with!(Person, Age(23))).unwrap();
+        let p2 = context.add_entity(with!(Person, Age(23))).unwrap();
+        let p3 = context.add_entity(with!(Person, Age(23))).unwrap();
         assign_person_settings(&mut context, p1, &[home_id, work_id], [0.5, 0.5, 0.0, 0.0]);
         assign_person_settings(&mut context, p2, &[home_id, work_id], [0.5, 0.5, 0.0, 0.0]);
         assign_person_settings(&mut context, p3, &[home_id], [1.0, 0.0, 0.0, 0.0]);
@@ -574,8 +587,8 @@ mod test {
         let mut context = setup_test_context(alpha);
         let home_id = SettingCode::arbitrary_home_code();
         let work_id = home_id.as_arbitrary_workplace_code();
-        let p1 = context.add_entity::<Person, _>((Age(24),)).unwrap();
-        let p2 = context.add_entity::<Person, _>((Age(24),)).unwrap();
+        let p1 = context.add_entity(with!(Person, Age(24))).unwrap();
+        let p2 = context.add_entity(with!(Person, Age(24))).unwrap();
         assign_person_settings(&mut context, p1, &[home_id, work_id], [0.5, 0.5, 0.0, 0.0]);
         assign_person_settings(&mut context, p2, &[home_id], [1.0, 0.0, 0.0, 0.0]);
         let val = context.calculate_max_infectiousness_multiplier_for_person(p1);
@@ -587,7 +600,7 @@ mod test {
     fn test_sample_person_from_setting() {
         let mut context = setup_test_context(0.0);
         let comm_id = SettingCode::arbitrary_home_code().extract_community();
-        let person_id = context.add_entity::<Person, _>((Age(25),)).unwrap();
+        let person_id = context.add_entity(with!(Person, Age(25))).unwrap();
         assign_person_settings(&mut context, person_id, &[comm_id], [0.0, 0.0, 0.0, 1.0]);
         let sampled = context.sample_person_from_setting(comm_id).unwrap();
         assert_eq!(sampled, person_id);
@@ -597,8 +610,8 @@ mod test {
     fn test_sample_from_setting_with_exclusion() {
         let mut context = setup_test_context(0.0);
         let work_id = SettingCode::arbitrary_workplace_code();
-        let p1 = context.add_entity::<Person, _>((Age(26),)).unwrap();
-        let p2 = context.add_entity::<Person, _>((Age(27),)).unwrap();
+        let p1 = context.add_entity(with!(Person, Age(26))).unwrap();
+        let p2 = context.add_entity(with!(Person, Age(27))).unwrap();
         assign_person_settings(&mut context, p1, &[work_id], [0.0, 1.0, 0.0, 0.0]);
         assign_person_settings(&mut context, p2, &[work_id], [0.0, 1.0, 0.0, 0.0]);
         let sampled = context
@@ -611,7 +624,7 @@ mod test {
     fn test_sample_active_setting() {
         let mut context = setup_test_context(0.0);
         let home_id = SettingCode::arbitrary_home_code();
-        let person_id = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let person_id = context.add_entity(with!(Person, Age(30))).unwrap();
         assign_person_settings(&mut context, person_id, &[home_id], [1.0, 0.0, 0.0, 0.0]);
         let sampled = context.sample_active_setting(person_id).unwrap();
         assert_eq!(sampled, home_id);
@@ -620,7 +633,7 @@ mod test {
     #[test]
     fn test_add_person_to_setting_and_add_index_setting() {
         let mut context = setup_test_context(0.0);
-        let person_id = context.add_entity::<Person, _>((Age(31),)).unwrap();
+        let person_id = context.add_entity(with!(Person, Age(31))).unwrap();
         let setting_code = make_home_id(b"160379602000010");
         context.add_person_to_settings(person_id, Some(setting_code), None, None, None);
         let home_id = context.get_property::<Person, HomeId>(person_id).0.unwrap();
