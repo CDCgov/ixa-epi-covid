@@ -203,7 +203,7 @@ mod test {
                 *num_initial_infections_clone.borrow(),
             );
             for person in susceptibles {
-                context.infect_person(person, None, None);
+                context.infect_person(person, None, None, None);
             }
             // Count the number of initial infections and recovered actually created from the binomial
             // sampling
@@ -286,7 +286,7 @@ mod test {
             let infectious_person: PersonId = context.add_entity((Age(30),)).unwrap();
             set_homogeneous_mixing_itinerary(&mut context, infectious_person).unwrap();
 
-            context.infect_person(infectious_person, None, None);
+            context.infect_person(infectious_person, None, None, None);
             // Get the total infectiousness multiplier for comparison to total number of infections.
             if total_infectiousness_multiplier.is_none() {
                 total_infectiousness_multiplier = Some(max_total_infectiousness_multiplier(
@@ -361,7 +361,7 @@ mod test {
         let mut context = setup_context(0, 0.0, 1.0, 5.0);
         load_rate_fns(&mut context).unwrap();
         let person: PersonId = context.add_entity((Age(30),)).unwrap();
-        context.infect_person(person, None, None);
+        context.infect_person(person, None, None, None);
         // For later, we need to get the recovery time from the rate function.
         context.execute();
         let recovery_time = context.get_person_rate_fn(person).infection_duration();
@@ -451,7 +451,7 @@ mod test {
                 // people becoming infectious that lets them transmit.
                 load_rate_fns(&mut context).unwrap();
 
-                context.infect_person(infectious_person, None, None);
+                context.infect_person(infectious_person, None, None, None);
                 // Get the total infectiousness multiplier for comparison to total number of infections.
                 if total_infectiousness_multiplier.is_none() {
                     total_infectiousness_multiplier = Some(max_total_infectiousness_multiplier(

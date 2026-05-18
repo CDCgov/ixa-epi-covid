@@ -1,7 +1,7 @@
 use ixa::IxaError;
 use thiserror::Error;
 
-use crate::pop_reader::errors::{FIPSError, PopulationReaderError};
+use crate::{pop_reader::errors::{FIPSError, PopulationReaderError}};
 
 #[derive(Error, Debug)]
 pub enum ModelError {

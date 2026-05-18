@@ -230,11 +230,11 @@ mod test {
         let setting = Some(home);
         let infection_time = 1.0;
 
-        context.infect_person(source, None, None);
+        context.infect_person(source, None, None, None);
         crate::reports::init(&mut context).unwrap();
 
         context.add_plan(infection_time, move |context| {
-            context.infect_person(target, Some(source), setting);
+            context.infect_person(target, Some(source), setting, None);
         });
         context.execute();
 
@@ -289,11 +289,11 @@ mod test {
         let setting = Some(home);
         let infection_time = 1.0;
 
-        context.infect_person(source, None, None);
+        context.infect_person(source, None, None, None);
         crate::reports::init(&mut context).unwrap();
 
         context.add_plan(infection_time, move |context| {
-            context.infect_person(target, Some(source), setting);
+            context.infect_person(target, Some(source), setting, None);
         });
         context.add_plan(infection_time - 0.1, move |context| {
             context.set_property::<Person, Age>(target, Age(44));

@@ -269,25 +269,30 @@ pub trait ContextSettingExt:
         let sum_weights: f64 = weights_vec.iter().sum();
         if sum_weights > 0.0 {
             let setting_index = self.sample_weighted(SettingRng, &weights_vec);
-            self.get_setting_by_community_mobility(active_settings[setting_index].0)
+            Ok(active_settings[setting_index].0)
         } else {
             let setting_index = self.sample_range(SettingRng, 0..active_settings.len());
-            self.get_setting_by_community_mobility(active_settings[setting_index].0)
+            Ok(active_settings[setting_index].0)
         }
     }
 
     fn get_setting_by_community_mobility(&self, setting: SettingCode) -> Result<SettingCode, ModelError> {
-        if setting.category() != SettingCategory::Community {
+        let membership = self.get_data(SettingMembershipPlugin);
+        if setting.category() == SettingCategory::Community {
             let fips_code = setting.0;
-            println!("Community contact about to be resampled {:?}", fips_code);
-            let output = self.sample_desitination(fips_code)
-                .ok_or_else(|| ModelError::ModelError(format!("No mobility data found for community: {:?}", setting)))?;
-            println!("Resampled community contact destination: {:?}", output);
-            Ok(SettingCode(output))
+            if let Some(output) = self.sample_desitination(fips_code){
+                if membership.get_members(SettingCode(output)).is_none() {
+                    println!("No members found for resampled community mobility contact destination {:?}, using original contact destination {:?}", SettingCode(output), setting);
+                    return Ok(setting);
+                }
+                Ok(SettingCode(output))
+            } else {
+                println!("No community mobility data available for resampling, using original contact destination {:?}", fips_code);
+                Ok(setting)
+            }
         } else {
             Ok(setting)
         }
-        
     }
 
     fn add_person_to_settings(

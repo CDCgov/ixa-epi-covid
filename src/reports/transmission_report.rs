@@ -11,7 +11,8 @@ struct TransmissionReport {
     time: f64,
     target_id: PersonId,
     infected_by: Option<PersonId>,
-    infection_setting_id: Option<SettingCode>,
+    infector_fips: Option<String>,
+    infectee_fips: Option<String>,
 }
 
 define_report!(TransmissionReport);
@@ -20,14 +21,19 @@ fn record_transmission_event(
     context: &mut Context,
     target_id: PersonId,
     infected_by: Option<PersonId>,
-    infection_setting_id: Option<SettingCode>,
+    infector_setting_id: Option<SettingCode>,
+    infectee_setting_id: Option<SettingCode>,
 ) {
     if infected_by.is_some() {
+        let infector_fips = infector_setting_id.unwrap().0.to_debug_string();
+        let infectee_fips = infectee_setting_id.unwrap().0.to_debug_string();
+
         context.send_report(TransmissionReport {
             time: context.get_current_time(),
             target_id,
             infected_by,
-            infection_setting_id,
+            infector_fips: Some(infector_fips),
+            infectee_fips: Some(infectee_fips),
         });
     }
 }
@@ -41,11 +47,12 @@ pub fn init(context: &mut Context, file_name: &str) -> Result<(), ModelError> {
         let _span = open_span("transmission_report");
         if let InfectionData::Infectious {
             infected_by,
-            infection_setting_id,
+            infector_setting_id,
+            infectee_setting_id,
             ..
         } = event.current
         {
-            record_transmission_event(context, event.entity_id, infected_by, infection_setting_id);
+            record_transmission_event(context, event.entity_id, infected_by, infector_setting_id, infectee_setting_id);
         }
     });
     Ok(())
@@ -105,11 +112,11 @@ mod test {
         let setting = Some(home);
         let infection_time = 1.0;
 
-        context.infect_person(source, None, None);
+        context.infect_person(source, None, None, None);
         crate::reports::init(&mut context).unwrap();
 
         context.add_plan(infection_time, move |context| {
-            context.infect_person(target, Some(source), setting);
+            context.infect_person(target, Some(source), setting, None);
         });
         context.execute();
 
@@ -134,7 +141,7 @@ mod test {
             assert_almost_eq!(record.time, infection_time, 0.0);
             assert_eq!(record.target_id, target);
             assert_eq!(record.infected_by.unwrap(), source);
-            assert_eq!(record.infection_setting_id, setting);
+            assert_eq!(record.infector_fips, Some(setting.unwrap().0.to_debug_string()));
             line_count += 1;
         }
         assert_eq!(line_count, 1);
