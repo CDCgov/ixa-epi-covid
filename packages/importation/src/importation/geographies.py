@@ -57,20 +57,23 @@ def get_total_state_population_data(
     filepath = Path(".cache") / filename
     if filepath.exists():
         return pl.read_csv(filepath)
-
-    api_key = get_api_key()
-    c = Census(api_key, year=year)
-    state_population_data = c.acs5.state(("B01003_001E", "NAME"), Census.ALL)
-    state_population_df = pl.DataFrame(state_population_data).select(
-        [
-            pl.col("NAME").alias("state_name"),
-            pl.col("state").cast(pl.Int64),
-            pl.col("B01003_001E").alias("population").cast(pl.Int64),
-        ]
-    )
-    if cache:
-        os.makedirs(filepath.parent, exist_ok=True)
-        state_population_df.write_csv(filepath)
+    else:
+        api_key = get_api_key()
+        c = Census(api_key, year=year)
+        state_population_data = c.acs5.state(
+            ("B01003_001E", "NAME"), Census.ALL
+        )
+        state_population_df = pl.DataFrame(state_population_data).select(
+            [
+                pl.col("NAME").alias("state_name"),
+                pl.col("state").cast(pl.Int64),
+                pl.col("B01003_001E").alias("population").cast(pl.Int64),
+            ]
+        )
+        if cache:
+            os.makedirs(filepath.parent, exist_ok=True)
+            # Cache the DataFrame for faster future access
+            state_population_df.write_csv(filepath)
     return state_population_df
 
 
