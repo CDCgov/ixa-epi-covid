@@ -17,7 +17,7 @@ const TRANSIENT_STATE_COUNT: usize = SETTING_COUNT * 2;
 pub struct ItineraryTransitionMatrix {
     activity_matrix: [[f64; SETTING_COUNT]; SETTING_COUNT],
     location_matrix: [[f64; SETTING_COUNT]; SETTING_COUNT],
-    absorption_probabilities: Option<[[f64; TRANSIENT_STATE_COUNT]; SETTING_COUNT]>,
+    absorption_probabilities: Option<[[f64; SETTING_COUNT]; TRANSIENT_STATE_COUNT]>,
 }
 
 #[allow(dead_code)]
@@ -39,23 +39,36 @@ impl ItineraryTransitionMatrix {
         normalize_matrix(&mut self.location_matrix);
     }
 
-    pub fn build_transient_and_absorbing_matrix(&self) -> ([[f64; TRANSIENT_STATE_COUNT]; TRANSIENT_STATE_COUNT], [[f64; TRANSIENT_STATE_COUNT]; SETTING_COUNT]) {
+    pub fn build_transient_and_absorbing_matrix(
+        &self,
+    ) -> (
+        [[f64; TRANSIENT_STATE_COUNT]; TRANSIENT_STATE_COUNT],
+        [[f64; TRANSIENT_STATE_COUNT]; SETTING_COUNT],
+    ) {
         let mut transient_matrix = [[0.0; TRANSIENT_STATE_COUNT]; TRANSIENT_STATE_COUNT];
         let mut absorbing_matrix = [[0.0; TRANSIENT_STATE_COUNT]; SETTING_COUNT];
-        let activity_row_sums : Vec<f64> = self.activity_matrix.iter().map(|row| row.iter().sum()).collect();
+        let activity_row_sums: Vec<f64> = self
+            .activity_matrix
+            .iter()
+            .map(|row| row.iter().sum())
+            .collect();
         for i in 0..SETTING_COUNT {
             for j in 0..SETTING_COUNT {
-                transient_matrix[i][j] =
-                    self.activity_matrix[i][j];
-                transient_matrix[i][j + SETTING_COUNT] =
-                    1.0 - activity_row_sums[i];
-                transient_matrix[i + SETTING_COUNT][j + SETTING_COUNT] =
-                    self.location_matrix[i][j];
+                transient_matrix[i][j] = self.activity_matrix[i][j];
+                if i != j {
+                    transient_matrix[i + SETTING_COUNT][j + SETTING_COUNT] =
+                        self.location_matrix[i][j];
+                }
             }
+            transient_matrix[i][i + SETTING_COUNT] = 1.0 - activity_row_sums[i];
         }
-        let transient_row_sums : Vec<f64> = transient_matrix.iter().map(|row| row.iter().sum()).collect();
+
+        let transient_row_sums: Vec<f64> = transient_matrix
+            .iter()
+            .map(|row| row.iter().sum())
+            .collect();
         for i in 0..SETTING_COUNT {
-            absorbing_matrix[i + SETTING_COUNT][i] = 1.0 - transient_row_sums[i + SETTING_COUNT];
+            absorbing_matrix[i][i + SETTING_COUNT] = 1.0 - transient_row_sums[i + SETTING_COUNT];
         }
         (transient_matrix, absorbing_matrix)
     }
@@ -154,11 +167,13 @@ impl ItineraryTransitionMatrix {
         }
 
         // Extract inverted matrix and calculate absorption probabilities
-        let mut absorption_probs = [[0.0; SETTING_COUNT * 2]; SETTING_COUNT];
-        for i in 0..SETTING_COUNT * 2 {
+        // N * R where N is the fundamental matrix (I-Q)^-1 and R is the absorbing matrix
+        let mut absorption_probs = [[0.0; SETTING_COUNT]; TRANSIENT_STATE_COUNT];
+        for i in 0..TRANSIENT_STATE_COUNT {
             for j in 0..SETTING_COUNT {
-                for k in 0..SETTING_COUNT * 2 {
-                    absorption_probs[i][j] += aug[i][k + SETTING_COUNT] * absorbing_matrix[k][j];
+                for k in 0..TRANSIENT_STATE_COUNT {
+                    absorption_probs[i][j] +=
+                        aug[i][k + TRANSIENT_STATE_COUNT] * absorbing_matrix[j][k];
                 }
             }
         }
@@ -182,31 +197,8 @@ impl ItineraryTransitionMatrix {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub struct LocationTransitionMatrix {
-    matrix: [[f64; SETTING_COUNT]; SETTING_COUNT],
-}
-#[allow(clippy::needless_range_loop)]
-impl LocationTransitionMatrix {
-    pub fn apply(&self, current_itinerary: &[f64; SETTING_COUNT]) -> [f64; SETTING_COUNT] {
-        let mut new_itinerary = [0.0; SETTING_COUNT];
-        for j in 0..SETTING_COUNT {
-            for i in 0..SETTING_COUNT {
-                new_itinerary[j] += current_itinerary[i] * self.matrix[i][j];
-            }
-        }
-        new_itinerary
-    }
-}
-
-#[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub enum ItineraryActivity {
-    Activity(ActivityTransitionMatrix),
-    Location(LocationTransitionMatrix),
-}
-
-#[derive(Debug, PartialEq, Clone, Serialize, Copy)]
 pub struct ItineraryModifier {
-    modifier_activity: ItineraryActivity,
+    modifier_activity: ItineraryTransitionMatrix,
 }
 
 pub trait ItineraryModifierTrait: std::fmt::Debug + Any {
@@ -346,42 +338,35 @@ impl ContextItineraryModifierExt for Context {
     fn get_modified_itinerary(&self, person_id: PersonId) -> [f64; SETTING_COUNT] {
         let base_itinerary = self.get_property::<Person, ItineraryRatios>(person_id);
         let modifiers = self.get_itinerary_modifiers(person_id);
-        let activity_modifiers: Vec<ItineraryModifier> = modifiers
-            .iter()
-            .filter(|modifier| matches!(modifier.modifier_activity, ItineraryActivity::Activity(_)))
-            .cloned()
-            .collect();
-        let location_modifiers: Vec<ItineraryModifier> = modifiers
-            .into_iter()
-            .filter(|modifier| matches!(modifier.modifier_activity, ItineraryActivity::Location(_)))
-            .collect();
+        let mut layered_modifier: Option<ItineraryTransitionMatrix> = None;
+        for modifier in modifiers {
+            layered_modifier = Some(match layered_modifier {
+                Some(existing) => existing.layer(&modifier.modifier_activity),
+                None => modifier.modifier_activity,
+            });
+        }
+        if let Some(ref mut layered_modifier) = layered_modifier {
+            layered_modifier.normalize();
+        }
+        if let Some(mut layered_modifier) = layered_modifier {
+            layered_modifier.apply(&base_itinerary.itinerary_ratios)
+        } else {
+            base_itinerary.itinerary_ratios
+        }
+    }
+}
 
-        let mut layered_activity_matrix: Option<ActivityTransitionMatrix> = None;
-        for modifier in activity_modifiers {
-            if let ItineraryActivity::Activity(activity_matrix) = modifier.modifier_activity {
-                layered_activity_matrix = Some(match layered_activity_matrix {
-                    Some(existing) => existing.layer(&activity_matrix),
-                    None => activity_matrix,
-                });
-            }
-        }
-
-        let mut modified_itinerary = [0.0; SETTING_COUNT];
-        if let Some(mut layered_activity_matrix) = layered_activity_matrix {
-            layered_activity_matrix.normalize();
-            layered_activity_matrix.calculate_absorption_probabilities();
-            modified_itinerary = layered_activity_matrix.apply(&base_itinerary.itinerary_ratios);
-        }
-        println!(
-            "Itinerary after applying activity modifiers: {:?}",
-            modified_itinerary
-        );
-        for modifier in location_modifiers {
-            if let ItineraryActivity::Location(location_matrix) = modifier.modifier_activity {
-                modified_itinerary = location_matrix.apply(&modified_itinerary);
-            }
-        }
-        modified_itinerary
+pub fn define_itinerary_modifier(
+    activity_matrix: Option<[[f64; SETTING_COUNT]; SETTING_COUNT]>,
+    location_matrix: Option<[[f64; SETTING_COUNT]; SETTING_COUNT]>,
+) -> ItineraryModifier {
+    let itinerary_transition_matrix = ItineraryTransitionMatrix {
+        activity_matrix: activity_matrix.unwrap_or([[0.0; SETTING_COUNT]; SETTING_COUNT]),
+        location_matrix: location_matrix.unwrap_or([[0.0; SETTING_COUNT]; SETTING_COUNT]),
+        absorption_probabilities: None,
+    };
+    ItineraryModifier {
+        modifier_activity: itinerary_transition_matrix,
     }
 }
 
@@ -432,15 +417,7 @@ mod test {
             [0.5, 0.0, 0.0, 0.5],
             [0.0, 0.0, 0.0, 0.0],
         ];
-
-        let weekend_activity_transition_matrix = ActivityTransitionMatrix {
-            transient_matrix: weekend_transient_matrix,
-            absorption_probabilities: None,
-        };
-
-        let weekend_modifier = ItineraryModifier {
-            modifier_activity: ItineraryActivity::Activity(weekend_activity_transition_matrix),
-        };
+        let weekend_modifier = define_itinerary_modifier(Some(weekend_transient_matrix), None);
 
         context.register_itinerary_modifier(Age(11), weekend_modifier);
         let p1 = context.add_entity::<Person, _>((Age(10),)).unwrap();
@@ -466,14 +443,7 @@ mod test {
             [0.0, 0.0, 0.0, 0.0],
         ];
 
-        let weekend_activity_transition_matrix = ActivityTransitionMatrix {
-            transient_matrix: weekend_transient_matrix,
-            absorption_probabilities: None,
-        };
-
-        let weekend_modifier = ItineraryModifier {
-            modifier_activity: ItineraryActivity::Activity(weekend_activity_transition_matrix),
-        };
+        let weekend_modifier = define_itinerary_modifier(Some(weekend_transient_matrix), None);
 
         let school_transient_matrix = [
             [0.0, 0.0, 0.0, 0.0],
@@ -482,14 +452,7 @@ mod test {
             [0.75, 0.0, 0.0, 0.25],
         ];
 
-        let school_activity_transition_matrix = ActivityTransitionMatrix {
-            transient_matrix: school_transient_matrix,
-            absorption_probabilities: None,
-        };
-
-        let school_modifier = ItineraryModifier {
-            modifier_activity: ItineraryActivity::Activity(school_activity_transition_matrix),
-        };
+        let school_modifier = define_itinerary_modifier(Some(school_transient_matrix), None);
 
         context.register_itinerary_modifier(Age(11), weekend_modifier);
         context.register_itinerary_modifier(Age(11), school_modifier);
@@ -503,21 +466,14 @@ mod test {
     #[test]
     fn test_itinerary_modifier_removal_by_property() {
         let mut context = setup();
-        let weekend_transient_matrix = [
+        let weekend_matrix = [
             [0.0, 0.0, 0.0, 0.0],
             [0.5, 0.0, 0.0, 0.5],
             [0.5, 0.0, 0.0, 0.5],
             [0.0, 0.0, 0.0, 0.0],
         ];
 
-        let weekend_activity_transition_matrix = ActivityTransitionMatrix {
-            transient_matrix: weekend_transient_matrix,
-            absorption_probabilities: None,
-        };
-
-        let weekend_modifier = ItineraryModifier {
-            modifier_activity: ItineraryActivity::Activity(weekend_activity_transition_matrix),
-        };
+        let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None);
         context.register_itinerary_modifier(Age(10), weekend_modifier);
         context.register_itinerary_modifier(Age(11), weekend_modifier);
         let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
@@ -539,6 +495,7 @@ mod test {
         assert_eq!(modifiers_p2.len(), 1);
         assert!(modifiers_p2.contains(&weekend_modifier));
     }
+
     #[test]
     fn test_shelter_in_place_and_weekends() {
         // We have a shelter in place + a weekend. Shelter in place moves the time spent doing 50%
@@ -552,12 +509,14 @@ mod test {
         // The solution for comparison is worked by hand
 
         let mut context = setup();
-        let weekend_transient_matrix = [
+        let weekend_matrix = [
             [0.0, 0.0, 0.0, 0.0],
             [0.5, 0.0, 0.0, 0.5],
             [0.5, 0.0, 0.0, 0.5],
             [0.0, 0.0, 0.0, 0.0],
         ];
+
+        let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None);
 
         let sip_transient_matrix = [
             [0.0, 0.0, 0.0, 0.0],
@@ -572,51 +531,27 @@ mod test {
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
         ];
-        let weekend_activity_transition_matrix = ActivityTransitionMatrix {
-            transient_matrix: weekend_transient_matrix,
-            absorption_probabilities: None,
-        };
+        let sip_modifier =
+            define_itinerary_modifier(Some(sip_transient_matrix), Some(sip_location_matrix));
 
-        let sip_activity_transition_matrix = ActivityTransitionMatrix {
-            transient_matrix: sip_transient_matrix,
-            absorption_probabilities: None,
-        };
+        let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
 
-        let sip_location_transition_matrix = LocationTransitionMatrix {
-            matrix: sip_location_matrix,
-        };
-
-        let weekend_modifier = ItineraryModifier {
-            modifier_activity: ItineraryActivity::Activity(weekend_activity_transition_matrix),
-        };
-
-        let sip_modifier = ItineraryModifier {
-            modifier_activity: ItineraryActivity::Activity(sip_activity_transition_matrix),
-        };
-
-        let itinerary_modifier = ItineraryModifier {
-            modifier_activity: ItineraryActivity::Location(sip_location_transition_matrix),
-        };
-        context.register_itinerary_modifier(Age(11), weekend_modifier);
-        let p1 = context.add_entity::<Person, _>((Age(10),)).unwrap();
-        let p2 = context.add_entity::<Person, _>((Age(11),)).unwrap();
-        let modifiers_p1 = context.get_itinerary_modifiers(p1);
-        let modifiers_p2 = context.get_itinerary_modifiers(p2);
-        assert_eq!(modifiers_p1.len(), 0);
-        assert_eq!(modifiers_p2, vec![weekend_modifier]);
-
-        context.register_itinerary_modifier(Age(10), weekend_modifier);
-        assert_eq!(context.get_itinerary_modifiers(p1), vec![weekend_modifier]);
-        assert_eq!(context.get_itinerary_modifiers(p2), vec![weekend_modifier]);
-
-        context.register_itinerary_modifier(Age(11), sip_modifier);
-        context.register_itinerary_modifier(Age(11), itinerary_modifier);
         context.set_property(
-            p2,
+            p1,
             ItineraryRatios {
                 itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
             },
         );
+
+        context.register_itinerary_modifier(Age(11), weekend_modifier);
+
+        let modified_itinerary = context.get_modified_itinerary(p1);
+        assert_eq!(modified_itinerary, [0.55, 0.0, 0.0, 0.45]);
+
+        context.register_itinerary_modifier(Age(11), sip_modifier);
+
+        let modified_itinerary = context.get_modified_itinerary(p1);
+        assert_eq!(modified_itinerary, [0.775, 0.0, 0.0, 0.225]);
     }
 
     #[test]
@@ -632,37 +567,23 @@ mod test {
         // THe solution for comparison is worked by hand
 
         let mut context = setup();
-        let weekend_transient_matrix = [
+        let weekend_matrix = [
             [0.0, 0.0, 0.0, 0.0],
             [0.5, 0.0, 0.0, 0.5],
             [0.5, 0.0, 0.0, 0.5],
             [0.0, 0.0, 0.0, 0.0],
         ];
 
-        let isolation_transient_matrix = [
+        let isolation_matrix = [
             [0.0, 0.0, 0.0, 0.0],
             [1.0, 0.0, 0.0, 0.0],
             [1.0, 0.0, 0.0, 0.0],
             [1.0, 0.0, 0.0, 0.0],
         ];
 
-        let weekend_activity_transition_matrix = ActivityTransitionMatrix {
-            transient_matrix: weekend_transient_matrix,
-            absorption_probabilities: None,
-        };
+        let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None);
+        let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
 
-        let isolation_activity_transition_matrix = ActivityTransitionMatrix {
-            transient_matrix: isolation_transient_matrix,
-            absorption_probabilities: None,
-        };
-
-        let weekend_modifier = ItineraryModifier {
-            modifier_activity: ItineraryActivity::Activity(weekend_activity_transition_matrix),
-        };
-
-        let isolation_modifier = ItineraryModifier {
-            modifier_activity: ItineraryActivity::Activity(isolation_activity_transition_matrix),
-        };
         let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
         context.register_itinerary_modifier(Age(11), weekend_modifier);
         context.register_itinerary_modifier(Age(11), isolation_modifier);
@@ -672,17 +593,8 @@ mod test {
                 itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
             },
         );
-        println!(
-            "Modifiers for p1: {:?}",
-            context.get_itinerary_modifiers(p1)
-        );
-        println!(
-            "Base itinerary for p1: {:?}",
-            context.get_property::<Person, ItineraryRatios>(p1)
-        );
-        println!(
-            "Modified itinerary for p1: {:?}",
-            context.get_modified_itinerary(p1)
-        );
+
+        let modified_itinerary = context.get_modified_itinerary(p1);
+        assert_eq!(modified_itinerary, [1.0, 0.0, 0.0, 0.0]);
     }
 }
