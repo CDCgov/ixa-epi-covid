@@ -93,6 +93,7 @@ impl ItineraryTransitionMatrix {
             activity_matrix: layered_activity_matrix,
             location_matrix: layered_location_matrix,
             absorption_probabilities: None,
+
         }
     }
 
@@ -248,11 +249,31 @@ define_data_plugin!(
 );
 
 pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
+    fn subscribe_to_event_for_itinerary_modifier<P: Property<Person> + std::fmt::Debug + 'static>(
+        &mut self,
+        modifier_map: HashMap<P::CanonicalValue, Vec<ItineraryModifier>>,
+    ) where
+        P::CanonicalValue: std::hash::Hash + Eq,
+    {
+        
+        self.subscribe_to_event(move |context, event: PropertyChangeEvent<Person, P>| {
+            let temp2 = event.previous.make_canonical();
+            if let Some(itinerary_modifiers) = modifier_map.get(&event.current.make_canonical()) {
+                context.update_setting_membership(event.entity_id, itinerary_modifiers.clone());
+                println!("got here");
+            }
+            if let Some(itinerary_modifiers) = modifier_map.get(&event.previous.make_canonical()) {
+                context.update_setting_membership(event.entity_id, itinerary_modifiers.clone());
+            }
+        });
+    }
+    
     /// Register a generic itinerary modifier.
     fn register_itinerary_modifier<P: Property<Person> + std::fmt::Debug + 'static>(
         &mut self,
         person_property: P,
         itinerary_modifier: ItineraryModifier,
+        modify_setting_membership: bool,
     ) where
         P::CanonicalValue: std::hash::Hash + Eq,
     {
@@ -270,11 +291,15 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
                     .entry(person_property.make_canonical())
                     .or_insert_with(Vec::new)
                     .push(itinerary_modifier);
+                let modifier_map_clone = new_modifier_map.clone();
                 let new_person_property_modifier: PersonPropertyItineraryModifier<P> =
                     (downcast_modifier_map.0, new_modifier_map);
                 self.get_data_mut(ItineraryModifierPlugin)
                     .itinerary_modifier_map
                     .insert(TypeId::of::<P>(), Box::new(new_person_property_modifier));
+                if modify_setting_membership{
+                    self.subscribe_to_event_for_itinerary_modifier::<P>(modifier_map_clone);
+                }
             }
         } else {
             let person_property_modifier: PersonPropertyItineraryModifier<P> = (
@@ -285,11 +310,16 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
                 )]),
             );
             // Insert the boxed modifier into the itinerary modifier map
+            let modifier_map_clone = person_property_modifier.1.clone();
             let _ = self
                 .get_data_mut(ItineraryModifierPlugin)
                 .itinerary_modifier_map
                 .insert(TypeId::of::<P>(), Box::new(person_property_modifier));
+            if modify_setting_membership{
+                self.subscribe_to_event_for_itinerary_modifier::<P>(modifier_map_clone);
+            }
         }
+        
     }
 
     fn remove_itinerary_modifier_by_property<P: Property<Person> + 'static>(
@@ -419,7 +449,7 @@ mod test {
         ];
         let weekend_modifier = define_itinerary_modifier(Some(weekend_transient_matrix), None);
 
-        context.register_itinerary_modifier(Age(11), weekend_modifier);
+        context.register_itinerary_modifier(Age(11), weekend_modifier, false);
         let p1 = context.add_entity::<Person, _>((Age(10),)).unwrap();
         let p2 = context.add_entity::<Person, _>((Age(11),)).unwrap();
         let modifiers_p1 = context.get_itinerary_modifiers(p1);
@@ -427,7 +457,7 @@ mod test {
         assert_eq!(modifiers_p1.len(), 0);
         assert_eq!(modifiers_p2, vec![weekend_modifier]);
 
-        context.register_itinerary_modifier(Age(10), weekend_modifier);
+        context.register_itinerary_modifier(Age(10), weekend_modifier, false);
         assert_eq!(context.get_itinerary_modifiers(p1), vec![weekend_modifier]);
         assert_eq!(context.get_itinerary_modifiers(p2), vec![weekend_modifier]);
     }
@@ -454,8 +484,8 @@ mod test {
 
         let school_modifier = define_itinerary_modifier(Some(school_transient_matrix), None);
 
-        context.register_itinerary_modifier(Age(11), weekend_modifier);
-        context.register_itinerary_modifier(Age(11), school_modifier);
+        context.register_itinerary_modifier(Age(11), weekend_modifier, false);
+        context.register_itinerary_modifier(Age(11), school_modifier, false);
         let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
         let modifiers = context.get_itinerary_modifiers(p1);
         assert_eq!(modifiers.len(), 2);
@@ -474,8 +504,8 @@ mod test {
         ];
 
         let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None);
-        context.register_itinerary_modifier(Age(10), weekend_modifier);
-        context.register_itinerary_modifier(Age(11), weekend_modifier);
+        context.register_itinerary_modifier(Age(10), weekend_modifier, false);
+        context.register_itinerary_modifier(Age(11), weekend_modifier, false);
         let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
         let p2 = context.add_entity::<Person, _>((Age(10),)).unwrap();
         let modifiers_p1 = context.get_itinerary_modifiers(p1);
@@ -543,12 +573,12 @@ mod test {
             },
         );
 
-        context.register_itinerary_modifier(Age(11), weekend_modifier);
+        context.register_itinerary_modifier(Age(11), weekend_modifier, false);
 
         let modified_itinerary = context.get_modified_itinerary(p1);
         assert_eq!(modified_itinerary, [0.55, 0.0, 0.0, 0.45]);
 
-        context.register_itinerary_modifier(Age(11), sip_modifier);
+        context.register_itinerary_modifier(Age(11), sip_modifier, false);
 
         let modified_itinerary = context.get_modified_itinerary(p1);
         assert_eq!(modified_itinerary, [0.775, 0.0, 0.0, 0.225]);
@@ -585,8 +615,8 @@ mod test {
         let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
 
         let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
-        context.register_itinerary_modifier(Age(11), weekend_modifier);
-        context.register_itinerary_modifier(Age(11), isolation_modifier);
+        context.register_itinerary_modifier(Age(11), weekend_modifier, false);
+        context.register_itinerary_modifier(Age(11), isolation_modifier, false);
         context.set_property(
             p1,
             ItineraryRatios {
