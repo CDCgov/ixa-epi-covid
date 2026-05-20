@@ -18,6 +18,12 @@ pub trait ItineraryModifierTrait: std::fmt::Debug + DynClone + 'static {
     fn as_any(&self) -> &dyn Any;
 }
 
+impl PartialEq for dyn ItineraryModifierTrait {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_any().type_id() == other.as_any().type_id()
+    }
+}
+
 pub trait ItineraryModifierStorageTrait: std::fmt::Debug + Any {
     fn get_itinerary_modifiers(
         &self,
@@ -234,13 +240,22 @@ mod test {
         let p1 = context.add_entity::<Person, _>((Age(10),)).unwrap();
         let p2 = context.add_entity::<Person, _>((Age(11),)).unwrap();
         let modifiers_p1 = context.get_itinerary_modifiers(p1);
-        let _modifiers_p2 = context.get_itinerary_modifiers(p2);
+        let modifiers_p2 = context.get_itinerary_modifiers(p2);
         assert_eq!(modifiers_p1.len(), 0);
-        // assert_eq!(modifiers_p2, vec![weekend_modifier]);
+        assert_eq!(
+            modifiers_p2,
+            vec![Box::new(weekend_modifier) as Box<dyn ItineraryModifierTrait>]
+        );
 
         context.register_itinerary_modifier(Age(10), weekend_modifier);
-        // assert_eq!(context.get_itinerary_modifiers(p1), vec![weekend_modifier]);
-        // assert_eq!(context.get_itinerary_modifiers(p2), vec![weekend_modifier]);
+        assert_eq!(
+            context.get_itinerary_modifiers(p1),
+            vec![Box::new(weekend_modifier) as Box<dyn ItineraryModifierTrait>]
+        );
+        assert_eq!(
+            context.get_itinerary_modifiers(p2),
+            vec![Box::new(weekend_modifier) as Box<dyn ItineraryModifierTrait>]
+        );
     }
 
     #[test]
@@ -270,8 +285,12 @@ mod test {
         let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
         let modifiers = context.get_itinerary_modifiers(p1);
         assert_eq!(modifiers.len(), 2);
-        // assert!(modifiers.contains(&school_modifier));
-        // assert!(modifiers.contains(&weekend_modifier));
+        assert!(
+            modifiers.contains(&(Box::new(school_modifier) as Box<dyn ItineraryModifierTrait>))
+        );
+        assert!(
+            modifiers.contains(&(Box::new(weekend_modifier) as Box<dyn ItineraryModifierTrait>))
+        );
     }
 
     #[test]
@@ -291,11 +310,15 @@ mod test {
         let p2 = context.add_entity::<Person, _>((Age(10),)).unwrap();
         let modifiers_p1 = context.get_itinerary_modifiers(p1);
         assert_eq!(modifiers_p1.len(), 1);
-        // assert!(modifiers_p1.contains(&weekend_modifier));
+        assert!(
+            modifiers_p1.contains(&(Box::new(weekend_modifier) as Box<dyn ItineraryModifierTrait>))
+        );
 
         let modifiers_p2 = context.get_itinerary_modifiers(p2);
         assert_eq!(modifiers_p2.len(), 1);
-        // assert!(modifiers_p2.contains(&weekend_modifier));
+        assert!(
+            modifiers_p2.contains(&(Box::new(weekend_modifier) as Box<dyn ItineraryModifierTrait>))
+        );
 
         // This would remove all age based itinerary modifiers that is not ideal.
         context.remove_itinerary_modifier_by_property::<Age>(Age(11));
@@ -304,7 +327,9 @@ mod test {
 
         let modifiers_p2 = context.get_itinerary_modifiers(p2);
         assert_eq!(modifiers_p2.len(), 1);
-        // assert!(modifiers_p2.contains(&weekend_modifier));
+        assert!(
+            modifiers_p2.contains(&(Box::new(weekend_modifier) as Box<dyn ItineraryModifierTrait>))
+        );
     }
 
     #[test]
