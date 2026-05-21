@@ -20,19 +20,19 @@ define_report!(PersonPropertyIncidenceReport);
 pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), ModelError> {
     context.add_report::<PersonPropertyIncidenceReport>(file_name)?;
 
-    // all possible ages need to be know a head of time
-    let ages: Vec<u8> = (0..=120).collect();
-    let ages_symp_vec = ages.clone();
+    // // all possible ages need to be know a head of time
+    // let ages: Vec<u8> = (0..=120).collect();
+    // let ages_symp_vec = ages.clone();
 
-    let inf_vec = [InfectionStatus::Infectious, InfectionStatus::Recovered];
+    // let inf_vec = [InfectionStatus::Infectious, InfectionStatus::Recovered];
 
-    let symp_vec = [
-        SymptomStatus::Mild,
-        SymptomStatus::Severe,
-        SymptomStatus::Critical,
-        SymptomStatus::Dead,
-        SymptomStatus::Resolved,
-    ];
+    // let symp_vec = [
+    //     SymptomStatus::Mild,
+    //     SymptomStatus::Severe,
+    //     SymptomStatus::Critical,
+    //     SymptomStatus::Dead,
+    //     SymptomStatus::Resolved,
+    // ];
 
     // this doesn't stop if the simulation does not shutdown elsewhere
     context.track_periodic_value_change_counts::<Person, (Age,), InfectionStatus, _>(
@@ -40,16 +40,14 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), M
         move |context, counter| {
             let t_upper = context.get_current_time();
             if t_upper > 0.0 {
-                for age in ages.iter() {
-                    for infection_status in inf_vec.iter() {
-                        let new_age_count = counter.get_count((Age(*age),), *infection_status);
-                        context.send_report(PersonPropertyIncidenceReport {
-                            t_upper,
-                            age: *age,
-                            event: format!("{:?}", infection_status),
-                            count: new_age_count as u32,
-                        });
-                    }
+                for (stratum, count) in counter.iter() {
+                    let (age, infection_status) = stratum;
+                    context.send_report(PersonPropertyIncidenceReport {
+                        t_upper,
+                        age: age.0.0,
+                        event: format!("{:?}", infection_status),
+                        count: *count as u32,
+                    });
                 }
             }
         },
@@ -58,23 +56,21 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), M
     context.track_periodic_value_change_counts::<Person, (Age,), SymptomStatus, _>(
         period,
         move |context, counter| {
-            // read counts by (stratum, new_value)
             let t_upper = context.get_current_time();
             if t_upper > 0.0 {
-                for age in ages_symp_vec.iter() {
-                    for symptom_status in symp_vec.iter() {
-                        let new_age_count = counter.get_count((Age(*age),), *symptom_status);
-                        context.send_report(PersonPropertyIncidenceReport {
-                            t_upper,
-                            age: *age,
-                            event: format!("{:?}", symptom_status),
-                            count: new_age_count as u32,
-                        });
-                    }
+                for (stratum, count) in counter.iter() {
+                    let (age, symptom_status) = stratum;
+                    context.send_report(PersonPropertyIncidenceReport {
+                        t_upper,
+                        age: age.0.0,
+                        event: format!("{:?}", symptom_status),
+                        count: *count as u32,
+                    });
                 }
             }
         },
     );
+
     Ok(())
 }
 
@@ -178,8 +174,8 @@ mod test {
                 assert_eq!(record.count, 0);
             }
         }
-
-        assert!(line_count > event_count);
+        // Only events are included so the line count should match the event count
+        assert!(line_count == event_count);
         assert_eq!(event_count, 1);
     }
 
@@ -213,7 +209,7 @@ mod test {
             context.set_property::<Person, Age>(target, Age(44));
         });
 
-        context.add_plan(3.0, move |context| {
+        context.add_plan(100.0, move |context| {
             context.shutdown();
         });
         context.execute();
@@ -245,10 +241,8 @@ mod test {
             }
         }
 
-        // 2 event types: Infectious + Recovered
-        // 2 time points
-        // 2 ages at first timepoint, 3 ages at second timepoint for only one event (2x2x2 + 1 = 9)
-        assert!(line_count > event_count);
+        // Only events are included so the line count should match the event count
+        assert!(line_count == event_count);
         assert_eq!(event_count, 1);
     }
 }
