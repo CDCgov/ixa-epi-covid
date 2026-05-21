@@ -5,7 +5,7 @@ use crate::{
     symptom_status_manager::SymptomStatus,
 };
 use ixa::prelude::*;
-use ixa::{ExecutionPhase, HashMap};
+use ixa::{ExecutionPhase};
 
 use serde::{Deserialize, Serialize};
 
@@ -20,49 +20,66 @@ struct PersonPropertyReport {
 
 define_report!(PersonPropertyReport);
 
-define_multi_property!((Age, InfectionStatus, SymptomStatus), Person);
+define_multi_property!((Age, InfectionStatus, SymptomStatus, Alive), Person);
 
-struct PropertyReportDataContainer {
-    report_map_container: HashMap<(Age, InfectionStatus, SymptomStatus), usize>,
-}
+// struct PropertyReportDataContainer {
+//     report_map_container: HashMap<(Age, InfectionStatus, SymptomStatus), usize>,
+// }
 
-define_data_plugin!(
-    PropertyReportDataPlugin,
-    PropertyReportDataContainer,
-    PropertyReportDataContainer {
-        report_map_container: HashMap::default()
-    }
-);
+// define_data_plugin!(
+//     PropertyReportDataPlugin,
+//     PropertyReportDataContainer,
+//     PropertyReportDataContainer {
+//         report_map_container: HashMap::default()
+//     }
+// );
 
-type ReportEvent = PropertyChangeEvent<Person, (Age, InfectionStatus, SymptomStatus)>;
+// type ReportEvent = PropertyChangeEvent<Person, (Age, InfectionStatus, SymptomStatus)>;
 
-fn update_change_counts(context: &mut Context, event: ReportEvent) {
-    let report_container_mut = context.get_data_mut(PropertyReportDataPlugin);
+// fn update_change_counts(context: &mut Context, event: ReportEvent) {
+//     let report_container_mut = context.get_data_mut(PropertyReportDataPlugin);
 
-    let _ = *report_container_mut
-        .report_map_container
-        .entry(event.current)
-        .and_modify(|n| *n += 1)
-        .or_insert(1);
+//     let _ = *report_container_mut
+//         .report_map_container
+//         .entry(event.current)
+//         .and_modify(|n| *n += 1)
+//         .or_insert(1);
 
-    let _ = *report_container_mut
-        .report_map_container
-        .entry(event.previous)
-        .and_modify(|n| *n -= 1)
-        .or_insert(0);
-}
+//     let _ = *report_container_mut
+//         .report_map_container
+//         .entry(event.previous)
+//         .and_modify(|n| *n -= 1)
+//         .or_insert(0);
+// }
 
 fn send_property_counts(context: &mut Context) {
-    let report_container = context.get_data(PropertyReportDataPlugin);
-
-    for (values, count_property) in &report_container.report_map_container {
-        context.send_report(PersonPropertyReport {
-            t: context.get_current_time(),
-            age: values.0.0,
-            infection_status: values.1,
-            symptom_status: values.2,
-            count: *count_property,
-        });
+    let ages: Vec<u8> = (0..=120).collect();
+    let infection_statuses = vec![
+        InfectionStatus::Susceptible,
+        InfectionStatus::Infectious,
+        InfectionStatus::Recovered,
+    ];
+    let symptom_statuses = vec![
+        SymptomStatus::NoSymptoms,
+        SymptomStatus::Mild,
+        SymptomStatus::Severe,
+        SymptomStatus::Critical,
+        SymptomStatus::Resolved,
+        SymptomStatus::Dead,
+    ];
+    for age in ages {
+        for infection_status in &infection_statuses {
+            for symptom_status in &symptom_statuses {
+                let count = context.query_entity_count(with!(Person, (Age(age), *infection_status, *symptom_status, Alive(true))));
+                context.send_report(PersonPropertyReport {
+                    t: context.get_current_time(),
+                    age,
+                    infection_status: *infection_status,
+                    symptom_status: *symptom_status,
+                    count,
+                });
+            }
+        }
     }
 }
 
@@ -76,26 +93,26 @@ fn send_property_counts(context: &mut Context) {
 /// Will panic if symptom value string is not listed in enum
 pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), ModelError> {
     context.add_report::<PersonPropertyReport>(file_name)?;
+    context.index_property::<Person, (Age, InfectionStatus, SymptomStatus, Alive)>();
+    // let mut map_counts = HashMap::default();
 
-    let mut map_counts = HashMap::default();
+    // context.with_query_results(with!(Person, Alive(true)), &mut |current_people| {
+    //     //current_people = results.to_owned_vec();
+    //     for person in current_people {
+    //         let value: (Age, InfectionStatus, SymptomStatus) = context.get_property(person);
+    //         map_counts
+    //             .entry(value)
+    //             .and_modify(|count| *count += 1)
+    //             .or_insert(1);
+    //     }
+    // });
 
-    context.with_query_results(with!(Person, Alive(true)), &mut |current_people| {
-        //current_people = results.to_owned_vec();
-        for person in current_people {
-            let value: (Age, InfectionStatus, SymptomStatus) = context.get_property(person);
-            map_counts
-                .entry(value)
-                .and_modify(|count| *count += 1)
-                .or_insert(1);
-        }
-    });
+    // let report_container = context.get_data_mut(PropertyReportDataPlugin);
+    // report_container.report_map_container = map_counts;
 
-    let report_container = context.get_data_mut(PropertyReportDataPlugin);
-    report_container.report_map_container = map_counts;
-
-    context.subscribe_to_event::<ReportEvent>(|context, event| {
-        update_change_counts(context, event);
-    });
+    // context.subscribe_to_event::<ReportEvent>(|context, event| {
+    //     update_change_counts(context, event);
+    // });
 
     context.add_periodic_plan_with_phase(
         period,
