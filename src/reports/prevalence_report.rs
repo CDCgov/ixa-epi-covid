@@ -4,8 +4,8 @@ use crate::{
     population_loader::{Age, Alive, Person},
     symptom_status_manager::SymptomStatus,
 };
+use ixa::ExecutionPhase;
 use ixa::prelude::*;
-use ixa::{ExecutionPhase};
 
 use serde::{Deserialize, Serialize};
 
@@ -70,7 +70,10 @@ fn send_property_counts(context: &mut Context) {
     for age in ages {
         for infection_status in &infection_statuses {
             for symptom_status in &symptom_statuses {
-                let count = context.query_entity_count(with!(Person, (Age(age), *infection_status, *symptom_status, Alive(true))));
+                let count = context.query_entity_count(with!(
+                    Person,
+                    (Age(age), *infection_status, *symptom_status, Alive(true))
+                ));
                 context.send_report(PersonPropertyReport {
                     t: context.get_current_time(),
                     age,
