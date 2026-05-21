@@ -4,7 +4,7 @@ use crate::{
     population_loader::{Age, Person},
     symptom_status_manager::SymptomStatus,
 };
-use ixa::{prelude::*};
+use ixa::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -17,7 +17,6 @@ struct PersonPropertyIncidenceReport {
 
 define_report!(PersonPropertyIncidenceReport);
 
-
 pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), ModelError> {
     context.add_report::<PersonPropertyIncidenceReport>(file_name)?;
 
@@ -26,7 +25,6 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), M
     let ages_symp_vec = ages.clone();
 
     let inf_vec = [InfectionStatus::Infectious, InfectionStatus::Recovered];
-
 
     let symp_vec = [
         SymptomStatus::Mild,
@@ -47,18 +45,19 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), M
                         let new_age_count = counter.get_count((Age(*age),), *infection_status);
                         context.send_report(PersonPropertyIncidenceReport {
                             t_upper,
-                            age:*age,
+                            age: *age,
                             event: format!("{:?}", infection_status),
                             count: new_age_count as u32,
                         });
                     }
                 }
             }
-        });
-    
+        },
+    );
+
     context.track_periodic_value_change_counts::<Person, (Age,), SymptomStatus, _>(
         period,
-        move|context, counter| {
+        move |context, counter| {
             // read counts by (stratum, new_value)
             let t_upper = context.get_current_time();
             if t_upper > 0.0 {
@@ -74,7 +73,8 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), M
                     }
                 }
             }
-        });
+        },
+    );
     Ok(())
 }
 
@@ -147,7 +147,7 @@ mod test {
         context.add_plan(infection_time, move |context| {
             context.infect_person(target, Some(source), setting);
         });
-        context.add_plan(3.0, move|context| {
+        context.add_plan(3.0, move |context| {
             context.shutdown();
         });
         context.execute();
@@ -213,7 +213,7 @@ mod test {
             context.set_property::<Person, Age>(target, Age(44));
         });
 
-        context.add_plan(3.0, move|context| {
+        context.add_plan(3.0, move |context| {
             context.shutdown();
         });
         context.execute();
