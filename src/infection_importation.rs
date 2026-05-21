@@ -63,9 +63,9 @@ fn load_initial_prevalence(context: &mut Context) {
         trace!(
             "Altering {k} susceptibles with a seeding function using proportion {initial_prevalence}."
         );
-        let susceptibles = context.sample_entities::<Person, _, _>(
+        let susceptibles = context.sample_entities(
             ImportationRng,
-            (InfectionStatus::Susceptible,),
+            with!(Person, InfectionStatus::Susceptible),
             k as usize,
         );
         for susceptible in susceptibles {
@@ -77,7 +77,7 @@ fn load_initial_prevalence(context: &mut Context) {
 /// Receives a single line ImportationRecord struct and attempts to infect the specified imported infections count at time.
 fn plan_importations(context: &mut Context, imported_infections: usize, time: f64) {
     context.add_plan(time, move |context| {
-        let attempted_targets = context.sample_entities::<Person, _, _>(ImportationRng, (), imported_infections);
+        let attempted_targets = context.sample_entities(ImportationRng, Person, imported_infections);
 
         for target_id in attempted_targets {
             if context.get_property::<Person, InfectionStatus>(target_id) == InfectionStatus::Susceptible {
@@ -191,7 +191,7 @@ mod test {
     #[test]
     fn test_load_initial_prevalence() {
         let mut context = setup_context(0, 1.0, None);
-        let initial_infected: PersonId = context.add_entity((Age(30),)).unwrap();
+        let initial_infected: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         load_initial_prevalence(&mut context);
         // we check at time 0 to since individuals infections begin before time 0
         context.add_plan(0.0, move |context| {
@@ -206,7 +206,7 @@ mod test {
     #[test]
     fn test_load_initial_prevalence_empty() {
         let mut context = setup_context(0, 0.0, None);
-        let person: PersonId = context.add_entity((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         load_initial_prevalence(&mut context);
         context.execute();
         assert_eq!(
@@ -226,12 +226,12 @@ mod test {
                 Rc::clone(&num_initial_infections);
             let mut context = setup_context(rep, initial_prevalence, None);
             for _ in 0..pop_size {
-                context.add_entity::<Person, _>((Age(30),)).unwrap();
+                context.add_entity(with!(Person, Age(30))).unwrap();
             }
             load_initial_prevalence(&mut context);
             context.add_plan(0.0, move |context| {
                 *num_initial_infections_clone.borrow_mut() +=
-                    context.query_entity_count::<Person, _>((InfectionStatus::Infectious,));
+                    context.query_entity_count(with!(Person, InfectionStatus::Infectious));
             });
             context.execute();
         }
@@ -253,12 +253,12 @@ mod test {
         let mut context = setup_context(0, 0.0, Some(imported_infections_info));
 
         for _ in 0..100 {
-            context.add_entity::<Person, _>((Age(30),)).unwrap();
+            context.add_entity(with!(Person, Age(30))).unwrap();
         }
         init(&mut context).unwrap();
         context.execute();
 
-        let infecteds = context.query_entity_count::<Person, _>((InfectionStatus::Infectious,));
+        let infecteds = context.query_entity_count(with!(Person, InfectionStatus::Infectious));
         let whole_population = context.get_entity_count::<Person>();
         assert_eq!(infecteds, whole_population);
     }
@@ -275,7 +275,7 @@ mod test {
         let mut context = setup_context(0, 1.0, Some(imported_infections_info));
 
         for _ in 0..100 {
-            context.add_entity::<Person, _>((Age(30),)).unwrap();
+            context.add_entity(with!(Person, Age(30))).unwrap();
         }
         init(&mut context).unwrap();
         context.subscribe_to_event(move |context, event: PropertyChangeEvent<Person, InfectionStatus>| {
@@ -286,7 +286,7 @@ mod test {
         context.add_plan(0.0, move |context| {
             // Everyone should be infectious at time 0.0 from initial prevalence 1.0
             assert_eq!(
-                context.query_entity_count::<Person, _>((InfectionStatus::Infectious,)),
+                context.query_entity_count(with!(Person, InfectionStatus::Infectious)),
                 100
             );
         });
@@ -304,7 +304,7 @@ mod test {
         let mut context = setup_context(0, 0.0, Some(imported_infections_info));
 
         for _ in 0..1000 {
-            context.add_entity::<Person, _>((Age(30),)).unwrap();
+            context.add_entity(with!(Person, Age(30))).unwrap();
         }
         init(&mut context).unwrap();
 
@@ -324,7 +324,7 @@ mod test {
         context.add_plan(1.0, move |context| {
             // At time 1.0, we should have 2 infections from the import file
             assert_eq!(
-                context.query_entity_count::<Person, _>((InfectionStatus::Infectious,)),
+                context.query_entity_count(with!(Person, InfectionStatus::Infectious)),
                 2
             );
         });
@@ -332,7 +332,7 @@ mod test {
         context.add_plan(3.0, move |context| {
             // At time 3.0, we should have 3 additional infections from the import file (5 total)
             assert_eq!(
-                context.query_entity_count::<Person, _>((InfectionStatus::Infectious,)),
+                context.query_entity_count(with!(Person, InfectionStatus::Infectious)),
                 5
             );
         });

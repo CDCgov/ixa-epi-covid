@@ -117,8 +117,8 @@ mod test {
         config.directory(path.clone());
         crate::reports::init(&mut context).unwrap();
 
-        let _survivor: PersonId = context.add_entity((Age(42),)).unwrap();
-        let target: PersonId = context.add_entity((Age(43),)).unwrap();
+        let _survivor: PersonId = context.add_entity(with!(Person, Age(42))).unwrap();
+        let target: PersonId = context.add_entity(with!(Person, Age(43))).unwrap();
         let time_of_death = 1.0;
 
         context.add_plan(time_of_death, move |context| {

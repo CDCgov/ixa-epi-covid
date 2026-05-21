@@ -1,6 +1,7 @@
 use ixa::{impl_derived_property, prelude::*, profiling::open_span};
 
 use serde::Serialize;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 use crate::error::ModelError;
@@ -22,11 +23,34 @@ impl_property!(Age, Person);
 pub struct Alive(pub bool);
 impl_property!(Alive, Person, default_const = Alive(true));
 
-#[derive(Debug, PartialEq, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub struct Itinerary {
     pub setting_ids: [Option<SettingCode>; SETTING_COUNT],
     pub itinerary_ratios: [f64; SETTING_COUNT],
 }
+
+impl PartialEq for Itinerary {
+    fn eq(&self, other: &Self) -> bool {
+        self.setting_ids == other.setting_ids
+            && self
+                .itinerary_ratios
+                .iter()
+                .zip(other.itinerary_ratios.iter())
+                .all(|(left, right)| left.to_bits() == right.to_bits())
+    }
+}
+
+impl Eq for Itinerary {}
+
+impl Hash for Itinerary {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.setting_ids.hash(state);
+        self.itinerary_ratios
+            .iter()
+            .for_each(|ratio| ratio.to_bits().hash(state));
+    }
+}
+
 impl_property!(
     Itinerary,
     Person,
@@ -71,7 +95,9 @@ fn create_person_from_record(
     let home_id = SettingCode(home_id);
     let community_id = home_id.extract_community();
 
-    let person_id: PersonId = context.add_entity((Age(person_record.age),)).unwrap();
+    let person_id: PersonId = context
+        .add_entity(with!(Person, Age(person_record.age)))
+        .unwrap();
     context.add_person_to_settings(
         person_id,
         Some(home_id),
@@ -191,8 +217,8 @@ mod test {
 
         assert_eq!(context.get_entity_count::<Person>(), 2);
 
-        for item in age.iter().take(1) {
-            assert_eq!(1, context.query_entity_count::<Person, _>((Age(*item),)));
+        for item in age.iter() {
+            assert_eq!(1, context.query_entity_count(with!(Person, Age(*item))));
         }
         let home_id1 = home_id[0];
         let home_id2 = home_id[1];
@@ -246,8 +272,8 @@ mod test {
 
         assert_eq!(context.get_entity_count::<Person>(), 2);
 
-        for item in age.iter().take(1) {
-            assert_eq!(1, context.query_entity_count::<Person, _>((Age(*item),)));
+        for item in age.iter() {
+            assert_eq!(1, context.query_entity_count(with!(Person, Age(*item))));
         }
         assert_eq!(1, context.get_setting_size(home_id[0]));
         assert_eq!(1, context.get_setting_size(home_id[1]));
@@ -280,8 +306,8 @@ mod test {
 
         assert_eq!(context.get_entity_count::<Person>(), 2);
 
-        for item in age.iter().take(1) {
-            assert_eq!(1, context.query_entity_count::<Person, _>((Age(*item),)));
+        for item in age.iter() {
+            assert_eq!(1, context.query_entity_count(with!(Person, Age(*item))));
         }
         assert_eq!(1, context.get_setting_size(home_id[0]));
         assert_eq!(1, context.get_setting_size(home_id[1]));

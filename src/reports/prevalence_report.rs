@@ -79,7 +79,7 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), M
 
     let mut map_counts = HashMap::default();
 
-    context.with_query_results::<Person, _>((Alive(true),), &mut |current_people| {
+    context.with_query_results(with!(Person, Alive(true)), &mut |current_people| {
         //current_people = results.to_owned_vec();
         for person in current_people {
             let value: (Age, InfectionStatus, SymptomStatus) = context.get_property(person);
@@ -109,6 +109,7 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), M
 
 #[cfg(test)]
 mod test {
+    use crate::population_loader::Person;
     use crate::{
         Age,
         infectiousness_manager::{InfectionContextExt, InfectionStatus},
@@ -152,8 +153,8 @@ mod test {
         let config = context.report_options();
         config.directory(path.clone());
 
-        let source: PersonId = context.add_entity((Age(42),)).unwrap();
-        let target: PersonId = context.add_entity((Age(43),)).unwrap();
+        let source: PersonId = context.add_entity(with!(Person, Age(42))).unwrap();
+        let target: PersonId = context.add_entity(with!(Person, Age(43))).unwrap();
         let home: SettingCode = SettingCode::arbitrary_home_code();
         let setting = Some(home);
         let infection_time = 1.0;
