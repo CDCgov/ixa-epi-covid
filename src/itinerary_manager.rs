@@ -18,6 +18,7 @@ pub trait ItineraryModifierTrait: std::fmt::Debug + DynClone + 'static {
     fn as_any(&self) -> &dyn Any;
 }
 
+// This is implemented for testing
 impl PartialEq for dyn ItineraryModifierTrait {
     fn eq(&self, other: &Self) -> bool {
         self.as_any().type_id() == other.as_any().type_id()
@@ -103,11 +104,6 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
                     .entry(person_property.make_canonical())
                     .or_insert_with(Vec::new)
                     .push(Box::new(itinerary_modifier));
-                // let new_person_property_modifier: PersonPropertyItineraryModifier<P> =
-                //     (downcast_modifier_map.0, &itinerary_modifier_map);
-                // self.get_data_mut(ItineraryModifierPlugin)
-                //     .itinerary_modifier_map
-                //     .insert(TypeId::of::<P>(), Box::new(new_person_property_modifier));
             }
         } else {
             let person_property_modifier: PersonPropertyItineraryModifier<P> = (
@@ -143,13 +139,6 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
         {
             let (_property, itinerary_modifier_map) = downcast_property_modifier_map;
             itinerary_modifier_map.remove(&property_value);
-            // let mut new_property_modifier_map = downcast_property_modifier_map.1.clone();
-            // new_property_modifier_map.remove(&property_value);
-            // let new_person_property_modifier: PersonPropertyItineraryModifier<P> =
-            //     (downcast_property_modifier_map.0.clone(), new_property_modifier_map);
-            // self.get_data_mut(ItineraryModifierPlugin)
-            //     .itinerary_modifier_map
-            //     .insert(TypeId::of::<P>(), Box::new(new_person_property_modifier));
         }
     }
 

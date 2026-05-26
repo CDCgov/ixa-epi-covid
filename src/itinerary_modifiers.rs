@@ -12,24 +12,19 @@ pub struct ItineraryTransitionMatrix {
     absorption_probabilities: Option<[[f64; SETTING_COUNT]; TRANSIENT_STATE_COUNT]>,
 }
 
-impl ItineraryModifierTrait for ItineraryModifier {
+impl ItineraryModifierTrait for ItineraryTransitionMatrix {
     fn as_any(&self) -> &dyn Any {
         self
     }
     fn layer(&mut self, other: Box<dyn ItineraryModifierTrait>) -> Box<dyn ItineraryModifierTrait> {
-        if let Some(other_modifier) = other.as_any().downcast_ref::<ItineraryModifier>() {
-            Box::new(ItineraryModifier {
-                modifier_activity: self
-                    .modifier_activity
-                    .layer(&other_modifier.modifier_activity),
-            })
+        if let Some(other_modifier) = other.as_any().downcast_ref::<ItineraryTransitionMatrix>() {
+            Box::new((*self).layer(other_modifier))
         } else {
             panic!("Incompatible modifier types for layering");
         }
     }
-
     fn apply(&mut self, base_itinerary: &[f64; SETTING_COUNT]) -> [f64; SETTING_COUNT] {
-        self.modifier_activity.apply(base_itinerary)
+        self.apply(base_itinerary)
     }
 }
 
@@ -210,21 +205,131 @@ impl ItineraryTransitionMatrix {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub struct ItineraryModifier {
-    modifier_activity: ItineraryTransitionMatrix,
-}
-
 pub fn define_itinerary_modifier(
     activity_matrix: Option<[[f64; SETTING_COUNT]; SETTING_COUNT]>,
     location_matrix: Option<[[f64; SETTING_COUNT]; SETTING_COUNT]>,
-) -> ItineraryModifier {
-    let itinerary_transition_matrix = ItineraryTransitionMatrix {
+) -> ItineraryTransitionMatrix {
+    ItineraryTransitionMatrix {
         activity_matrix: activity_matrix.unwrap_or([[0.0; SETTING_COUNT]; SETTING_COUNT]),
         location_matrix: location_matrix.unwrap_or([[0.0; SETTING_COUNT]; SETTING_COUNT]),
         absorption_probabilities: None,
-    };
-    ItineraryModifier {
-        modifier_activity: itinerary_transition_matrix,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_define_itinerary_modifier_with_none() {
+        let modifier = define_itinerary_modifier(None, None);
+        assert_eq!(
+            modifier.activity_matrix,
+            [[0.0; SETTING_COUNT]; SETTING_COUNT]
+        );
+        assert_eq!(
+            modifier.location_matrix,
+            [[0.0; SETTING_COUNT]; SETTING_COUNT]
+        );
+        assert_eq!(modifier.absorption_probabilities, None);
+    }
+
+    #[test]
+    fn test_define_itinerary_modifier_with_matrices() {
+        let mut activity = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+        let mut location = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+        activity[0][0] = 0.5;
+        location[0][1] = 0.3;
+
+        let modifier = define_itinerary_modifier(Some(activity), Some(location));
+        assert_eq!(modifier.activity_matrix[0][0], 0.5);
+        assert_eq!(modifier.location_matrix[0][1], 0.3);
+    }
+
+    #[test]
+    fn test_normalize_matrix() {
+        let mut matrix = ItineraryTransitionMatrix {
+            activity_matrix: {
+                let mut m = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+                m[0][0] = 0.4;
+                m[0][1] = 0.6;
+                m
+            },
+            location_matrix: [[0.0; SETTING_COUNT]; SETTING_COUNT],
+            absorption_probabilities: None,
+        };
+
+        matrix.normalize();
+        let sum: f64 = matrix.activity_matrix[0].iter().sum();
+        assert!(sum <= 1.0);
+    }
+
+    #[test]
+    fn test_normalize_matrix_unnormalized() {
+        let mut matrix = ItineraryTransitionMatrix {
+            activity_matrix: {
+                let mut m = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+                m[0][0] = 0.6;
+                m[0][1] = 0.8;
+                m
+            },
+            location_matrix: [[0.0; SETTING_COUNT]; SETTING_COUNT],
+            absorption_probabilities: None,
+        };
+
+        matrix.normalize();
+        let sum: f64 = matrix.activity_matrix[0].iter().sum();
+        assert!((sum - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_layer_matrices() {
+        let matrix1 = ItineraryTransitionMatrix {
+            activity_matrix: {
+                let mut m = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+                m[0][0] = 0.3;
+                m
+            },
+            location_matrix: [[0.0; SETTING_COUNT]; SETTING_COUNT],
+            absorption_probabilities: None,
+        };
+
+        let matrix2 = ItineraryTransitionMatrix {
+            activity_matrix: {
+                let mut m = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+                m[0][0] = 0.2;
+                m
+            },
+            location_matrix: [[0.0; SETTING_COUNT]; SETTING_COUNT],
+            absorption_probabilities: None,
+        };
+
+        let layered = matrix1.layer(&matrix2);
+        assert_eq!(layered.activity_matrix[0][0], 0.5);
+        assert_eq!(layered.absorption_probabilities, None);
+    }
+
+    #[test]
+    fn test_build_transient_and_absorbing_matrix() {
+        let matrix = ItineraryTransitionMatrix {
+            activity_matrix: {
+                let mut m = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+                m[0][0] = 0.5;
+                m
+            },
+            location_matrix: [[0.0; SETTING_COUNT]; SETTING_COUNT],
+            absorption_probabilities: None,
+        };
+
+        let (transient, absorbing) = matrix.build_transient_and_absorbing_matrix();
+        assert_eq!(transient[0][0], 0.5);
+        assert_eq!(transient[0][SETTING_COUNT], 0.5);
+        assert_eq!(transient[1][SETTING_COUNT + 1], 1.0);
+        assert_eq!(transient[2][SETTING_COUNT + 2], 1.0);
+        assert_eq!(transient[3][SETTING_COUNT + 3], 1.0);
+        assert_eq!(absorbing[0][SETTING_COUNT], 1.0);
+        assert_eq!(absorbing[1][SETTING_COUNT + 1], 1.0);
+        assert_eq!(absorbing[2][SETTING_COUNT + 2], 1.0);
+        assert_eq!(absorbing[3][SETTING_COUNT + 3], 1.0);
     }
 }
