@@ -4,11 +4,8 @@ use std::{
     collections::HashMap,
 };
 
-use crate::settings::SETTING_COUNT;
-use crate::{
-    population_loader::{Person, PersonId},
-    settings::ItineraryRatios,
-};
+use crate::population_loader::{Person, PersonId};
+use crate::settings::{Itinerary, SETTING_COUNT};
 
 use dyn_clone::DynClone;
 
@@ -160,7 +157,7 @@ impl ContextItineraryModifierExt for Context {
     }
 
     fn get_modified_itinerary(&self, person_id: PersonId) -> [f64; SETTING_COUNT] {
-        let base_itinerary = self.get_property::<Person, ItineraryRatios>(person_id);
+        let base_itinerary = self.get_property::<Person, Itinerary>(person_id);
         let modifiers = self.get_itinerary_modifiers(person_id);
         let mut layered_modifier: Option<Box<dyn ItineraryModifierTrait>> = None;
         for modifier in modifiers {
@@ -183,7 +180,7 @@ mod test {
     use crate::Age;
     use crate::itinerary_modifiers::define_itinerary_modifier;
     use crate::parameters::{GlobalParams, Params, SettingProperties};
-    use crate::settings::SettingCategory;
+    use crate::settings::{Itinerary, SettingCategory};
     use ixa::HashMap;
 
     fn setup() -> Context {
@@ -226,8 +223,8 @@ mod test {
         let weekend_modifier = define_itinerary_modifier(Some(weekend_transient_matrix), None);
 
         context.register_itinerary_modifier(Age(11), weekend_modifier);
-        let p1 = context.add_entity::<Person, _>((Age(10),)).unwrap();
-        let p2 = context.add_entity::<Person, _>((Age(11),)).unwrap();
+        let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
+        let p2 = context.add_entity(with!(Person, Age(11))).unwrap();
         let modifiers_p1 = context.get_itinerary_modifiers(p1);
         let modifiers_p2 = context.get_itinerary_modifiers(p2);
         assert_eq!(modifiers_p1.len(), 0);
@@ -271,7 +268,7 @@ mod test {
 
         context.register_itinerary_modifier(Age(11), weekend_modifier);
         context.register_itinerary_modifier(Age(11), school_modifier);
-        let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
+        let p1 = context.add_entity(with!(Person, Age(11))).unwrap();
         let modifiers = context.get_itinerary_modifiers(p1);
         assert_eq!(modifiers.len(), 2);
         assert!(
@@ -295,8 +292,8 @@ mod test {
         let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None);
         context.register_itinerary_modifier(Age(10), weekend_modifier);
         context.register_itinerary_modifier(Age(11), weekend_modifier);
-        let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
-        let p2 = context.add_entity::<Person, _>((Age(10),)).unwrap();
+        let p1 = context.add_entity(with!(Person, Age(11))).unwrap();
+        let p2 = context.add_entity(with!(Person, Age(10))).unwrap();
         let modifiers_p1 = context.get_itinerary_modifiers(p1);
         assert_eq!(modifiers_p1.len(), 1);
         assert!(
@@ -359,11 +356,12 @@ mod test {
         let sip_modifier =
             define_itinerary_modifier(Some(sip_transient_matrix), Some(sip_location_matrix));
 
-        let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
+        let p1 = context.add_entity(with!(Person, Age(11))).unwrap();
 
         context.set_property(
             p1,
-            ItineraryRatios {
+            Itinerary {
+                setting_ids: [None, None, None, None],
                 itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
             },
         );
@@ -409,12 +407,13 @@ mod test {
         let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None);
         let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
 
-        let p1 = context.add_entity::<Person, _>((Age(11),)).unwrap();
+        let p1 = context.add_entity(with!(Person, Age(11))).unwrap();
         context.register_itinerary_modifier(Age(11), weekend_modifier);
         context.register_itinerary_modifier(Age(11), isolation_modifier);
         context.set_property(
             p1,
-            ItineraryRatios {
+            Itinerary {
+                setting_ids: [None, None, None, None],
                 itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
             },
         );
