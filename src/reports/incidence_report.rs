@@ -20,26 +20,12 @@ define_report!(PersonPropertyIncidenceReport);
 pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), ModelError> {
     context.add_report::<PersonPropertyIncidenceReport>(file_name)?;
 
-    // // all possible ages need to be know a head of time
-    // let ages: Vec<u8> = (0..=120).collect();
-    // let ages_symp_vec = ages.clone();
-
-    // let inf_vec = [InfectionStatus::Infectious, InfectionStatus::Recovered];
-
-    // let symp_vec = [
-    //     SymptomStatus::Mild,
-    //     SymptomStatus::Severe,
-    //     SymptomStatus::Critical,
-    //     SymptomStatus::Dead,
-    //     SymptomStatus::Resolved,
-    // ];
-
     // this doesn't stop if the simulation does not shutdown elsewhere
     context.track_periodic_value_change_counts::<Person, (Age,), InfectionStatus, _>(
         period,
         move |context, counter| {
             let t_upper = context.get_current_time();
-            if t_upper > 0.0 {
+            if t_upper >= 0.0 {
                 for (stratum, count) in counter.iter() {
                     let (age, infection_status) = stratum;
                     context.send_report(PersonPropertyIncidenceReport {
@@ -57,7 +43,7 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), M
         period,
         move |context, counter| {
             let t_upper = context.get_current_time();
-            if t_upper > 0.0 {
+            if t_upper >= 0.0 {
                 for (stratum, count) in counter.iter() {
                     let (age, symptom_status) = stratum;
                     context.send_report(PersonPropertyIncidenceReport {
@@ -175,7 +161,7 @@ mod test {
             }
         }
         // Only events are included so the line count should match the event count
-        assert!(line_count == event_count);
+        assert_eq!(line_count, event_count);
         assert_eq!(event_count, 1);
     }
 
@@ -242,7 +228,7 @@ mod test {
         }
 
         // Only events are included so the line count should match the event count
-        assert!(line_count == event_count);
+        assert_eq!(line_count, event_count);
         assert_eq!(event_count, 1);
     }
 }
