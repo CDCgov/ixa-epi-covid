@@ -11,7 +11,7 @@ struct TransmissionReport {
     time: f64,
     target_id: PersonId,
     infected_by: Option<PersonId>,
-    infection_setting_id: Option<SettingCode>,
+    infection_setting_id: Option<String>,
 }
 
 define_report!(TransmissionReport);
@@ -22,6 +22,7 @@ fn record_transmission_event(
     infected_by: Option<PersonId>,
     infection_setting_id: Option<SettingCode>,
 ) {
+    let infection_setting_id = infection_setting_id.map(|code| code.0.to_report_string());
     if infected_by.is_some() {
         context.send_report(TransmissionReport {
             time: context.get_current_time(),
@@ -135,7 +136,10 @@ mod test {
             assert_almost_eq!(record.time, infection_time, 0.0);
             assert_eq!(record.target_id, target);
             assert_eq!(record.infected_by.unwrap(), source);
-            assert_eq!(record.infection_setting_id, setting);
+            assert_eq!(
+                record.infection_setting_id,
+                setting.map(|code| code.0.to_report_string())
+            );
             line_count += 1;
         }
         assert_eq!(line_count, 1);

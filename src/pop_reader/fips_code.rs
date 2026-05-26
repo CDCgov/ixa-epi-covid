@@ -105,6 +105,19 @@ const ID_OFFSET: usize = 8;
 pub struct FIPSCode(NonZero<u64>);
 
 impl FIPSCode {
+    /// Converts the FIPSCode to a string in the same format as the Debug implementation.
+    #[must_use]
+    pub fn to_report_string(&self) -> String {
+        format!(
+            "{:02}-{:03}-{:06}-{:01}-{:05}-{:02x}",
+            self.state_code(),
+            self.county_code(),
+            self.census_tract_code(),
+            self.category_code(),
+            self.id(),
+            self.data()
+        )
+    }
     // region Constructors
     /// Constructs a new [`FIPSCode`] from a [`USState`]. Unlike the other constructors, this constructor is infallible.
     #[must_use]
