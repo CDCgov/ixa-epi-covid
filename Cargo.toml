@@ -21,6 +21,7 @@ zip = { version = "8.5" }
 once_cell = { version = "1" }
 ouroboros = { version = "0.18.5" }
 strum = { version = "0.28.0", features = ["derive"] }
+dyn-clone = "1.0.20"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
