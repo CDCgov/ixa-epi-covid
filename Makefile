@@ -59,7 +59,7 @@ uv-sync-cloud: ## Sync uv environment with cloud dependencies
 
 # Run local validation equivalent to the CI checks.
 check: ## Re-run pre-commit and the full test suite
-	uv run pre-commit run --all-files
+	uv run python -m pre_commit run --all-files
 	cargo test --verbose
 	uv run pytest
 

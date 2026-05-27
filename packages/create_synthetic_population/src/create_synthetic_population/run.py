@@ -128,7 +128,15 @@ def load_pums(state_synth, state_fips, year_synth, census_api_key, input_dir):
         )
         resp = requests.get(url)
         resp.raise_for_status()
-        data = resp.json()
+        try:
+            data = resp.json()
+        except requests.exceptions.JSONDecodeError as exc:
+            body_preview = " ".join(resp.text.strip().split())[:500]
+            raise requests.HTTPError(
+                "Census PUMS response was not JSON for "
+                f"{state_synth} {year_synth}: {body_preview}",
+                response=resp,
+            ) from exc
         headers = data[0]
         rows = data[1:]
         sample_pums = pd.DataFrame(rows, columns=headers)

@@ -6,6 +6,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pytest
+import requests
 from create_synthetic_population import (
     assign_geography,
     build_outputs,
@@ -14,6 +15,7 @@ from create_synthetic_population import (
     parse_args,
     sample_population,
 )
+from create_synthetic_population.run import load_pums
 from shapely.geometry import Point, Polygon
 
 
@@ -183,6 +185,28 @@ class TestLoadTracts:
 
         assert "lat" in result.columns and "lon" in result.columns
         assert result["lat"].notna().all() and result["lon"].notna().all()
+
+
+class TestLoadPums:
+    def test_non_json_response_raises_http_error(self, tmp_path):
+        class FakeResponse:
+            text = """
+            <html>
+                <body>A valid key must be included.</body>
+            </html>
+            """
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                raise requests.exceptions.JSONDecodeError(
+                    "Expecting value", self.text, 0
+                )
+
+        with patch("requests.get", return_value=FakeResponse()):
+            with pytest.raises(requests.HTTPError, match="not JSON"):
+                load_pums("IN", "18", 2020, "", tmp_path)
 
 
 class TestCreatePlaces:
