@@ -3,14 +3,14 @@
         "seed": 1234,
         "max_time": 100.0,
         "synth_population_file": "input/people_test.csv",
-        "initial_prevalence": 0.1,
+        "initial_prevalence": 0.01,
         "imported_cases_timeseries": {
             "include": true,
             "filename": "input/importation_test.csv"
         },
         "infectiousness_rate_fn": {"Constant": {
-                "rate": 1.0,
-                "duration": 5.0
+                "rate": 0.2,
+                "duration": 12.0
             }
         },
         "symptom_age_groups": [{"label": "Age0To17", "min": 0, "max": 17},
@@ -49,7 +49,7 @@
             "mu": 2.565,
             "sigma": 0.814
         },
-        "settings_properties": {"Home": {"alpha": 0.0},
+        "settings_properties": {"Home": {"alpha": 0.5},
                             "Work": {"alpha": 0.0},
                             "School": {"alpha": 0.0},
                             "Community": {"alpha": 0.0}},

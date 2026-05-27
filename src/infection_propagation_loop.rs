@@ -161,7 +161,7 @@ mod test {
     fn test_init_loop() {
         let mut context = setup_context(42, 1.0, 1.0, 5.0);
         for _ in 0..10 {
-            context.add_entity::<Person, _>((Age(30),)).unwrap();
+            context.add_entity(with!(Person, Age(30))).unwrap();
         }
 
         init(&mut context).unwrap();
@@ -171,11 +171,13 @@ mod test {
         context.add_plan_with_phase(
             0.0,
             move |context| {
-                assert!(
-                    !context.query_entity_count::<Person, _>((InfectionStatus::Infectious,)) == 0
+                assert_eq!(
+                    !context.query_entity_count(with!(Person, InfectionStatus::Infectious)),
+                    0
                 );
-                assert!(
-                    !context.query_entity_count::<Person, _>((InfectionStatus::Recovered,)) == 0
+                assert_eq!(
+                    !context.query_entity_count(with!(Person, InfectionStatus::Recovered)),
+                    0
                 );
             },
             ExecutionPhase::Last,
@@ -187,7 +189,7 @@ mod test {
         let mut context = setup_context(0, 0.0, 1.0, 5.0);
         // Add people -- a lot so we can show that no new infections are added
         for _ in 0..1000 {
-            context.add_entity::<Person, _>((Age(30),)).unwrap();
+            context.add_entity(with!(Person, Age(30))).unwrap();
         }
 
         init(&mut context).unwrap();
@@ -197,9 +199,9 @@ mod test {
         let num_initial_infections_clone = Rc::clone(&num_initial_infections);
 
         context.add_plan(0.0, move |context| {
-            let susceptibles = context.sample_entities::<Person, _, _>(
+            let susceptibles = context.sample_entities(
                 InfectionRng,
-                (InfectionStatus::Susceptible,),
+                with!(Person, InfectionStatus::Susceptible),
                 *num_initial_infections_clone.borrow(),
             );
             for person in susceptibles {
@@ -208,7 +210,7 @@ mod test {
             // Count the number of initial infections and recovered actually created from the binomial
             // sampling
             *num_initial_infections_clone.borrow_mut() =
-                context.query_entity_count::<Person, _>((InfectionStatus::Infectious,));
+                context.query_entity_count(with!(Person, InfectionStatus::Infectious));
         });
 
         // We want to count the number of new infections that are created to ensure this is equal to
@@ -237,7 +239,7 @@ mod test {
 
         // And that recovereds is equal to the initial infectious (who have recovered) + recovered
         assert_eq!(
-            context.query_entity_count::<Person, _>((InfectionStatus::Recovered,)),
+            context.query_entity_count(with!(Person, InfectionStatus::Recovered)),
             *num_initial_infections.borrow(),
         );
     }
@@ -276,14 +278,14 @@ mod test {
             // We only run the simulation for 1.0 time units.
             context.add_plan_with_phase(1.0, ixa::Context::shutdown, ExecutionPhase::Last);
             // Add a a person who will get infected.
-            let p1: PersonId = context.add_entity((Age(30),)).unwrap();
+            let p1: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
             set_homogeneous_mixing_itinerary(&mut context, p1).unwrap();
             // We don't want infectious people beyond our index case to be able to transmit, so we
             // have to do setup on our own since just calling `init` will trigger a watcher for
             // people becoming infectious that lets them transmit.
             load_rate_fns(&mut context).unwrap();
             // Add our infectious fellow.
-            let infectious_person: PersonId = context.add_entity((Age(30),)).unwrap();
+            let infectious_person: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
             set_homogeneous_mixing_itinerary(&mut context, infectious_person).unwrap();
 
             context.infect_person(infectious_person, None, None);
@@ -360,7 +362,7 @@ mod test {
         // Create a simulation with an infected person and schedule their recovery.
         let mut context = setup_context(0, 0.0, 1.0, 5.0);
         load_rate_fns(&mut context).unwrap();
-        let person: PersonId = context.add_entity((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         context.infect_person(person, None, None);
         // For later, we need to get the recovery time from the rate function.
         context.execute();
@@ -418,10 +420,13 @@ mod test {
                 let mut context = setup_context(seed, rate, alpha, 5.0);
 
                 // Add a a person who will get infected.
-                let infectious_person: PersonId = context.add_entity((Age(30),)).unwrap();
-                let person_home: PersonId = context.add_entity((Age(30),)).unwrap();
-                let person_censustract: PersonId = context.add_entity((Age(30),)).unwrap();
-                let person_workplace: PersonId = context.add_entity((Age(30),)).unwrap();
+                let infectious_person: PersonId =
+                    context.add_entity(with!(Person, Age(30))).unwrap();
+                let person_home: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
+                let person_censustract: PersonId =
+                    context.add_entity(with!(Person, Age(30))).unwrap();
+                let person_workplace: PersonId =
+                    context.add_entity(with!(Person, Age(30))).unwrap();
 
                 context.add_person_to_settings(person_home, Some(home_code), None, None, None);
                 context.add_person_to_settings(
@@ -527,7 +532,7 @@ mod test {
             context.init_random(seed);
             // Add our people
             for _ in 0..num_people {
-                context.add_entity::<Person, _>((Age(30),)).unwrap();
+                context.add_entity(with!(Person, Age(30))).unwrap();
             }
             init(&mut context).unwrap();
             // Add a plan to shutdown after the seeding so we can count infected and recovereds
@@ -535,7 +540,7 @@ mod test {
             context.execute();
             // Count number of initial infections and recovereds
             num_initial_infections +=
-                context.query_entity_count::<Person, _>((InfectionStatus::Infectious,));
+                context.query_entity_count(with!(Person, InfectionStatus::Infectious));
         }
         // Check that the proportion of people is close to the expected proportion
         assert_almost_eq!(

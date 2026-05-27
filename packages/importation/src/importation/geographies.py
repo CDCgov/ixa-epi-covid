@@ -41,7 +41,14 @@ def get_total_state_population_data(
         - The function uses the Census API and requires a valid API key.
         - Cached files are stored in the ".cache" directory with filenames in the format
           "state_population_data_<year>.csv".
+    Raises:
+        NotImplementedError: If the year is not 2020 or if caching is disabled, as population data
+            is currently only available for the year 2020 with caching.
     """
+    if year is None or year != 2020 or cache is False:
+        raise NotImplementedError(
+            "Population data is currently only avaialble as a cache for the year 2020. "
+        )
     filename = f"state_population_data_{year if year else 'latest'}.csv"
     packaged_filepath = PACKAGE_DATA_DIR / filename
     if packaged_filepath.exists():
@@ -55,7 +62,7 @@ def get_total_state_population_data(
             return pl.read_csv(packaged_candidates[-1])
 
     filepath = Path(".cache") / filename
-    if filepath.exists():
+    if filepath.exists() and cache:
         return pl.read_csv(filepath)
     else:
         api_key = get_api_key()

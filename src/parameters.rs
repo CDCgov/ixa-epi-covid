@@ -81,7 +81,7 @@ pub struct Params {
 }
 
 #[allow(clippy::too_many_lines)]
-fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error>> {
+fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if parameters.max_time < 0.0 {
         return Err(Box::new(ModelError::ModelError(
             "The max simulation running time must be non-negative.".to_string(),

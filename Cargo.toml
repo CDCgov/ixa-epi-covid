@@ -10,7 +10,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-ixa = { version = "2.0.0-beta2.2", default-features = false, features = ["logging"] }
+ixa = "2.0.0-beta2.4"
 rand_distr = "0.5.1"
 serde = "1.0.217"
 serde_json = "1.0.139"
@@ -20,17 +20,18 @@ memchr = "2.7.6"
 zip = { version = "8.5" }
 once_cell = { version = "1" }
 ouroboros = { version = "0.18.5" }
+smallvec = "1.15.1"
 strum = { version = "0.28.0", features = ["derive"] }
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8.2", features = ["html_reports"] }
 
 [[bench]]
 name = "infection_loop"
 harness = false
 
 [features]
-default = ["profiling", "pop_reader_archive"]
+default = ["pop_reader_archive"]
 
 profiling = ["ixa/profiling"]
 

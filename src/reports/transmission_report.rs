@@ -11,7 +11,7 @@ struct TransmissionReport {
     time: f64,
     target_id: PersonId,
     infected_by: Option<PersonId>,
-    infection_setting_id: Option<SettingCode>,
+    infection_setting_id: Option<String>,
 }
 
 define_report!(TransmissionReport);
@@ -22,6 +22,7 @@ fn record_transmission_event(
     infected_by: Option<PersonId>,
     infection_setting_id: Option<SettingCode>,
 ) {
+    let infection_setting_id = infection_setting_id.map(|code| code.0.to_report_string());
     if infected_by.is_some() {
         context.send_report(TransmissionReport {
             time: context.get_current_time(),
@@ -53,6 +54,7 @@ pub fn init(context: &mut Context, file_name: &str) -> Result<(), ModelError> {
 
 #[cfg(test)]
 mod test {
+    use crate::population_loader::Person;
     use crate::{
         Age,
         infectiousness_manager::InfectionContextExt,
@@ -64,7 +66,7 @@ mod test {
     };
     use ixa::{
         Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt,
-        ContextReportExt, assert_almost_eq, csv,
+        ContextReportExt, assert_almost_eq, csv, with,
     };
     use std::path::PathBuf;
     use tempfile::tempdir;
@@ -99,8 +101,8 @@ mod test {
         let config = context.report_options();
         config.directory(path.clone());
 
-        let source: PersonId = context.add_entity((Age(30),)).unwrap();
-        let target: PersonId = context.add_entity((Age(30),)).unwrap();
+        let source: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
+        let target: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         let home: SettingCode = SettingCode::arbitrary_home_code();
         let setting = Some(home);
         let infection_time = 1.0;
@@ -134,7 +136,10 @@ mod test {
             assert_almost_eq!(record.time, infection_time, 0.0);
             assert_eq!(record.target_id, target);
             assert_eq!(record.infected_by.unwrap(), source);
-            assert_eq!(record.infection_setting_id, setting);
+            assert_eq!(
+                record.infection_setting_id,
+                setting.map(|code| code.0.to_report_string())
+            );
             line_count += 1;
         }
         assert_eq!(line_count, 1);

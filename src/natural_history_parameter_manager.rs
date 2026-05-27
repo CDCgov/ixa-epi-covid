@@ -143,11 +143,11 @@ mod test {
 
     use ixa::prelude::*;
 
-    use crate::{Age, error::ModelError, population_loader::PersonId};
-
     use super::{
         ContextNaturalHistoryParameterExt, NaturalHistoryParameterLibrary, NaturalHistoryParameters,
     };
+    use crate::population_loader::Person;
+    use crate::{Age, error::ModelError, population_loader::PersonId};
 
     struct ViralLoad;
 
@@ -166,7 +166,7 @@ mod test {
     #[test]
     fn test_register_vanilla_parameter_id_assignment() {
         let mut context = init_context();
-        let person: PersonId = context.add_entity((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         context
             .register_parameter_id_assigner(ViralLoad, |_context, _person_id| 0)
             .unwrap();
@@ -217,7 +217,7 @@ mod test {
     #[test]
     fn test_error_register_assignment_after_querying() {
         let mut context = init_context();
-        let person: PersonId = context.add_entity((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         // We have to register something to make sure the data container exists.
         context
             .register_parameter_id_assigner(ViralLoad, |_context, _person_id| 0)
@@ -248,7 +248,7 @@ mod test {
     #[test]
     fn test_get_parameter_id_registered_assignment() {
         let mut context = init_context();
-        let person: PersonId = context.add_entity((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         context
             .register_parameter_id_assigner(ViralLoad, |_context, _person_id| 0)
             .unwrap();
@@ -259,7 +259,7 @@ mod test {
     #[test]
     fn test_get_parameter_id_already_set() {
         let mut context = init_context();
-        let person: PersonId = context.add_entity((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         let container = context.get_data_mut(NaturalHistoryParameters);
         container.ids.borrow_mut().insert(
             TypeId::of::<ViralLoad>(),
@@ -288,7 +288,7 @@ mod test {
     #[test]
     fn test_get_parameter_id_assignment_has_dependencies() {
         let mut context = init_context();
-        let person: PersonId = context.add_entity((Age(30),)).unwrap();
+        let person: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         context
             .register_parameter_id_assigner(CulturePositivity, |context, person_id| {
                 context.get_parameter_id(TestingPatterns, person_id)

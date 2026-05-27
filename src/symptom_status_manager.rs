@@ -1,10 +1,11 @@
 use ixa::{
     Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt, IxaError,
-    define_rng, impl_derived_property, impl_property, prelude::PropertyChangeEvent,
+    define_derived_property, define_rng, impl_property, prelude::PropertyChangeEvent,
 };
 use rand_distr::LogNormal;
 use serde::{Deserialize, Serialize};
 use std::cmp::{Ordering, PartialOrd};
+use std::hash::{Hash, Hasher};
 
 use crate::{
     Age, ContextParametersExt, Params, error::ModelError, infectiousness_manager::InfectionStatus,
@@ -13,7 +14,8 @@ use crate::{
 
 define_rng!(SymptomsRng);
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Copy, Clone)]
+// The `SymptomData` enum type is
+#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub enum SymptomData {
     NoSymptoms,
     Mild {
@@ -42,20 +44,158 @@ pub enum SymptomData {
     },
 }
 
-impl_property!(SymptomData, Person, default_const = SymptomData::NoSymptoms);
-
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-pub enum SymptomStatus {
-    NoSymptoms,
-    Mild,
-    Severe,
-    Critical,
-    Resolved,
-    Dead,
+impl PartialEq for SymptomData {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::NoSymptoms, Self::NoSymptoms) => true,
+            (
+                Self::Mild { mild_time },
+                Self::Mild {
+                    mild_time: other_mild_time,
+                },
+            ) => mild_time.to_bits() == other_mild_time.to_bits(),
+            (
+                Self::Severe {
+                    mild_time,
+                    severe_time,
+                },
+                Self::Severe {
+                    mild_time: other_mild_time,
+                    severe_time: other_severe_time,
+                },
+            ) => {
+                mild_time.to_bits() == other_mild_time.to_bits()
+                    && severe_time.to_bits() == other_severe_time.to_bits()
+            }
+            (
+                Self::Critical {
+                    mild_time,
+                    severe_time,
+                    critical_time,
+                },
+                Self::Critical {
+                    mild_time: other_mild_time,
+                    severe_time: other_severe_time,
+                    critical_time: other_critical_time,
+                },
+            ) => {
+                mild_time.to_bits() == other_mild_time.to_bits()
+                    && severe_time.to_bits() == other_severe_time.to_bits()
+                    && critical_time.to_bits() == other_critical_time.to_bits()
+            }
+            (
+                Self::Resolved {
+                    mild_time,
+                    severe_time,
+                    critical_time,
+                    resolved_time,
+                },
+                Self::Resolved {
+                    mild_time: other_mild_time,
+                    severe_time: other_severe_time,
+                    critical_time: other_critical_time,
+                    resolved_time: other_resolved_time,
+                },
+            ) => {
+                mild_time.to_bits() == other_mild_time.to_bits()
+                    && severe_time.as_ref().map(|time| time.to_bits())
+                        == other_severe_time.as_ref().map(|time| time.to_bits())
+                    && critical_time.as_ref().map(|time| time.to_bits())
+                        == other_critical_time.as_ref().map(|time| time.to_bits())
+                    && resolved_time.to_bits() == other_resolved_time.to_bits()
+            }
+            (
+                Self::Dead {
+                    mild_time,
+                    severe_time,
+                    critical_time,
+                    dead_time,
+                },
+                Self::Dead {
+                    mild_time: other_mild_time,
+                    severe_time: other_severe_time,
+                    critical_time: other_critical_time,
+                    dead_time: other_dead_time,
+                },
+            ) => {
+                mild_time.to_bits() == other_mild_time.to_bits()
+                    && severe_time.to_bits() == other_severe_time.to_bits()
+                    && critical_time.to_bits() == other_critical_time.to_bits()
+                    && dead_time.to_bits() == other_dead_time.to_bits()
+            }
+            _ => false,
+        }
+    }
 }
 
-impl_derived_property!(
-    SymptomStatus,
+impl Eq for SymptomData {}
+
+impl Hash for SymptomData {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // This makes the hash distinguish between different variants that happen to have the same
+        // data payload.
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Self::NoSymptoms => {}
+            Self::Mild { mild_time } => {
+                mild_time.to_bits().hash(state);
+            }
+            Self::Severe {
+                mild_time,
+                severe_time,
+            } => {
+                mild_time.to_bits().hash(state);
+                severe_time.to_bits().hash(state);
+            }
+            Self::Critical {
+                mild_time,
+                severe_time,
+                critical_time,
+            } => {
+                mild_time.to_bits().hash(state);
+                severe_time.to_bits().hash(state);
+                critical_time.to_bits().hash(state);
+            }
+            Self::Resolved {
+                mild_time,
+                severe_time,
+                critical_time,
+                resolved_time,
+            } => {
+                mild_time.to_bits().hash(state);
+                severe_time.as_ref().map(|time| time.to_bits()).hash(state);
+                critical_time
+                    .as_ref()
+                    .map(|time| time.to_bits())
+                    .hash(state);
+                resolved_time.to_bits().hash(state);
+            }
+            Self::Dead {
+                mild_time,
+                severe_time,
+                critical_time,
+                dead_time,
+            } => {
+                mild_time.to_bits().hash(state);
+                severe_time.to_bits().hash(state);
+                critical_time.to_bits().hash(state);
+                dead_time.to_bits().hash(state);
+            }
+        }
+    }
+}
+
+impl_property!(SymptomData, Person, default_const = SymptomData::NoSymptoms);
+
+define_derived_property!(
+    enum SymptomStatus {
+        NoSymptoms,
+        Mild,
+        Severe,
+        Critical,
+        Resolved,
+        Dead,
+    },
     Person,
     [SymptomData],
     [],
@@ -88,11 +228,8 @@ impl PartialOrd for SymptomAgeGroup {
     }
 }
 
-#[derive(Debug, Serialize, PartialEq, Copy, Clone)]
-pub struct AgeGroupIndex(pub usize);
-
-impl_derived_property!(
-    AgeGroupIndex,
+define_derived_property!(
+    struct AgeGroupIndex(usize),
     Person,
     [Age],
     [OrderedAgeGroupsParam],
@@ -349,8 +486,8 @@ mod test {
         draw_transition_time, process_symptom_change_event,
     };
     use crate::{Age, Params};
-    use ixa::assert_almost_eq;
     use ixa::prelude::*;
+    use ixa::{HashMap, assert_almost_eq};
 
     #[test]
     fn test_validate_log_norm_params() {
@@ -393,35 +530,35 @@ mod test {
             .unwrap();
 
         // test people who are 0, 17, 18, 49, 50, 64, 65, and 100 years old for correct derived person property
-        let person_id: PersonId = context.add_entity((Age(0),)).unwrap();
+        let person_id: PersonId = context.add_entity(with!(Person, Age(0))).unwrap();
         let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
         assert_eq!(symptom_age_group_index, AgeGroupIndex(0));
 
-        let person_id: PersonId = context.add_entity((Age(17),)).unwrap();
+        let person_id: PersonId = context.add_entity(with!(Person, Age(17))).unwrap();
         let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
         assert_eq!(symptom_age_group_index, AgeGroupIndex(0));
 
-        let person_id: PersonId = context.add_entity((Age(18),)).unwrap();
+        let person_id: PersonId = context.add_entity(with!(Person, Age(18))).unwrap();
         let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
         assert_eq!(symptom_age_group_index, AgeGroupIndex(1));
 
-        let person_id: PersonId = context.add_entity((Age(49),)).unwrap();
+        let person_id: PersonId = context.add_entity(with!(Person, Age(49))).unwrap();
         let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
         assert_eq!(symptom_age_group_index, AgeGroupIndex(1));
 
-        let person_id: PersonId = context.add_entity((Age(50),)).unwrap();
+        let person_id: PersonId = context.add_entity(with!(Person, Age(50))).unwrap();
         let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
         assert_eq!(symptom_age_group_index, AgeGroupIndex(2));
 
-        let person_id: PersonId = context.add_entity((Age(64),)).unwrap();
+        let person_id: PersonId = context.add_entity(with!(Person, Age(64))).unwrap();
         let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
         assert_eq!(symptom_age_group_index, AgeGroupIndex(2));
 
-        let person_id: PersonId = context.add_entity((Age(65),)).unwrap();
+        let person_id: PersonId = context.add_entity(with!(Person, Age(65))).unwrap();
         let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
         assert_eq!(symptom_age_group_index, AgeGroupIndex(3));
 
-        let person_id: PersonId = context.add_entity((Age(100),)).unwrap();
+        let person_id: PersonId = context.add_entity(with!(Person, Age(100))).unwrap();
         let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
         assert_eq!(symptom_age_group_index, AgeGroupIndex(3));
     }
@@ -485,7 +622,7 @@ mod test {
                     max: 120,
                 },
             ],
-            probability_severe_given_mild: ixa::HashMap::from_iter([
+            probability_severe_given_mild: HashMap::from_iter([
                 ("Age0To17".to_string(), 0.0),
                 ("Age18To49".to_string(), 1.0),
                 ("Age50To64".to_string(), 1.0),
@@ -499,7 +636,7 @@ mod test {
                 mu: mild_to_resolved_duration.ln(),
                 sigma: 0.0,
             },
-            probability_critical_given_severe: ixa::HashMap::from_iter([
+            probability_critical_given_severe: HashMap::from_iter([
                 ("Age0To17".to_string(), 0.0),
                 ("Age18To49".to_string(), 0.0),
                 ("Age50To64".to_string(), 1.0),
@@ -513,7 +650,7 @@ mod test {
                 mu: severe_to_resolved_duration.ln(),
                 sigma: 0.0,
             },
-            probability_dead_given_critical: ixa::HashMap::from_iter([
+            probability_dead_given_critical: HashMap::from_iter([
                 ("Age0To17".to_string(), 0.0),
                 ("Age18To49".to_string(), 0.0),
                 ("Age50To64".to_string(), 0.0),
@@ -558,10 +695,10 @@ mod test {
         context
             .set_global_property_value(OrderedAgeGroupsParam, ordered_symptom_age_groups)
             .unwrap();
-        let p1 = context.add_entity::<Person, _>((Age(10),)).unwrap();
-        let p2 = context.add_entity::<Person, _>((Age(30),)).unwrap();
-        let p3 = context.add_entity::<Person, _>((Age(60),)).unwrap();
-        let p4 = context.add_entity::<Person, _>((Age(80),)).unwrap();
+        let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
+        let p2 = context.add_entity(with!(Person, Age(30))).unwrap();
+        let p3 = context.add_entity(with!(Person, Age(60))).unwrap();
+        let p4 = context.add_entity(with!(Person, Age(80))).unwrap();
 
         context.subscribe_to_event(
             move |context, event: PropertyChangeEvent<Person, SymptomData>| {
@@ -639,10 +776,7 @@ mod test {
                 mu: infect_to_mild_duration.ln(),
                 sigma: 0.0,
             },
-            probability_severe_given_mild: ixa::HashMap::from_iter([(
-                "Age0To120".to_string(),
-                0.0,
-            )]),
+            probability_severe_given_mild: HashMap::from_iter([("Age0To120".to_string(), 0.0)]),
             // some probability_severe_given_mild needs to be specified because mild -> severe or mild -> resolved
             // is *scheduled* the moment the person goes from no symptoms to mild, even though
             // the simulation is shut down before the person actually leaves the mild state
@@ -663,7 +797,7 @@ mod test {
             )
             .unwrap();
 
-        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
         init(&mut context).unwrap();
         context.infect_person(p1, None, None);
         context.add_plan_with_phase(
@@ -694,7 +828,7 @@ mod test {
             .set_global_property_value(GlobalParams, parameters.clone())
             .unwrap();
 
-        let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+        let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
         init(&mut context).unwrap();
         context.infect_person(p1, None, None);
         context.execute();
@@ -719,15 +853,15 @@ mod test {
             let mut context = Context::new();
             let parameters = Params {
                 probability_mild_given_infect,
-                probability_severe_given_mild: ixa::HashMap::from_iter([(
+                probability_severe_given_mild: HashMap::from_iter([(
                     "Age0To120".to_string(),
                     probability_severe_given_mild,
                 )]),
-                probability_critical_given_severe: ixa::HashMap::from_iter([(
+                probability_critical_given_severe: HashMap::from_iter([(
                     "Age0To120".to_string(),
                     probability_critical_given_severe,
                 )]),
-                probability_dead_given_critical: ixa::HashMap::from_iter([(
+                probability_dead_given_critical: HashMap::from_iter([(
                     "Age0To120".to_string(),
                     probability_dead_given_critical,
                 )]),
@@ -749,12 +883,12 @@ mod test {
                 .unwrap();
 
             // Add our person
-            let p1 = context.add_entity::<Person, _>((Age(30),)).unwrap();
+            let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
             // Initialize event subscriptions and plans for symptom status manager
             init(&mut context).unwrap();
             // Infect the person to trigger the symptom status manager
             context.infect_person(p1, None, None);
-            // Add a plan to shutdown after long period once everyone should have progressed to an absorbing state
+            // Add a plan to shut down after long period once everyone should have progressed to an absorbing state
             context.add_plan(1000.0, ixa::Context::shutdown);
 
             context.execute();

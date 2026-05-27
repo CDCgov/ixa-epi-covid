@@ -6,13 +6,13 @@ def test_get_state_proportion_population_data():
     state = "Alabama"
     year = 2020
     result = get_state_proportion_population_data(
-        state=state, year=year, cache=False
+        state=state, year=year, cache=True
     )
 
     for entry in ["Alabama", "alabama", "01", "AL", "al"]:
         assert (
             get_state_proportion_population_data(
-                state=entry, year=year, cache=False
+                state=entry, year=year, cache=True
             )
             == result
         )

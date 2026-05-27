@@ -4,7 +4,7 @@ use crate::{
     population_loader::{Age, Person},
     symptom_status_manager::SymptomStatus,
 };
-use ixa::{ExecutionPhase, HashMap, prelude::*};
+use ixa::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -17,151 +17,44 @@ struct PersonPropertyIncidenceReport {
 
 define_report!(PersonPropertyIncidenceReport);
 
-struct PropertyReportDataContainer {
-    infection_status_change: HashMap<(u8, InfectionStatus), u32>,
-    symptom_status_change: HashMap<(u8, SymptomStatus), u32>,
-}
-
-define_data_plugin!(
-    PropertyReportDataPlugin,
-    PropertyReportDataContainer,
-    PropertyReportDataContainer {
-        infection_status_change: HashMap::default(),
-        symptom_status_change: HashMap::default()
-    }
-);
-
-fn update_infection_incidence(
-    context: &mut Context,
-    event: PropertyChangeEvent<Person, InfectionStatus>,
-) {
-    if event.current == InfectionStatus::Infectious || event.current == InfectionStatus::Recovered {
-        let age: Age = context.get_property(event.entity_id);
-        let report_container_mut = context.get_data_mut(PropertyReportDataPlugin);
-        report_container_mut
-            .infection_status_change
-            .entry((age.0, event.current))
-            .and_modify(|v| *v += 1)
-            .or_insert(1);
-    }
-}
-
-fn update_symptom_incidence(
-    context: &mut Context,
-    event: PropertyChangeEvent<Person, SymptomStatus>,
-) {
-    if event.current != SymptomStatus::NoSymptoms {
-        let age: Age = context.get_property(event.entity_id);
-        let report_container_mut = context.get_data_mut(PropertyReportDataPlugin);
-        report_container_mut
-            .symptom_status_change
-            .entry((age.0, event.current))
-            .and_modify(|v| *v += 1)
-            .or_insert(1);
-    }
-}
-
-fn reset_incidence_map(context: &mut Context) {
-    let report_container = context.get_data_mut(PropertyReportDataPlugin);
-    report_container
-        .infection_status_change
-        .values_mut()
-        .for_each(|v| *v = 0);
-    report_container
-        .symptom_status_change
-        .values_mut()
-        .for_each(|v| *v = 0);
-}
-
-fn send_incidence_counts(context: &mut Context) {
-    let report_container = context.get_data(PropertyReportDataPlugin);
-    let t_upper = context.get_current_time();
-
-    // Infection status
-    for ((age, infection_status), count) in &report_container.infection_status_change {
-        context.send_report(PersonPropertyIncidenceReport {
-            t_upper,
-            age: *age,
-            event: format!("{infection_status:?}"),
-            count: *count,
-        });
-    }
-    // Symptom status
-    for ((age, symptom_status), count) in &report_container.symptom_status_change {
-        context.send_report(PersonPropertyIncidenceReport {
-            t_upper,
-            age: *age,
-            event: format!("{symptom_status:?}"),
-            count: *count,
-        });
-    }
-    reset_incidence_map(context);
-}
-
-/// # Errors
-///
-/// Will return `ModelError` if the report cannot be added
-///
-/// # Panics
-///
-/// Will panic if an age group cannot be parsed from the tabulated string
 pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), ModelError> {
     context.add_report::<PersonPropertyIncidenceReport>(file_name)?;
 
-    // let tabulator = (Age,);
-    // let ages: RefCell<HashSet<u8>> = RefCell::new(HashSet::new());
-    // context.tabulate_person_properties(&tabulator, |_context, values, _count| {
-    //     ages.borrow_mut().insert(values[0].parse::<u8>().unwrap());
-    // });
-
-    let mut ages: Vec<u8> = Vec::new();
-    for person in context.get_entity_iterator::<Person>() {
-        let age: Age = context.get_property(person);
-        if !ages.contains(&age.0) {
-            ages.push(age.0);
-        }
-    }
-
-    let report_container = context.get_data_mut(PropertyReportDataPlugin);
-
-    for age in ages {
-        let inf_vec = [InfectionStatus::Infectious, InfectionStatus::Recovered];
-
-        for inf_value in inf_vec {
-            report_container
-                .infection_status_change
-                .insert((age, inf_value), 0);
-        }
-
-        let symp_vec = [
-            SymptomStatus::Mild,
-            SymptomStatus::Severe,
-            SymptomStatus::Critical,
-            SymptomStatus::Dead,
-            SymptomStatus::Resolved,
-        ];
-
-        for symp_value in symp_vec {
-            report_container
-                .symptom_status_change
-                .insert((age, symp_value), 0);
-        }
-    }
-
-    context.subscribe_to_event::<PropertyChangeEvent<Person, InfectionStatus>>(|context, event| {
-        update_infection_incidence(context, event);
-    });
-
-    context.subscribe_to_event::<PropertyChangeEvent<Person, SymptomStatus>>(|context, event| {
-        update_symptom_incidence(context, event);
-    });
-
-    context.add_periodic_plan_with_phase(
+    // this doesn't stop if the simulation does not shutdown elsewhere
+    context.track_periodic_value_change_counts::<Person, (Age,), InfectionStatus, _>(
         period,
-        move |context: &mut Context| {
-            send_incidence_counts(context);
+        move |context, counter| {
+            let t_upper = context.get_current_time();
+            if t_upper >= 0.0 {
+                for (stratum, count) in counter.iter() {
+                    let (age, infection_status) = stratum;
+                    context.send_report(PersonPropertyIncidenceReport {
+                        t_upper,
+                        age: age.0.0,
+                        event: format!("{:?}", infection_status),
+                        count: *count as u32,
+                    });
+                }
+            }
         },
-        ExecutionPhase::Last,
+    );
+
+    context.track_periodic_value_change_counts::<Person, (Age,), SymptomStatus, _>(
+        period,
+        move |context, counter| {
+            let t_upper = context.get_current_time();
+            if t_upper >= 0.0 {
+                for (stratum, count) in counter.iter() {
+                    let (age, symptom_status) = stratum;
+                    context.send_report(PersonPropertyIncidenceReport {
+                        t_upper,
+                        age: age.0.0,
+                        event: format!("{:?}", symptom_status),
+                        count: *count as u32,
+                    });
+                }
+            }
+        },
     );
 
     Ok(())
@@ -224,8 +117,8 @@ mod test {
         let config = context.report_options();
         config.directory(path.clone());
 
-        let source: PersonId = context.add_entity((Age(42),)).unwrap();
-        let target: PersonId = context.add_entity((Age(43),)).unwrap();
+        let source: PersonId = context.add_entity(with!(Person, Age(42))).unwrap();
+        let target: PersonId = context.add_entity(with!(Person, Age(43))).unwrap();
         let home: SettingCode = SettingCode::arbitrary_home_code();
         let setting = Some(home);
         let infection_time = 1.0;
@@ -235,6 +128,9 @@ mod test {
 
         context.add_plan(infection_time, move |context| {
             context.infect_person(target, Some(source), setting);
+        });
+        context.add_plan(3.0, move |context| {
+            context.shutdown();
         });
         context.execute();
 
@@ -264,8 +160,8 @@ mod test {
                 assert_eq!(record.count, 0);
             }
         }
-
-        assert!(line_count > event_count);
+        // Only events are included so the line count should match the event count
+        assert_eq!(line_count, event_count);
         assert_eq!(event_count, 1);
     }
 
@@ -283,8 +179,8 @@ mod test {
         let config = context.report_options();
         config.directory(path.clone());
 
-        let source: PersonId = context.add_entity((Age(42),)).unwrap();
-        let target: PersonId = context.add_entity((Age(43),)).unwrap();
+        let source: PersonId = context.add_entity(with!(Person, Age(42))).unwrap();
+        let target: PersonId = context.add_entity(with!(Person, Age(43))).unwrap();
         let home: SettingCode = SettingCode::arbitrary_home_code();
         let setting = Some(home);
         let infection_time = 1.0;
@@ -297,6 +193,10 @@ mod test {
         });
         context.add_plan(infection_time - 0.1, move |context| {
             context.set_property::<Person, Age>(target, Age(44));
+        });
+
+        context.add_plan(100.0, move |context| {
+            context.shutdown();
         });
         context.execute();
 
@@ -327,10 +227,8 @@ mod test {
             }
         }
 
-        // 2 event types: Infectious + Recovered
-        // 2 time points
-        // 2 ages at first timepoint, 3 ages at second timepoint for only one event (2x2x2 + 1 = 9)
-        assert!(line_count > event_count);
+        // Only events are included so the line count should match the event count
+        assert_eq!(line_count, event_count);
         assert_eq!(event_count, 1);
     }
 }

@@ -1,6 +1,7 @@
 use ixa::{impl_derived_property, prelude::*, profiling::open_span};
 
 use serde::Serialize;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 use crate::error::ModelError;
@@ -22,26 +23,39 @@ impl_property!(Age, Person);
 pub struct Alive(pub bool);
 impl_property!(Alive, Person, default_const = Alive(true));
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct SettingIds {
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct Itinerary {
     pub setting_ids: [Option<SettingCode>; SETTING_COUNT],
-}
-impl_property!(
-    SettingIds,
-    Person,
-    default_const = SettingIds {
-        setting_ids: [None; SETTING_COUNT]
-    }
-);
-
-#[derive(Debug, PartialEq, Clone, Copy, Serialize)]
-pub struct ItineraryRatios {
     pub itinerary_ratios: [f64; SETTING_COUNT],
 }
+
+impl PartialEq for Itinerary {
+    fn eq(&self, other: &Self) -> bool {
+        self.setting_ids == other.setting_ids
+            && self
+                .itinerary_ratios
+                .iter()
+                .zip(other.itinerary_ratios.iter())
+                .all(|(left, right)| left.to_bits() == right.to_bits())
+    }
+}
+
+impl Eq for Itinerary {}
+
+impl Hash for Itinerary {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.setting_ids.hash(state);
+        self.itinerary_ratios
+            .iter()
+            .for_each(|ratio| ratio.to_bits().hash(state));
+    }
+}
+
 impl_property!(
-    ItineraryRatios,
+    Itinerary,
     Person,
-    default_const = ItineraryRatios {
+    default_const = Itinerary {
+        setting_ids: [None; SETTING_COUNT],
         itinerary_ratios: [0.0; SETTING_COUNT]
     }
 );
@@ -55,20 +69,20 @@ pub struct WorkId(pub Option<SettingCode>);
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
 pub struct CommunityId(pub Option<SettingCode>);
 
-impl_derived_property!(HomeId, Person, [SettingIds], [], |setting_ids| HomeId(
-    setting_ids.setting_ids[SettingCategory::Home]
+impl_derived_property!(HomeId, Person, [Itinerary], [], |itinerary| HomeId(
+    itinerary.setting_ids[SettingCategory::Home]
 ));
 
-impl_derived_property!(SchoolId, Person, [SettingIds], [], |setting_ids| SchoolId(
-    setting_ids.setting_ids[SettingCategory::School]
+impl_derived_property!(SchoolId, Person, [Itinerary], [], |itinerary| SchoolId(
+    itinerary.setting_ids[SettingCategory::School]
 ));
 
-impl_derived_property!(WorkId, Person, [SettingIds], [], |setting_ids| WorkId(
-    setting_ids.setting_ids[SettingCategory::Work]
+impl_derived_property!(WorkId, Person, [Itinerary], [], |itinerary| WorkId(
+    itinerary.setting_ids[SettingCategory::Work]
 ));
 
-impl_derived_property!(CommunityId, Person, [SettingIds], [], |setting_ids| {
-    CommunityId(setting_ids.setting_ids[SettingCategory::Community])
+impl_derived_property!(CommunityId, Person, [Itinerary], [], |itinerary| {
+    CommunityId(itinerary.setting_ids[SettingCategory::Community])
 });
 
 fn create_person_from_record(
@@ -81,7 +95,9 @@ fn create_person_from_record(
     let home_id = SettingCode(home_id);
     let community_id = home_id.extract_community();
 
-    let person_id: PersonId = context.add_entity((Age(person_record.age),)).unwrap();
+    let person_id: PersonId = context
+        .add_entity(with!(Person, Age(person_record.age)))
+        .unwrap();
     context.add_person_to_settings(
         person_id,
         Some(home_id),
@@ -201,8 +217,8 @@ mod test {
 
         assert_eq!(context.get_entity_count::<Person>(), 2);
 
-        for item in age.iter().take(1) {
-            assert_eq!(1, context.query_entity_count::<Person, _>((Age(*item),)));
+        for item in age.iter() {
+            assert_eq!(1, context.query_entity_count(with!(Person, Age(*item))));
         }
         let home_id1 = home_id[0];
         let home_id2 = home_id[1];
@@ -256,8 +272,8 @@ mod test {
 
         assert_eq!(context.get_entity_count::<Person>(), 2);
 
-        for item in age.iter().take(1) {
-            assert_eq!(1, context.query_entity_count::<Person, _>((Age(*item),)));
+        for item in age.iter() {
+            assert_eq!(1, context.query_entity_count(with!(Person, Age(*item))));
         }
         assert_eq!(1, context.get_setting_size(home_id[0]));
         assert_eq!(1, context.get_setting_size(home_id[1]));
@@ -290,8 +306,8 @@ mod test {
 
         assert_eq!(context.get_entity_count::<Person>(), 2);
 
-        for item in age.iter().take(1) {
-            assert_eq!(1, context.query_entity_count::<Person, _>((Age(*item),)));
+        for item in age.iter() {
+            assert_eq!(1, context.query_entity_count(with!(Person, Age(*item))));
         }
         assert_eq!(1, context.get_setting_size(home_id[0]));
         assert_eq!(1, context.get_setting_size(home_id[1]));
