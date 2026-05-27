@@ -7,6 +7,7 @@ use std::{
 };
 use strum::{EnumCount as EnumCountMacro, EnumIter, IntoEnumIterator};
 
+use crate::itinerary_manager::ContextItineraryModifierExt;
 pub(crate) use crate::{
     ContextParametersExt, Params,
     error::ModelError,
@@ -126,7 +127,11 @@ impl ContextSettingExtPrivate for Context {}
 
 #[allow(private_bounds)]
 pub trait ContextSettingExt:
-    PluginContext + ContextEntitiesExt + ContextSettingExtPrivate + ContextParametersExt
+    PluginContext
+    + ContextEntitiesExt
+    + ContextSettingExtPrivate
+    + ContextParametersExt
+    + ContextItineraryModifierExt
 {
     fn register_setting_global_properties(&mut self) {
         let Params {
@@ -179,13 +184,15 @@ pub trait ContextSettingExt:
     ) -> Result<Vec<(SettingCode, f64, f64)>, ModelError> {
         let mut active_settings = Vec::new();
         let setting_ids = self.get_property::<Person, SettingIds>(person_id);
-        let itinerary_ratios = self.get_property::<Person, ItineraryRatios>(person_id);
+        let itinerary_ratios = self.get_modified_itinerary(person_id);
 
         for category in SettingCategory::iter() {
             if let Some(id) = setting_ids.setting_ids[category] {
-                let ratio = itinerary_ratios.itinerary_ratios[category];
-                let multiplier = self.calculate_multiplier(id)?;
-                active_settings.push((id, ratio, multiplier));
+                let ratio = itinerary_ratios[category];
+                if ratio > 0.0 {
+                    let multiplier = self.calculate_multiplier(id)?;
+                    active_settings.push((id, ratio, multiplier));
+                }
             }
         }
         Ok(active_settings)
@@ -330,6 +337,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::itinerary_manager::define_itinerary_modifier;
     use crate::population_loader::{CommunityId, HomeId, SchoolId, WorkId};
     use crate::{
         Age, Params,
@@ -637,5 +645,64 @@ mod test {
         assert_eq!(itinerary_ratios[SettingCategory::Work], 0.0);
         assert_eq!(itinerary_ratios[SettingCategory::School], 0.0);
         assert_eq!(itinerary_ratios[SettingCategory::Community], 0.0);
+    }
+
+    #[test]
+    fn test_active_settings_with_itinerary_modifiers() {
+        let mut context = setup_test_context(0.0);
+        let person_id = context.add_entity::<Person, _>((Age(20),)).unwrap();
+        context.add_person_to_settings(
+            person_id,
+            Some(make_home_id(b"160379602000011")),
+            Some(make_workplace_id(b"1603796020001332")),
+            Some(make_school_id(b"1603796020001443")),
+            Some(make_community_id(b"160379602000011")),
+        );
+        let active_settings = context.get_active_settings_for_person(person_id).unwrap();
+        let setting_codes: Vec<SettingCode> = active_settings.iter().map(|s| s.0).collect();
+        let itinerary_ratios: Vec<f64> = active_settings.iter().map(|s| s.1).collect();
+        let multipliers: Vec<f64> = active_settings.iter().map(|s| s.2).collect();
+
+        let expected_setting_codes = vec![
+            make_home_id(b"160379602000011"),
+            make_workplace_id(b"1603796020001332"),
+            make_school_id(b"1603796020001443"),
+            make_community_id(b"160379602000011"),
+        ];
+
+        let expected_itinerary_ratios = vec![0.25, 0.25, 0.25, 0.25];
+
+        let expected_multipliers = vec![1.0, 1.0, 1.0, 1.0]; // alpha is set to 0.0 so all multipliers are 1 regardless of size
+
+        assert_eq!(setting_codes, expected_setting_codes);
+        assert_eq!(itinerary_ratios, expected_itinerary_ratios);
+        assert_eq!(multipliers, expected_multipliers);
+
+        let weekend_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [0.5, 0.0, 0.0, 0.5],
+            [0.5, 0.0, 0.0, 0.5],
+            [0.0, 0.0, 0.0, 0.0],
+        ];
+
+        let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None);
+
+        context.register_itinerary_modifier(Age(20), weekend_modifier);
+
+        let active_settings = context.get_active_settings_for_person(person_id).unwrap();
+        let setting_codes: Vec<SettingCode> = active_settings.iter().map(|s| s.0).collect();
+        let itinerary_ratios: Vec<f64> = active_settings.iter().map(|s| s.1).collect();
+        let multipliers: Vec<f64> = active_settings.iter().map(|s| s.2).collect();
+
+        let expected_setting_codes = vec![
+            make_home_id(b"160379602000011"),
+            make_community_id(b"160379602000011"),
+        ];
+        let expected_itinerary_ratios = vec![0.5, 0.5];
+        let expected_multipliers = vec![1.0, 1.0]; // alpha is set to 0.0 so all multipliers are 1 regardless of size
+
+        assert_eq!(setting_codes, expected_setting_codes);
+        assert_eq!(itinerary_ratios, expected_itinerary_ratios);
+        assert_eq!(multipliers, expected_multipliers);
     }
 }
