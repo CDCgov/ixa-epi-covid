@@ -46,7 +46,7 @@ members = [
 
 [dependency-groups]
 dev = ["pre-commit>=4.5.1"]
-cloudops = ["cfa-cloudops @ git+https://github.com/CDCgov/cfa-cloudops.git"]
+cloudops = ["cfa-cloudops @ git+https://github.com/CDCgov/cfa-cloudops.git@92760289aad4548df1b4ca301353cc9c14c4053c"]
 
 [tool.pydoclint]
 style = 'google'

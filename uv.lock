@@ -383,16 +383,16 @@ wheels = [
 
 [[package]]
 name = "azure-mgmt-batch"
-version = "18.0.0"
+version = "19.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "azure-common" },
     { name = "azure-mgmt-core" },
     { name = "isodate" },
+    { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9d/de/134bcd314ec6d5b1b5b286cbc32c5c1a390e41cdf1b3f1f68627a55ab7aa/azure_mgmt_batch-18.0.0.tar.gz", hash = "sha256:305eb51fb3f73b20927ef47b3b6f93e9e32dc939876c045f970bd386c07ba79c", size = 146711, upload-time = "2024-09-25T05:57:10.797Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c0/6d/64c2db0ec6f57b72119ff5c6c288a8ece818788d35b4bea296a2bacb4aff/azure_mgmt_batch-19.0.0.tar.gz", hash = "sha256:275483fa3940933c73c22a42b59d1b5b053191d8f01f6c2c09af0eef52f31a5c", size = 137229, upload-time = "2026-03-12T01:00:08.9Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f8/9f/7da4532346ab2a3b3c1866e9838c08b02551de4c9fb0047b9adcd9344d2a/azure_mgmt_batch-18.0.0-py3-none-any.whl", hash = "sha256:e78588f68a45b66f2b27f14c6753c35dff42a8a66fd7e1688b0cb3dbe1fb4ffb", size = 172903, upload-time = "2024-09-25T05:57:12.761Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/3f/86d803f7f58ab6c0592a114d9a003037e83882104354ad9446229169f575/azure_mgmt_batch-19.0.0-py3-none-any.whl", hash = "sha256:5d25a905e4600134f210cfea0a52dd63fff96fd872d7479164ba86e051d47e45", size = 126811, upload-time = "2026-03-12T01:00:10.371Z" },
 ]
 
 [[package]]
@@ -540,8 +540,8 @@ wheels = [
 
 [[package]]
 name = "cfa-cloudops"
-version = "0.5.2"
-source = { git = "https://github.com/CDCgov/cfa-cloudops.git#c3dd1a4cb429bac8bce8bd2912127bc584327115" }
+version = "0.3.14"
+source = { git = "https://github.com/CDCgov/cfa-cloudops.git?rev=92760289aad4548df1b4ca301353cc9c14c4053c#92760289aad4548df1b4ca301353cc9c14c4053c" }
 dependencies = [
     { name = "aiohttp" },
     { name = "anyio" },
@@ -564,6 +564,7 @@ dependencies = [
     { name = "msrestazure" },
     { name = "networkx" },
     { name = "pandas" },
+    { name = "pathlib" },
     { name = "polars" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
@@ -1406,7 +1407,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-cloudops = [{ name = "cfa-cloudops", git = "https://github.com/CDCgov/cfa-cloudops.git" }]
+cloudops = [{ name = "cfa-cloudops", git = "https://github.com/CDCgov/cfa-cloudops.git?rev=92760289aad4548df1b4ca301353cc9c14c4053c" }]
 dev = [{ name = "pre-commit", specifier = ">=4.5.1" }]
 
 [[package]]
@@ -2402,6 +2403,15 @@ dependencies = [
 requires-dist = [
     { name = "numpy", specifier = ">=2.3.4" },
     { name = "polars", specifier = ">=1.35.1" },
+]
+
+[[package]]
+name = "pathlib"
+version = "1.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ac/aa/9b065a76b9af472437a0059f77e8f962fe350438b927cb80184c32f075eb/pathlib-1.0.1.tar.gz", hash = "sha256:6940718dfc3eff4258203ad5021090933e5c04707d5ca8cc9e73c94a7894ea9f", size = 49298, upload-time = "2014-09-03T15:41:57.18Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/78/f9/690a8600b93c332de3ab4a344a4ac34f00c8f104917061f779db6a918ed6/pathlib-1.0.1-py3-none-any.whl", hash = "sha256:f35f95ab8b0f59e6d354090350b44a80a80635d22efdedfa84c7ad1cf0a74147", size = 14363, upload-time = "2022-05-04T13:37:20.585Z" },
 ]
 
 [[package]]
