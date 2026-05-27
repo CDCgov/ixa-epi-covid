@@ -22,36 +22,6 @@ define_report!(PersonPropertyReport);
 
 define_multi_property!((Age, InfectionStatus, SymptomStatus, Alive), Person);
 
-// struct PropertyReportDataContainer {
-//     report_map_container: HashMap<(Age, InfectionStatus, SymptomStatus), usize>,
-// }
-
-// define_data_plugin!(
-//     PropertyReportDataPlugin,
-//     PropertyReportDataContainer,
-//     PropertyReportDataContainer {
-//         report_map_container: HashMap::default()
-//     }
-// );
-
-// type ReportEvent = PropertyChangeEvent<Person, (Age, InfectionStatus, SymptomStatus)>;
-
-// fn update_change_counts(context: &mut Context, event: ReportEvent) {
-//     let report_container_mut = context.get_data_mut(PropertyReportDataPlugin);
-
-//     let _ = *report_container_mut
-//         .report_map_container
-//         .entry(event.current)
-//         .and_modify(|n| *n += 1)
-//         .or_insert(1);
-
-//     let _ = *report_container_mut
-//         .report_map_container
-//         .entry(event.previous)
-//         .and_modify(|n| *n -= 1)
-//         .or_insert(0);
-// }
-
 fn send_property_counts(context: &mut Context) {
     let ages: Vec<u8> = (0..=120).collect();
     let infection_statuses = vec![
@@ -97,25 +67,6 @@ fn send_property_counts(context: &mut Context) {
 pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), ModelError> {
     context.add_report::<PersonPropertyReport>(file_name)?;
     context.index_property::<Person, (Age, InfectionStatus, SymptomStatus, Alive)>();
-    // let mut map_counts = HashMap::default();
-
-    // context.with_query_results(with!(Person, Alive(true)), &mut |current_people| {
-    //     //current_people = results.to_owned_vec();
-    //     for person in current_people {
-    //         let value: (Age, InfectionStatus, SymptomStatus) = context.get_property(person);
-    //         map_counts
-    //             .entry(value)
-    //             .and_modify(|count| *count += 1)
-    //             .or_insert(1);
-    //     }
-    // });
-
-    // let report_container = context.get_data_mut(PropertyReportDataPlugin);
-    // report_container.report_map_container = map_counts;
-
-    // context.subscribe_to_event::<ReportEvent>(|context, event| {
-    //     update_change_counts(context, event);
-    // });
 
     context.add_periodic_plan_with_phase(
         period,
