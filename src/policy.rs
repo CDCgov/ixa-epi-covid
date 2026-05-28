@@ -82,6 +82,7 @@ pub trait ContextPolicyExt:
         let active_property = policy.active_property;
         let inactive_property = policy.inactive_property;
 
+        // When should this list of people be collected. Currently it is on simulation initialization
         let person_ids = match group {
             Group::Population => self.get_entity_iterator::<Person>().collect(),
             Group::GroupSetting(setting_code) => self.get_setting_members(setting_code),
@@ -301,6 +302,7 @@ mod tests {
         let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
         let p2 = context.add_entity(with!(Person, Age(40))).unwrap();
 
+        // Policies must be added after population is added
         context.add_policy(policy);
 
         context.add_plan(0.5, move |context| {
