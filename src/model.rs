@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
-use ixa::{ExecutionPhase, prelude::*};
-
+#[allow(unused_imports)]
 use crate::{
     abort_run, error::ModelError, infection_importation, infection_propagation_loop, parameters,
-    population_loader, reports, settings, symptom_status_manager,
+    policy, population_loader, reports, settings, symptom_status_manager,
 };
+use ixa::{ExecutionPhase, prelude::*};
 
 pub fn initialize_model(
     context: &mut Context,
@@ -41,6 +41,5 @@ pub fn initialize_model(
     info!("Reports initialized");
     abort_run::init(context);
     info!("Setup complete");
-
     Ok(())
 }

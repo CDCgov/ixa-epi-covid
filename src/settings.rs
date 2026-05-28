@@ -341,6 +341,14 @@ pub trait ContextSettingExt:
         let membership = self.get_data_mut(SettingMembershipPlugin);
         membership.add_members(&setting_ids, person_id);
     }
+
+    fn get_setting_members(&self, setting_code: SettingCode) -> Vec<PersonId> {
+        let membership = self.get_data(SettingMembershipPlugin);
+        membership
+            .get_members(setting_code)
+            .cloned()
+            .unwrap_or_default()
+    }
 }
 
 impl ContextSettingExt for Context {}

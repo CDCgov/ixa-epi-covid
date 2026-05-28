@@ -8,6 +8,7 @@ pub mod itinerary_modifiers;
 pub mod model;
 pub mod natural_history_parameter_manager;
 pub mod parameters;
+pub mod policy;
 pub mod pop_reader;
 pub mod population_loader;
 pub mod rate_fns;
