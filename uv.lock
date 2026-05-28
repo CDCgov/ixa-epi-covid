@@ -507,7 +507,7 @@ css = [
 [[package]]
 name = "calibrationtools"
 version = "0.1.1"
-source = { git = "https://github.com/CDCgov/cfa-calibration-tools.git?branch=cloud-phase3#667f36a8342344125da1f1f36e818b6ddaa0dcce" }
+source = { git = "https://github.com/CDCgov/cfa-calibration-tools.git?branch=cloud-phase3#517e8c472c5139300a7482d93a41d380d52427fe" }
 dependencies = [
     { name = "cfa-mrp" },
     { name = "jsonschema" },

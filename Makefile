@@ -14,23 +14,28 @@ CLEAN_SIZE_PATTERN := $(if $(filter command line environment environment overrid
 	profile profile-small profile-large profile-xl \
 	bench bench-compare build-rust-release docker-build-cloud-image \
 	calibrate-phase-1 calibrate-phase-1-docker calibrate-phase-1-cloud \
-	cloud-list cloud-cleanup-plan cloud-cleanup cloud-cleanup-user-plan cloud-cleanup-user \
+	cloud-list cloud-cleanup-preview cloud-cleanup-session cloud-cleanup-plan cloud-cleanup-delete \
+	cloud-cleanup cloud-cleanup-user-preview cloud-cleanup-user-delete cloud-cleanup-user-plan cloud-cleanup-user-pln cloud-cleanup-user \
 	projections-phase-1 plot-phase-1-projection \
 	calibrate-phase-1-smc projections-phase-1-smc plot-phase-1-projection-smc \
 	calibrate-phase-1-dev projections-phase-1-dev plot-phase-1-projection-dev
 
 HELP_TARGET_WIDTH := 28
 HELP_VAR_WIDTH := 44
-HELP_VAR_NAMES := STATE SIZE MAX_WORKERS BASE CLOUD_CONFIG CLOUD_USER AUTO_SIZE CLOUD_MAX_CONCURRENT_SIMULATIONS
+HELP_VAR_NAMES := STATE SIZE MAX_WORKERS BASE CLOUD_CONFIG SESSION_ID CLOUD_USER DRY_RUN IMAGE_TAG SKIP_ACR AUTO_SIZE CLOUD_MAX_CONCURRENT_SIMULATIONS
 HELP_VAR_STATE := Synthetic population state
 HELP_VAR_SIZE := Synthetic population size; underscores are accepted
 HELP_VAR_MAX_WORKERS := Calibration/projection worker count
 HELP_VAR_BASE := Base ref for bench-compare
 HELP_VAR_CLOUD_CONFIG := Cloud config path
+HELP_VAR_SESSION_ID := Cloud session to inspect/delete
 HELP_VAR_CLOUD_USER := User for cloud cleanup commands
+HELP_VAR_DRY_RUN := Preview cloud cleanup without deletion
+HELP_VAR_IMAGE_TAG := Optional cloud image tag cleanup selector
+HELP_VAR_SKIP_ACR := Skip Azure Container Registry lookup/cleanup
 HELP_VAR_AUTO_SIZE := Set to 1/true for cloud calibration auto-sizing
 HELP_VAR_CLOUD_MAX_CONCURRENT_SIMULATIONS := Cloud concurrency limit
-HELP_CLOUD_TARGETS := calibrate-phase-1-cloud cloud-list cloud-cleanup-plan cloud-cleanup cloud-cleanup-user-plan cloud-cleanup-user
+HELP_CLOUD_TARGETS := calibrate-phase-1-cloud cloud-list cloud-cleanup-preview cloud-cleanup-session cloud-cleanup-user-preview cloud-cleanup-user-delete cloud-cleanup-plan cloud-cleanup-delete cloud-cleanup cloud-cleanup-user-plan cloud-cleanup-user
 HELP_ALIAS_TARGETS := run-small run-large run-xl profile-small profile-large profile-xl
 
 all: uv-sync ## Sync the local uv environment
@@ -121,12 +126,39 @@ bench-compare: input/synth_pop_people_WY_10_000.csv input/synth_pop_people_WY_10
 
 MAX_WORKERS ?= 4
 CLOUD_CONFIG ?= ixa_epi_covid.cloud_config.toml
-CLOUD_USER ?= $(USER)
+CLOUD_USER ?=
+DEFAULT_CLOUD_USER ?= $(or $(shell python3 -c 'import getpass; print(getpass.getuser())' 2>/dev/null | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$$//; s/-+/-/g'),$(firstword $(shell id -un 2>/dev/null || whoami 2>/dev/null || printf unknown)))
+SESSION_ID ?=
+DRY_RUN ?=
+IMAGE_TAG ?=
+SKIP_ACR ?=
 AUTO_SIZE ?=
 CLOUD_MAX_CONCURRENT_SIMULATIONS ?=
+CLEANUP_USER = $(or $(strip $(CLOUD_USER)),$(DEFAULT_CLOUD_USER))
+ifneq ($(strip $(SESSION_ID)),)
+SESSION_ID_FLAG := --session-id "$(SESSION_ID)"
+endif
+ifneq ($(strip $(CLOUD_USER)),)
+USER_FLAG := --user "$(CLOUD_USER)"
+endif
+ifneq ($(strip $(CLEANUP_USER)),)
+CLEANUP_USER_FLAG := --user "$(CLEANUP_USER)"
+endif
+ifneq ($(strip $(DRY_RUN)),)
+DRY_RUN_FLAG := --dry-run
+endif
+ifneq ($(strip $(IMAGE_TAG)),)
+IMAGE_TAG_FLAG := --image-tag "$(IMAGE_TAG)"
+endif
+ifneq ($(strip $(SKIP_ACR)),)
+SKIP_ACR_FLAG := --skip-acr
+endif
 CLOUD_AUTO_SIZE_TRUTHY = $(filter 1 true TRUE yes YES on ON --auto-size,$(AUTO_SIZE))
 CLOUD_AUTO_SIZE_ARG = $(if $(CLOUD_AUTO_SIZE_TRUTHY),--auto-size,)
 CLOUD_CONCURRENCY_ARG = $(if $(CLOUD_MAX_CONCURRENT_SIMULATIONS),--max-concurrent-simulations $(CLOUD_MAX_CONCURRENT_SIMULATIONS),)
+CLOUD_CLEANUP_CMD = uv run python -m calibrationtools.cloud.cleanup --cloud-config "$(CLOUD_CONFIG)"
+CLOUD_CLEANUP_SESSION_VARS = SESSION_ID="$(SESSION_ID)" IMAGE_TAG="$(IMAGE_TAG)" SKIP_ACR="$(SKIP_ACR)"
+CLOUD_CLEANUP_USER_VARS = CLOUD_USER="$(CLEANUP_USER)" IMAGE_TAG="$(IMAGE_TAG)" SKIP_ACR="$(SKIP_ACR)"
 TARGET_RESULTS = ./experiments/phase1/calibration/output_indiana/results.pkl
 
 build-rust-release: ## Build the Rust binary in release mode
@@ -152,19 +184,35 @@ endif
 	uv run python ./scripts/phase_1_calibration.py -c ./experiments/phase1/input/prod-config.yaml -o ./experiments/phase1/calibration/output_indiana_cloud --default-population-size-dev $(NORMALIZED_SIZE) --cloud --cloud-config $(CLOUD_CONFIG) $(CLOUD_AUTO_SIZE_ARG) $(CLOUD_CONCURRENCY_ARG)
 
 cloud-list: uv-sync-cloud ## List project-scoped cloud resources
-	uv run python -m calibrationtools.cloud.cleanup --cloud-config "$(CLOUD_CONFIG)" --list
+	$(CLOUD_CLEANUP_CMD) --list $(SESSION_ID_FLAG) $(USER_FLAG) $(IMAGE_TAG_FLAG) $(SKIP_ACR_FLAG)
 
-cloud-cleanup-plan: uv-sync-cloud ## Dry-run cleanup for SESSION_ID
-	uv run python -m calibrationtools.cloud.cleanup --cloud-config "$(CLOUD_CONFIG)" --session-id "$(SESSION_ID)" --dry-run
+cloud-cleanup-preview: uv-sync-cloud ## Preview cleanup for SESSION_ID; optional IMAGE_TAG/SKIP_ACR
+	$(MAKE) cloud-cleanup $(CLOUD_CLEANUP_SESSION_VARS) DRY_RUN=1
 
-cloud-cleanup: uv-sync-cloud ## Delete cloud resources for SESSION_ID
-	uv run python -m calibrationtools.cloud.cleanup --cloud-config "$(CLOUD_CONFIG)" --session-id "$(SESSION_ID)"
+cloud-cleanup-session: uv-sync-cloud ## Delete cloud resources for SESSION_ID; optional IMAGE_TAG/SKIP_ACR
+	$(MAKE) cloud-cleanup $(CLOUD_CLEANUP_SESSION_VARS) DRY_RUN=
 
-cloud-cleanup-user-plan: uv-sync-cloud ## Dry-run cleanup for all sessions for CLOUD_USER
-	uv run python -m calibrationtools.cloud.cleanup --cloud-config "$(CLOUD_CONFIG)" --user "$(CLOUD_USER)" --all-sessions-for-user --dry-run
+cloud-cleanup-plan: cloud-cleanup-preview ## Alias for cloud-cleanup-preview
 
-cloud-cleanup-user: uv-sync-cloud ## Delete all cloud sessions for CLOUD_USER
-	uv run python -m calibrationtools.cloud.cleanup --cloud-config "$(CLOUD_CONFIG)" --user "$(CLOUD_USER)" --all-sessions-for-user
+cloud-cleanup-delete: cloud-cleanup-session ## Alias for cloud-cleanup-session
+
+cloud-cleanup: ## Underlying SESSION_ID cleanup target
+	@test -n "$(SESSION_ID)" || (echo "SESSION_ID is required"; exit 1)
+	$(CLOUD_CLEANUP_CMD) $(SESSION_ID_FLAG) $(IMAGE_TAG_FLAG) $(SKIP_ACR_FLAG) $(DRY_RUN_FLAG)
+
+cloud-cleanup-user-preview: uv-sync-cloud ## Preview cleanup for CLOUD_USER; defaults to current user
+	$(MAKE) cloud-cleanup-user $(CLOUD_CLEANUP_USER_VARS) DRY_RUN=1
+
+cloud-cleanup-user-delete: uv-sync-cloud ## Delete all cloud sessions for CLOUD_USER; defaults to current user
+	$(MAKE) cloud-cleanup-user $(CLOUD_CLEANUP_USER_VARS) DRY_RUN=
+
+cloud-cleanup-user-plan: cloud-cleanup-user-preview ## Alias for cloud-cleanup-user-preview
+
+cloud-cleanup-user-pln: cloud-cleanup-user-preview ## Alias for cloud-cleanup-user-preview
+
+cloud-cleanup-user: ## Underlying CLOUD_USER cleanup target
+	@test -n "$(CLEANUP_USER)" || (echo "CLOUD_USER is required"; exit 1)
+	$(CLOUD_CLEANUP_CMD) --all-sessions-for-user $(CLEANUP_USER_FLAG) $(IMAGE_TAG_FLAG) $(SKIP_ACR_FLAG) $(DRY_RUN_FLAG)
 
 projections-phase-1: $(TARGET_RESULTS) ## Run production phase 1 projections
 	uv run python ./scripts/phase_1_projection.py -d output_indiana --max-workers $(MAX_WORKERS)
