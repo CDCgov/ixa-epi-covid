@@ -10,10 +10,12 @@ pub mod incidence_report;
 pub mod prevalence_report;
 pub mod transmission_report;
 
+// the skip_serializing_if is used to avoid having the period field show up in the json in the tests
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct ReportParams {
     pub write: bool,
     pub filename: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub period: Option<f64>,
 }
 
@@ -97,6 +99,7 @@ mod test {
 
     use super::get_period_report_name;
     use crate::error::ModelError;
+    use crate::parameters::GlobalParams;
     use crate::reports::ReportParams;
     use crate::{
         parameters::{ContextParametersExt, Params},
@@ -123,60 +126,62 @@ mod test {
         context
     }
 
+    fn setup_context_for_reports(
+        incidence_report: ReportParams,
+        prevalence_report: ReportParams,
+        transmission_report: ReportParams,
+        aggregated_deaths_report: ReportParams,
+    ) -> Context {
+        let mut context = Context::new();
+        let parameters = Params {
+            incidence_report,
+            prevalence_report,
+            transmission_report,
+            aggregated_deaths_report,
+            ..Default::default()
+        };
+        context
+            .set_global_property_value(GlobalParams, parameters)
+            .unwrap();
+        context
+    }
+
     #[test]
     fn test_list_reports() {
-        let params_json = r#"
-            {
-                "epimodel.GlobalParams": {
-                    "seed": 123,
-                    "max_time": 200.0,
-                    "synth_population_file": "input/people_test.csv",
-                    "initial_prevalence": 0.01,
-                    "imported_cases_timeseries": {
-                        "include": false
-                    },
-                    "infectiousness_rate_fn": {"Constant": {"rate": 1.0, "duration": 5.0}},
-                    "symptom_age_groups": [{"label": "Age0To17", "min": 0, "max": 17},
-                        {"label": "Age18To49", "min": 18, "max": 49},
-                        {"label": "Age50To64", "min": 50, "max": 64},
-                        {"label": "Age65Plus", "min": 65, "max": 120}],
-                    "probability_mild_given_infect": 0.7,
-                    "infect_to_mild_delay": {"mu": 0.1, "sigma": 0.0},
-                    "probability_severe_given_mild": {"Age0To17": 0.004, "Age18To49": 0.034, "Age50To64": 0.108, "Age65Plus": 0.684},
-                    "mild_to_severe_delay": {"mu": 0.1, "sigma": 0.1},
-                    "mild_to_resolved_delay": {"mu": 0.1, "sigma": 0.1},
-                    "probability_critical_given_severe": {"Age0To17": 0.275, "Age18To49": 0.189, "Age50To64": 0.271, "Age65Plus": 0.269},
-                    "severe_to_critical_delay": {"mu": 0.1, "sigma": 0.1},
-                    "severe_to_resolved_delay": {"mu": 0.1, "sigma": 0.1},
-                    "probability_dead_given_critical": {"Age0To17": 0.026, "Age18To49": 0.111, "Age50To64": 0.292, "Age65Plus": 0.699},
-                    "critical_to_dead_delay": {"mu": 0.1, "sigma": 0.1},
-                    "critical_to_resolved_delay": {"mu": 0.1, "sigma": 0.1},
-                    "settings_properties": {},
-                    "itinerary_ratios": {},
-                    "prevalence_report": {
-                        "write": true,
-                        "filename": "prevalence.csv",
-                        "period": 1.0
-                    },
-                    "incidence_report": {
-                        "write": true,
-                        "filename": "incidence.csv",
-                        "period": 2.0
-                    },
-                    "transmission_report": {
-                        "write": true,
-                        "filename": "transmission.csv"
-                    },
-                    "aggregated_deaths_report": {
-                        "write": true,
-                        "filename": "aggregated_deaths.csv",
-                        "period": 3.0
-                    },
-                    "first_death_terminates_run": false
-                }
-            }
-        "#;
-        let context = setup_context_from_str(params_json);
+        let prevalence_report = ReportParams {
+            write: true,
+            filename: Some("prevalence.csv".to_string()),
+            period: Some(1.0),
+        };
+        let incidence_report = ReportParams {
+            write: true,
+            filename: Some("incidence.csv".to_string()),
+            period: Some(2.0),
+        };
+        let transmission_report = ReportParams {
+            write: true,
+            filename: Some("transmission.csv".to_string()),
+            period: None,
+        };
+        let aggregated_deaths_report = ReportParams {
+            write: true,
+            filename: Some("aggregated_deaths.csv".to_string()),
+            period: Some(3.0),
+        };
+
+        let context = setup_context_for_reports(
+            incidence_report,
+            prevalence_report,
+            transmission_report,
+            aggregated_deaths_report,
+        );
+        let params = context.get_params().clone();
+
+        let mut wrapped = serde_json::json!({});
+        wrapped["epimodel.GlobalParams"] = serde_json::to_value(&params).unwrap();
+        let params_str = serde_json::to_string_pretty(&wrapped).unwrap();
+
+        let context = setup_context_from_str(&params_str);
         let Params {
             prevalence_report,
             incidence_report,
