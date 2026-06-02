@@ -3,27 +3,36 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from importation.geographies import get_state_proportion_population_data
 from mrp.api import apply_dict_overrides
 
 
 class CovidModelConfig:
-    """
-    A class to handle the configuration for the COVID model calibration process. It reads a YAML config file, validates it, and provides methods to access the configuration parameters and generate default parameters for the MRP model based on the configuration.
-    The initialization also handles the generation of the default ixa parameters and some convenience methods for
+    """Load and adapt phase-1 COVID model calibration configuration.
 
     Args:
-        config_file (str | Path): The path to the YAML configuration file.
-        ixa_overrides (dict, optional): A dictionary of overrides for the ixa parameters. Defaults to an empty dictionary.
-        **kwargs: Additional keyword arguments that can be used to override values in the configuration file.
+        config_file (str | Path): Path to the YAML configuration file.
+        ixa_overrides (dict[str, Any] | None): Optional IXA parameter
+            overrides.
+        **kwargs (Any): Additional configuration overrides.
+
+    Raises:
+        ValueError: If the config file is not a mapping or required keys are
+            missing.
     """
 
     def __init__(
-        self, config_file: str | Path, ixa_overrides: dict = {}, **kwargs
+        self,
+        config_file: str | Path,
+        ixa_overrides: dict[str, Any] | None = None,
+        **kwargs: Any,
     ):
         with open(config_file, "r") as f:
-            self.config = yaml.safe_load(f)
+            loaded_config = yaml.safe_load(f)
+        if not isinstance(loaded_config, dict):
+            raise ValueError("Config file must contain a mapping.")
 
-        self.config = apply_dict_overrides(self.config, kwargs)
+        self.config = apply_dict_overrides(loaded_config, kwargs)
         self._validate_config()
 
         self.config_file = config_file
@@ -75,6 +84,10 @@ class CovidModelConfig:
                 "outputs_to_read": outputs_to_read,
             },
             "importation_inputs": {
+                "population_proportion": get_state_proportion_population_data(
+                    state=self.config["state"],
+                    year=self.config["year"],
+                ),
                 "state": self.config["state"],
                 "year": self.config["year"],
                 "symptomatic_reporting_prob": self.config[

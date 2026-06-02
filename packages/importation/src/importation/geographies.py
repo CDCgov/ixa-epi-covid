@@ -6,8 +6,10 @@ from census import Census
 from dotenv import load_dotenv
 from us import states
 
+PACKAGE_DATA_DIR = Path(__file__).resolve().parent / "data"
 
-def get_api_key() -> str:
+
+def get_api_key() -> str | None:
     """Get the Census API key from the environment variable"""
     load_dotenv()
     return os.getenv("CENSUS_API_KEY")
@@ -48,6 +50,17 @@ def get_total_state_population_data(
             "Population data is currently only avaialble as a cache for the year 2020. "
         )
     filename = f"state_population_data_{year if year else 'latest'}.csv"
+    packaged_filepath = PACKAGE_DATA_DIR / filename
+    if packaged_filepath.exists():
+        return pl.read_csv(packaged_filepath)
+
+    if year is None:
+        packaged_candidates = sorted(
+            PACKAGE_DATA_DIR.glob("state_population_data_*.csv")
+        )
+        if packaged_candidates:
+            return pl.read_csv(packaged_candidates[-1])
+
     filepath = Path(".cache") / filename
     if filepath.exists() and cache:
         return pl.read_csv(filepath)

@@ -1,0 +1,17 @@
+input = "experiments/phase1/input/default_params.json"
+
+[model]
+spec = "ixa_epi_covid_phase1"
+version = "0.1.0"
+
+[runtime]
+spec = "process"
+command = "python"
+args = [
+  "-m",
+  "ixa_epi_covid.covid_model",
+]
+
+[output]
+spec = "filesystem"
+dir = "./output"

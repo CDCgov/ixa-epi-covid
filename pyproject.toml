@@ -6,20 +6,24 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "census>=0.8.25",
+    "create_synthetic_population",
     "dotenv>=0.9.9",
+    "importation",
     "jupyter>=1.1.1",
     "matplotlib>=3.10.8",
     "numpy>=2.3.4",
-    "pandas>=3.0.0",
-    "pandas-stubs~=3.0.0",
+    "pandas>=2.3.2,<3.0.0",
+    "pandas-stubs>=2.3.2,<3.0.0",
+    "polars>=1.35.1",
     "pyarrow>=23.0.0",
     "pygris>=0.2.1",
     "pytest>=9.0.3",
+    "pyyaml>=6.0.2",
     "requests>=2.32.5",
     "scipy>=1.16.3",
     "seaborn>=0.13.2",
     "us>=3.2.0",
-    "cfa-mrp",
+    "cfa-mrp>=0.0.4",
     "calibrationtools"
 ]
 
@@ -28,7 +32,9 @@ requires = ["uv_build>=0.8.13,<0.9.0"]
 build-backend = "uv_build"
 
 [tool.uv.sources]
-calibrationtools = { git = "https://github.com/CDCgov/cfa-calibration-tools.git" }
+calibrationtools = { git = "https://github.com/CDCgov/cfa-calibration-tools.git", branch = "cloud-phase3" }
+"create-synthetic-population" = { workspace = true }
+importation = { workspace = true }
 
 [tool.uv]
 package = true
@@ -37,6 +43,10 @@ package = true
 members = [
     "packages/*",
 ]
+
+[dependency-groups]
+dev = ["pre-commit>=4.5.1"]
+cloudops = ["cfa-cloudops @ git+https://github.com/CDCgov/cfa-cloudops.git@92760289aad4548df1b4ca301353cc9c14c4053c"]
 
 [tool.pydoclint]
 style = 'google'
