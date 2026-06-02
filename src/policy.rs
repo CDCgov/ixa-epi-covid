@@ -24,7 +24,8 @@ pub enum Intervention {
     ShelterInPlace(ItineraryModifier),
     Isolation(ItineraryModifier),
 }
-
+//intervention trait with context and person,
+// does this intervention apply
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
 pub enum Group<Q>
 where

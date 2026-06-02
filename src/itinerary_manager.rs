@@ -33,7 +33,12 @@ pub trait ItineraryModifierStorageTrait: std::fmt::Debug + Any {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
-
+// this knows what P is and owns a hashmap
+// The trait gives us a type erased interface
+// Try to refactor to a single trait that has the type erased stuff we need to do
+// and a single concrete type
+// Then you can ask type erased questions of the trait interface
+// Can you bake in to the itinerary modifier the person property value.
 type PersonPropertyItineraryModifier<'a, P> = (
     P,
     // Use fully qualified syntax for the associated type because type aliases do not have type checking
