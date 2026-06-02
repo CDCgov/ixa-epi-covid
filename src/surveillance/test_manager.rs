@@ -1,23 +1,22 @@
-use ixa::{prelude::*, prelude_for_plugins::IxaEvent};
+use ixa::prelude::*;
 use serde::Serialize;
 use std::hash::Hasher;
 
-use crate::{infectiousness_manager::InfectionStatus, settings::{Person, PersonId}};
+use crate::{
+    infectiousness_manager::InfectionStatus,
+    settings::{Person, PersonId},
+};
 
 define_rng!(TestRng);
 
 define_entity!(Test);
-
-#[derive(IxaEvent, Copy, Clone)]
-pub struct PositiveTest {
-    pub person_id: PersonId,
-}
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
 pub enum TestType {
     PCR,
     Antigen,
 }
+
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct Sensitivity(pub f64);
 
@@ -50,30 +49,37 @@ pub struct PositiveTestsConductedToday(pub usize);
 impl_property!(TestType, Test);
 impl_property!(Sensitivity, Test);
 impl_property!(TestAvailability, Test);
-impl_property!(TestsConductedToday, Test, default_const = TestsConductedToday(0));
-impl_property!(PositiveTestsConductedToday, Test, default_const = PositiveTestsConductedToday(0));
+impl_property!(
+    TestsConductedToday,
+    Test,
+    default_const = TestsConductedToday(0)
+);
+impl_property!(
+    PositiveTestsConductedToday,
+    Test,
+    default_const = PositiveTestsConductedToday(0)
+);
 
 #[allow(dead_code)]
-pub trait ContextTestExt: PluginContext + ContextEntitiesExt + ContextRandomExt{
+pub trait ContextTestExt: PluginContext + ContextEntitiesExt + ContextRandomExt {
     fn check_test_availability(&self, test: TestId) -> bool {
         let availability = self.get_property::<Test, TestAvailability>(test);
         match availability {
             TestAvailability::Unconstrained => true,
             TestAvailability::MaxPerDay(max) => {
-                let tests_conducted_today = self
-                    .get_property::<Test, TestsConductedToday>(test)
-                    .0;
+                let tests_conducted_today = self.get_property::<Test, TestsConductedToday>(test).0;
                 tests_conducted_today < max
             }
         }
     }
 
     fn increment_tests_conducted(&mut self, test: TestId) {
-        let mut tests_conducted_today = self
-            .get_property::<Test, TestsConductedToday>(test)
-            .0;
+        let mut tests_conducted_today = self.get_property::<Test, TestsConductedToday>(test).0;
         tests_conducted_today += 1;
-        self.set_property::<Test, TestsConductedToday>(test, TestsConductedToday(tests_conducted_today));
+        self.set_property::<Test, TestsConductedToday>(
+            test,
+            TestsConductedToday(tests_conducted_today),
+        );
     }
 
     fn increment_positive_tests_conducted(&mut self, test: TestId) {
@@ -81,42 +87,54 @@ pub trait ContextTestExt: PluginContext + ContextEntitiesExt + ContextRandomExt{
             .get_property::<Test, PositiveTestsConductedToday>(test)
             .0;
         positive_tests_conducted_today += 1;
-        self.set_property::<Test, PositiveTestsConductedToday>(test, PositiveTestsConductedToday(positive_tests_conducted_today));
-    }
-
-    fn emit_positive_test_event(&mut self, person_id: PersonId) {
-        self.emit_event(PositiveTest { person_id });
+        self.set_property::<Test, PositiveTestsConductedToday>(
+            test,
+            PositiveTestsConductedToday(positive_tests_conducted_today),
+        );
     }
 
     fn test(&mut self, test_type: TestType, person_id: PersonId) -> bool {
-        let test = self.query_result_iterator(with!(Test, test_type)).next().unwrap();
+        // the strategy type and test type together uniquely identify the test to be conducted, so we can query for the test id using both properties
+        let test_id = self
+            .query_result_iterator(with!(Test, test_type))
+            .next()
+            .unwrap();
         let infectious_status = self.get_property::<Person, InfectionStatus>(person_id);
-        let test_sensitivity = self.get_property::<Test, Sensitivity>(test).0;
-        if !self.check_test_availability(test) {
+        let test_sensitivity = self.get_property::<Test, Sensitivity>(test_id).0;
+        if !self.check_test_availability(test_id) {
             return false;
         }
-        self.increment_tests_conducted(test);
+        self.increment_tests_conducted(test_id);
         match infectious_status {
             InfectionStatus::Infectious => {
                 let positive = self.sample_bool(TestRng, test_sensitivity);
                 if positive {
-                    self.increment_positive_tests_conducted(test);
-                    self.emit_positive_test_event(person_id);
+                    self.increment_positive_tests_conducted(test_id);
                 }
                 positive
-            },
+            }
             _ => false,
         }
     }
-
-
-
-
 }
 impl ContextTestExt for Context {}
 
 pub fn init(context: &mut Context) {
-    let _antigen_test = context.add_entity(with!(Test, TestType::Antigen, Sensitivity(0.8), TestAvailability::Unconstrained)).unwrap();
-    let _pcr_test = context.add_entity(with!(Test, TestType::PCR, Sensitivity(0.95), TestAvailability::MaxPerDay(100))).unwrap();
+    let _antigen_test = context
+        .add_entity(with!(
+            Test,
+            TestType::Antigen,
+            Sensitivity(0.8),
+            TestAvailability::Unconstrained
+        ))
+        .unwrap();
+    let _pcr_test = context
+        .add_entity(with!(
+            Test,
+            TestType::PCR,
+            Sensitivity(0.95),
+            TestAvailability::MaxPerDay(100)
+        ))
+        .unwrap();
     context.index_property::<Test, TestType>();
 }
