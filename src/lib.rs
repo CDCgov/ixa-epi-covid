@@ -13,6 +13,7 @@ pub mod reports;
 mod setting_code;
 pub mod settings;
 pub mod symptom_status_manager;
+pub mod surveillance;
 
 pub use model::initialize_model;
 pub use parameters::ContextParametersExt;
