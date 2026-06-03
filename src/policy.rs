@@ -1,24 +1,11 @@
-use ixa::{entity::query::Query, prelude::*};
+use ixa::prelude::*;
 use serde::Serialize;
 
 use crate::{
     ContextParametersExt,
     itinerary_manager::{ContextItineraryModifierExt, ItineraryModifier},
-    settings::{ContextSettingExt, Person, SettingCode},
+    settings::{ContextSettingExt, Person},
 };
-
-#[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub struct ItineraryModifierIntervention<T, U>
-where
-    T: Property<Person> + std::fmt::Debug,
-    T::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-    U: Property<Person> + std::fmt::Debug,  
-    U::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-{
-    modifier: ItineraryModifier,
-    active_property: T,
-    inactive_property: U
-}
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
 pub struct TimeTrigger {
@@ -32,50 +19,31 @@ pub enum Trigger {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub enum Intervention<T, U>
-where
-    T: Property<Person> + std::fmt::Debug,
-    T::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-    U: Property<Person> + std::fmt::Debug,
-    U::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-{
-    SchoolClosure(ItineraryModifierIntervention<T, U>),
-    ShelterInPlace(ItineraryModifierIntervention<T, U>),
-    Isolation(ItineraryModifierIntervention<T, U>),
-}
-//intervention trait with context and person,
-// does this intervention apply
-#[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub enum Group<Q>
-where
-    Q: Query<Person>,
-{
-    Population,
-    GroupSetting(SettingCode),
-    GroupQuery(Q),
+pub enum Intervention {
+    SchoolClosure(ItineraryModifier),
+    ShelterInPlace(ItineraryModifier),
+    Isolation(ItineraryModifier),
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub struct Policy<T, U, Q>
-where
-    T: Property<Person> + std::fmt::Debug,
-    T::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-    U: Property<Person> + std::fmt::Debug,
-    U::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-    Q: Query<Person>,
-{
-    trigger: Trigger,
-    intervention: Intervention<T, U>,
-    group: Group<Q>,
-}
-
-#[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub struct IndividualLevelPolicy<P>
+pub struct ExogenousPolicy<P>
 where
     P: Property<Person> + std::fmt::Debug,
     P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
 {
-    intervention: Intervention<P, P>
+    trigger: Trigger,
+    intervention: Intervention,
+    group: P,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Copy)]
+pub struct EndogenousPolicy<P>
+where
+    P: Property<Person> + std::fmt::Debug,
+    P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+{
+    intervention: Intervention,
+    group: P,
 }
 
 pub trait ContextPolicyExt:
@@ -85,78 +53,48 @@ pub trait ContextPolicyExt:
     + ContextItineraryModifierExt
     + ContextSettingExt
 {
-    fn add_policy<T, U, Q>(&mut self, policy: Policy<T, U, Q>)
+    fn add_exogenous_policy<P>(&mut self, policy: ExogenousPolicy<P>)
     where
-        T: Property<Person> + std::fmt::Debug,
-        T::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-        U: Property<Person> + std::fmt::Debug,
-        U::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-        Q: Query<Person>,
+        P: Property<Person> + std::fmt::Debug,
+        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
     {
         match policy.intervention {
-            Intervention::SchoolClosure(_) | Intervention::ShelterInPlace(_) | Intervention::Isolation(_) => {
-                self.add_policy_with_itinerary_modifier(policy);
+            Intervention::SchoolClosure(_)
+            | Intervention::ShelterInPlace(_)
+            | Intervention::Isolation(_) => {
+                self.add_exogenous_policy_with_itinerary_modifier(policy);
             }
         }
     }
 
-    fn add_policy_with_itinerary_modifier<T, U, Q>(&mut self, policy: Policy<T, U, Q>)
+    fn add_exogenous_policy_with_itinerary_modifier<P>(&mut self, policy: ExogenousPolicy<P>)
     where
-        T: Property<Person> + std::fmt::Debug,
-        T::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-        U: Property<Person> + std::fmt::Debug,
-        U::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-        Q: Query<Person>,
+        P: Property<Person> + std::fmt::Debug,
+        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
     {
         let trigger = policy.trigger;
         let intervention = policy.intervention;
-        let group = policy.group;
-        let active_property = match &intervention {
+        let group_property = policy.group;
+        let intervention_modifier = match intervention {
             Intervention::SchoolClosure(modifier)
             | Intervention::ShelterInPlace(modifier)
-            | Intervention::Isolation(modifier) => modifier.active_property,
+            | Intervention::Isolation(modifier) => modifier,
         };
-        let inactive_property = match &intervention {
-            Intervention::SchoolClosure(modifier)
-            | Intervention::ShelterInPlace(modifier)
-            | Intervention::Isolation(modifier) => modifier.inactive_property,
-        };
-
-        // When should this list of people be collected. Currently it is on simulation initialization
-        let person_ids = match group {
-            Group::Population => self.get_entity_iterator::<Person>().collect(),
-            Group::GroupSetting(setting_code) => self.get_setting_members(setting_code),
-            Group::GroupQuery(query) => self.query_result_iterator::<Person, _>(query).collect(),
-        };
-
-        let person_ids_clone = person_ids.clone();
-
-        match intervention {
-            Intervention::SchoolClosure(modifier)
-            | Intervention::ShelterInPlace(modifier)
-            | Intervention::Isolation(modifier) => {
-                self.register_itinerary_modifier(active_property, modifier.modifier);
-            }
-        }
-
-        println!("person_ids: {:?}", person_ids);
         match trigger {
             Trigger::Time(time_trigger) => {
                 self.add_plan(time_trigger.start_time, move |context| {
-                    for person in &person_ids {
-                        context.set_property::<Person, T>(*person, active_property);
-                    }
+                    context.register_itinerary_modifier::<P>(group_property, intervention_modifier);
                 });
                 self.add_plan(time_trigger.end_time, move |context| {
-                    for person in &person_ids_clone {
-                        context.set_property::<Person, U>(*person, inactive_property);
-                    }
+                    context.remove_itinerary_modifier_by_property::<P>(
+                        group_property.make_canonical(),
+                    );
                 });
             }
         }
     }
 
-    fn add_individual_level_policy<P>(&mut self, policy: IndividualLevelPolicy<P>)
+    fn add_endogenous_policy<P>(&mut self, policy: EndogenousPolicy<P>)
     where
         P: Property<Person> + std::fmt::Debug,
         P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
@@ -167,32 +105,24 @@ pub trait ContextPolicyExt:
             Intervention::SchoolClosure(_)
             | Intervention::ShelterInPlace(_)
             | Intervention::Isolation(_) => {
-                self.add_individual_level_itinerary_modifier_policy(policy);
+                self.add_endogenous_policy_with_itinerary_modifier(policy);
             }
         }
     }
 
-    fn add_individual_level_itinerary_modifier_policy<P>(&mut self, policy: IndividualLevelPolicy<P>)
+    fn add_endogenous_policy_with_itinerary_modifier<P>(&mut self, policy: EndogenousPolicy<P>)
     where
         P: Property<Person> + std::fmt::Debug,
         P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
     {
-        let intervention = policy.intervention;
-        let active_property = match &intervention {
+        let modifer = match policy.intervention {
             Intervention::SchoolClosure(modifier)
             | Intervention::ShelterInPlace(modifier)
-            | Intervention::Isolation(modifier) => modifier.active_property,
+            | Intervention::Isolation(modifier) => modifier,
         };
-
-        match intervention {
-            Intervention::SchoolClosure(modifier)
-            | Intervention::ShelterInPlace(modifier)
-            | Intervention::Isolation(modifier) => {
-                self.register_itinerary_modifier(active_property, modifier.modifier);
-            }
-        }
+        let group_property = policy.group;
+        self.register_itinerary_modifier::<P>(group_property, modifer);
     }
-
 }
 impl ContextPolicyExt for Context {}
 
@@ -208,19 +138,12 @@ mod tests {
             FIPSCode, PopulationReaderSettingCategory,
             parser::{parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id},
         },
-        settings::SettingCategory,
+        population_loader::{Alive, HomeId},
+        settings::{PersonId, SettingCategory, SettingCode},
         symptom_status_manager::SymptomStatus,
     };
 
     use super::*;
-    #[derive(Debug, PartialEq, Clone, Serialize, Copy, Eq, Hash)]
-    pub struct DummyIsolating(pub bool);
-    impl_property!(
-        DummyIsolating,
-        Person,
-        default_const = DummyIsolating(false)
-    );
-
     fn make_home_id(home_id: &[u8]) -> SettingCode {
         SettingCode(parse_fips_home_id(home_id).unwrap().1)
     }
@@ -244,6 +167,20 @@ mod tests {
             )
             .unwrap(),
         )
+    }
+
+    fn add_person_to_test_settings(context: &mut Context, person: PersonId) {
+        let home_code = make_home_id(b"160379602000010");
+        let school_code = make_school_id(b"160379602000010");
+        let workplace_code = make_workplace_id(b"160379602000010");
+        let community_code = make_community_id(b"160379602000010");
+        context.add_person_to_settings(
+            person,
+            Some(home_code),
+            Some(school_code),
+            Some(workplace_code),
+            Some(community_code),
+        );
     }
 
     fn setup() -> Context {
@@ -286,56 +223,36 @@ mod tests {
         ];
 
         let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
-        let isolation_intervention = ItineraryModifierIntervention {
-            modifier: isolation_modifier,
-            active_property: DummyIsolating(true),
-            inactive_property: DummyIsolating(false),
-        };
-        let policy: Policy<DummyIsolating, DummyIsolating, ()> = Policy {
+        let policy: ExogenousPolicy<Alive> = ExogenousPolicy {
             trigger: Trigger::Time(TimeTrigger {
                 start_time: 1.0,
                 end_time: 5.0,
             }),
-            intervention: Intervention::Isolation(isolation_intervention),
-            group: Group::Population,
+            intervention: Intervention::Isolation(isolation_modifier),
+            group: Alive(true),
         };
 
         let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
         let p2 = context.add_entity(with!(Person, Age(40))).unwrap();
 
-        context.add_policy(policy);
+        add_person_to_test_settings(&mut context, p1);
+        add_person_to_test_settings(&mut context, p2);
+
+        context.add_exogenous_policy(policy);
 
         context.add_plan(0.5, move |context| {
-            assert_eq!(
-                context.get_property::<Person, DummyIsolating>(p1),
-                DummyIsolating(false)
-            );
-            assert_eq!(
-                context.get_property::<Person, DummyIsolating>(p2),
-                DummyIsolating(false)
-            );
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
         });
 
         context.add_plan(1.5, move |context| {
-            assert_eq!(
-                context.get_property::<Person, DummyIsolating>(p1),
-                DummyIsolating(true)
-            );
-            assert_eq!(
-                context.get_property::<Person, DummyIsolating>(p2),
-                DummyIsolating(true)
-            );
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 1);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 1);
         });
 
         context.add_plan(5.5, move |context| {
-            assert_eq!(
-                context.get_property::<Person, DummyIsolating>(p1),
-                DummyIsolating(false)
-            );
-            assert_eq!(
-                context.get_property::<Person, DummyIsolating>(p2),
-                DummyIsolating(false)
-            );
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
         });
         context.execute()
     }
@@ -352,57 +269,38 @@ mod tests {
         ];
 
         let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
-        let isolation_intervention = ItineraryModifierIntervention {
-            modifier: isolation_modifier,
-            active_property: DummyIsolating(true),
-            inactive_property: DummyIsolating(false),
-        };
-        let policy: Policy<DummyIsolating, DummyIsolating, (Age,)> = Policy {
+
+        let policy: ExogenousPolicy<Age> = ExogenousPolicy {
             trigger: Trigger::Time(TimeTrigger {
                 start_time: 1.0,
                 end_time: 5.0,
             }),
-            intervention: Intervention::Isolation(isolation_intervention),
-            group: Group::GroupQuery((Age(30),)),
+            intervention: Intervention::Isolation(isolation_modifier),
+            group: Age(30),
         };
 
         let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
         let p2 = context.add_entity(with!(Person, Age(40))).unwrap();
 
+        add_person_to_test_settings(&mut context, p1);
+        add_person_to_test_settings(&mut context, p2);
+
         // Policies must be added after population is added
-        context.add_policy(policy);
+        context.add_exogenous_policy(policy);
 
         context.add_plan(0.5, move |context| {
-            assert_eq!(
-                context.get_property::<Person, DummyIsolating>(p1),
-                DummyIsolating(false)
-            );
-            assert_eq!(
-                context.get_property::<Person, DummyIsolating>(p2),
-                DummyIsolating(false)
-            );
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
         });
 
         context.add_plan(1.5, move |context| {
-            assert_eq!(
-                context.get_property::<Person, DummyIsolating>(p1),
-                DummyIsolating(true)
-            );
-            assert_eq!(
-                context.get_property::<Person, DummyIsolating>(p2),
-                DummyIsolating(false)
-            );
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 1);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
         });
 
         context.add_plan(5.5, move |context| {
-            assert_eq!(
-                context.get_property::<Person, DummyIsolating>(p1),
-                DummyIsolating(false)
-            );
-            assert_eq!(
-                context.get_property::<Person, DummyIsolating>(p2),
-                DummyIsolating(false)
-            );
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
         });
         context.execute()
     }
@@ -414,10 +312,8 @@ mod tests {
         let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
         let p2 = context.add_entity(with!(Person, Age(40))).unwrap();
 
-        let home_code_p1 = make_home_id(b"160379602000010");
-        let home_code_p2 = make_home_id(b"160379602000020");
-        context.add_person_to_settings(p1, Some(home_code_p1), None, None, None);
-        context.add_person_to_settings(p2, Some(home_code_p2), None, None, None);
+        add_person_to_test_settings(&mut context, p1);
+        add_person_to_test_settings(&mut context, p2);
 
         let isolation_matrix = [
             [0.0, 0.0, 0.0, 0.0],
@@ -427,86 +323,43 @@ mod tests {
         ];
 
         let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
-        let isolation_intervention = ItineraryModifierIntervention {
-            modifier: isolation_modifier,
-            active_property: DummyIsolating(true),
-            inactive_property: DummyIsolating(false),
-        };
-        let policy: Policy<DummyIsolating, DummyIsolating, ()> = Policy {
+        let policy: ExogenousPolicy<HomeId> = ExogenousPolicy {
             trigger: Trigger::Time(TimeTrigger {
                 start_time: 1.0,
                 end_time: 5.0,
             }),
-            intervention: Intervention::Isolation(isolation_intervention),
-            group: Group::GroupSetting(home_code_p1),
+            intervention: Intervention::Isolation(isolation_modifier),
+            group: HomeId(Some(make_home_id(b"160379602000010"))),
         };
 
-        context.add_policy(policy);
+        context.add_exogenous_policy(policy);
 
         context.add_plan(0.5, move |context| {
-            assert_eq!(
-                context.get_property::<Person, DummyIsolating>(p1),
-                DummyIsolating(false)
-            );
-            assert_eq!(
-                context.get_property::<Person, DummyIsolating>(p2),
-                DummyIsolating(false)
-            );
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
         });
 
         context.add_plan(1.5, move |context| {
-            assert_eq!(
-                context.get_property::<Person, DummyIsolating>(p1),
-                DummyIsolating(true)
-            );
-            assert_eq!(
-                context.get_property::<Person, DummyIsolating>(p2),
-                DummyIsolating(false)
-            );
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 1);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 1);
         });
 
         context.add_plan(5.5, move |context| {
-            assert_eq!(
-                context.get_property::<Person, DummyIsolating>(p1),
-                DummyIsolating(false)
-            );
-            assert_eq!(
-                context.get_property::<Person, DummyIsolating>(p2),
-                DummyIsolating(false)
-            );
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
         });
         context.execute()
     }
 
     #[test]
-    fn test_individual_level_policy() {
+    fn test_endogenous_policy() {
         let mut context = setup();
 
         let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
         let p2 = context.add_entity(with!(Person, Age(40))).unwrap();
 
-        let home_code_p1 = make_home_id(b"160379602000010");
-        let home_code_p2 = make_home_id(b"160379602000020");
-        let school_code_p1 = make_school_id(b"160379602000010");
-        let school_code_p2 = make_school_id(b"160379602000020");
-        let workplace_code_p1 = make_workplace_id(b"160379602000010");
-        let workplace_code_p2 = make_workplace_id(b"160379602000020");
-        let community_code_p1 = make_community_id(b"160379602000010");
-        let community_code_p2 = make_community_id(b"160379602000020");
-        context.add_person_to_settings(
-            p1,
-            Some(home_code_p1),
-            Some(school_code_p1),
-            Some(workplace_code_p1),
-            Some(community_code_p1),
-        );
-        context.add_person_to_settings(
-            p2,
-            Some(home_code_p2),
-            Some(school_code_p2),
-            Some(workplace_code_p2),
-            Some(community_code_p2),
-        );
+        add_person_to_test_settings(&mut context, p1);
+        add_person_to_test_settings(&mut context, p2);
 
         let isolation_matrix = [
             [0.0, 0.0, 0.0, 0.0],
@@ -516,16 +369,13 @@ mod tests {
         ];
 
         let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
-        let isolation_intervention = ItineraryModifierIntervention {
-            modifier: isolation_modifier,
-            active_property: SymptomStatus::Mild,
-            inactive_property: SymptomStatus::Mild,
-        };
-        let individual_policy: IndividualLevelPolicy<SymptomStatus> = IndividualLevelPolicy {
-            intervention: Intervention::Isolation(isolation_intervention),
+
+        let individual_policy: EndogenousPolicy<SymptomStatus> = EndogenousPolicy {
+            intervention: Intervention::Isolation(isolation_modifier),
+            group: SymptomStatus::Mild,
         };
 
-        context.add_individual_level_policy(individual_policy);
+        context.add_endogenous_policy(individual_policy);
 
         context.add_plan(0.5, move |context| {
             assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
