@@ -8,6 +8,19 @@ use crate::{
 };
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
+pub struct ItineraryModifierIntervention<T, U>
+where
+    T: Property<Person> + std::fmt::Debug,
+    T::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+    U: Property<Person> + std::fmt::Debug,  
+    U::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+{
+    modifier: ItineraryModifier,
+    active_property: T,
+    inactive_property: U
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize, Copy)]
 pub struct TimeTrigger {
     start_time: f64,
     end_time: f64,
@@ -19,10 +32,16 @@ pub enum Trigger {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub enum Intervention {
-    SchoolClosure(ItineraryModifier),
-    ShelterInPlace(ItineraryModifier),
-    Isolation(ItineraryModifier),
+pub enum Intervention<T, U>
+where
+    T: Property<Person> + std::fmt::Debug,
+    T::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+    U: Property<Person> + std::fmt::Debug,
+    U::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+{
+    SchoolClosure(ItineraryModifierIntervention<T, U>),
+    ShelterInPlace(ItineraryModifierIntervention<T, U>),
+    Isolation(ItineraryModifierIntervention<T, U>),
 }
 //intervention trait with context and person,
 // does this intervention apply
@@ -46,10 +65,8 @@ where
     Q: Query<Person>,
 {
     trigger: Trigger,
-    intervention: Intervention,
+    intervention: Intervention<T, U>,
     group: Group<Q>,
-    active_property: T,
-    inactive_property: U,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
@@ -58,8 +75,7 @@ where
     P: Property<Person> + std::fmt::Debug,
     P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
 {
-    intervention: Intervention,
-    active_property: P,
+    intervention: Intervention<P, P>
 }
 
 pub trait ContextPolicyExt:
@@ -77,11 +93,34 @@ pub trait ContextPolicyExt:
         U::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
         Q: Query<Person>,
     {
+        match policy.intervention {
+            Intervention::SchoolClosure(_) | Intervention::ShelterInPlace(_) | Intervention::Isolation(_) => {
+                self.add_policy_with_itinerary_modifier(policy);
+            }
+        }
+    }
+
+    fn add_policy_with_itinerary_modifier<T, U, Q>(&mut self, policy: Policy<T, U, Q>)
+    where
+        T: Property<Person> + std::fmt::Debug,
+        T::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+        U: Property<Person> + std::fmt::Debug,
+        U::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+        Q: Query<Person>,
+    {
         let trigger = policy.trigger;
         let intervention = policy.intervention;
         let group = policy.group;
-        let active_property = policy.active_property;
-        let inactive_property = policy.inactive_property;
+        let active_property = match &intervention {
+            Intervention::SchoolClosure(modifier)
+            | Intervention::ShelterInPlace(modifier)
+            | Intervention::Isolation(modifier) => modifier.active_property,
+        };
+        let inactive_property = match &intervention {
+            Intervention::SchoolClosure(modifier)
+            | Intervention::ShelterInPlace(modifier)
+            | Intervention::Isolation(modifier) => modifier.inactive_property,
+        };
 
         // When should this list of people be collected. Currently it is on simulation initialization
         let person_ids = match group {
@@ -96,7 +135,7 @@ pub trait ContextPolicyExt:
             Intervention::SchoolClosure(modifier)
             | Intervention::ShelterInPlace(modifier)
             | Intervention::Isolation(modifier) => {
-                self.register_itinerary_modifier(active_property, modifier);
+                self.register_itinerary_modifier(active_property, modifier.modifier);
             }
         }
 
@@ -123,16 +162,37 @@ pub trait ContextPolicyExt:
         P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
     {
         let intervention = policy.intervention;
-        let active_property = policy.active_property;
+
+        match intervention {
+            Intervention::SchoolClosure(_)
+            | Intervention::ShelterInPlace(_)
+            | Intervention::Isolation(_) => {
+                self.add_individual_level_itinerary_modifier_policy(policy);
+            }
+        }
+    }
+
+    fn add_individual_level_itinerary_modifier_policy<P>(&mut self, policy: IndividualLevelPolicy<P>)
+    where
+        P: Property<Person> + std::fmt::Debug,
+        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+    {
+        let intervention = policy.intervention;
+        let active_property = match &intervention {
+            Intervention::SchoolClosure(modifier)
+            | Intervention::ShelterInPlace(modifier)
+            | Intervention::Isolation(modifier) => modifier.active_property,
+        };
 
         match intervention {
             Intervention::SchoolClosure(modifier)
             | Intervention::ShelterInPlace(modifier)
             | Intervention::Isolation(modifier) => {
-                self.register_itinerary_modifier(active_property, modifier);
+                self.register_itinerary_modifier(active_property, modifier.modifier);
             }
         }
     }
+
 }
 impl ContextPolicyExt for Context {}
 
@@ -226,15 +286,18 @@ mod tests {
         ];
 
         let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
+        let isolation_intervention = ItineraryModifierIntervention {
+            modifier: isolation_modifier,
+            active_property: DummyIsolating(true),
+            inactive_property: DummyIsolating(false),
+        };
         let policy: Policy<DummyIsolating, DummyIsolating, ()> = Policy {
             trigger: Trigger::Time(TimeTrigger {
                 start_time: 1.0,
                 end_time: 5.0,
             }),
-            intervention: Intervention::Isolation(isolation_modifier),
+            intervention: Intervention::Isolation(isolation_intervention),
             group: Group::Population,
-            active_property: DummyIsolating(true),
-            inactive_property: DummyIsolating(false),
         };
 
         let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
@@ -289,15 +352,18 @@ mod tests {
         ];
 
         let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
+        let isolation_intervention = ItineraryModifierIntervention {
+            modifier: isolation_modifier,
+            active_property: DummyIsolating(true),
+            inactive_property: DummyIsolating(false),
+        };
         let policy: Policy<DummyIsolating, DummyIsolating, (Age,)> = Policy {
             trigger: Trigger::Time(TimeTrigger {
                 start_time: 1.0,
                 end_time: 5.0,
             }),
-            intervention: Intervention::Isolation(isolation_modifier),
+            intervention: Intervention::Isolation(isolation_intervention),
             group: Group::GroupQuery((Age(30),)),
-            active_property: DummyIsolating(true),
-            inactive_property: DummyIsolating(false),
         };
 
         let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
@@ -361,15 +427,18 @@ mod tests {
         ];
 
         let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
+        let isolation_intervention = ItineraryModifierIntervention {
+            modifier: isolation_modifier,
+            active_property: DummyIsolating(true),
+            inactive_property: DummyIsolating(false),
+        };
         let policy: Policy<DummyIsolating, DummyIsolating, ()> = Policy {
             trigger: Trigger::Time(TimeTrigger {
                 start_time: 1.0,
                 end_time: 5.0,
             }),
-            intervention: Intervention::Isolation(isolation_modifier),
+            intervention: Intervention::Isolation(isolation_intervention),
             group: Group::GroupSetting(home_code_p1),
-            active_property: DummyIsolating(true),
-            inactive_property: DummyIsolating(false),
         };
 
         context.add_policy(policy);
@@ -447,10 +516,13 @@ mod tests {
         ];
 
         let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
-
-        let individual_policy: IndividualLevelPolicy<SymptomStatus> = IndividualLevelPolicy {
-            intervention: Intervention::Isolation(isolation_modifier),
+        let isolation_intervention = ItineraryModifierIntervention {
+            modifier: isolation_modifier,
             active_property: SymptomStatus::Mild,
+            inactive_property: SymptomStatus::Mild,
+        };
+        let individual_policy: IndividualLevelPolicy<SymptomStatus> = IndividualLevelPolicy {
+            intervention: Intervention::Isolation(isolation_intervention),
         };
 
         context.add_individual_level_policy(individual_policy);
