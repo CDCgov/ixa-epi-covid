@@ -1,8 +1,9 @@
 use ixa::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::hash::Hasher;
 
 use crate::{
+    ContextParametersExt,
     infectiousness_manager::InfectionStatus,
     settings::{Person, PersonId},
 };
@@ -11,13 +12,13 @@ define_rng!(TestRng);
 
 define_entity!(Test);
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]
 pub enum TestType {
     PCR,
     Antigen,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Sensitivity(pub f64);
 
 impl PartialEq for Sensitivity {
@@ -34,16 +35,16 @@ impl std::hash::Hash for Sensitivity {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]
 pub enum TestAvailability {
     Unconstrained,
     MaxPerDay(usize),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]
 pub struct TestsConductedToday(pub usize);
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]
 pub struct PositiveTestsConductedToday(pub usize);
 
 impl_property!(TestType, Test);
@@ -61,7 +62,23 @@ impl_property!(
 );
 
 #[allow(dead_code)]
-pub trait ContextTestExt: PluginContext + ContextEntitiesExt + ContextRandomExt {
+pub trait ContextTestExt:
+    PluginContext + ContextEntitiesExt + ContextRandomExt + ContextParametersExt
+{
+    fn load_test_entities(&mut self) {
+        let test_properties = self.get_params().test_properties.clone();
+        for test_property in test_properties {
+            let _test_entity = self
+                .add_entity(with!(
+                    Test,
+                    test_property.test_type,
+                    test_property.sensitivity,
+                    test_property.availability
+                ))
+                .unwrap();
+        }
+    }
+
     fn check_test_availability(&self, test: TestId) -> bool {
         let availability = self.get_property::<Test, TestAvailability>(test);
         match availability {
@@ -120,21 +137,6 @@ pub trait ContextTestExt: PluginContext + ContextEntitiesExt + ContextRandomExt 
 impl ContextTestExt for Context {}
 
 pub fn init(context: &mut Context) {
-    let _antigen_test = context
-        .add_entity(with!(
-            Test,
-            TestType::Antigen,
-            Sensitivity(0.8),
-            TestAvailability::Unconstrained
-        ))
-        .unwrap();
-    let _pcr_test = context
-        .add_entity(with!(
-            Test,
-            TestType::PCR,
-            Sensitivity(0.95),
-            TestAvailability::MaxPerDay(100)
-        ))
-        .unwrap();
+    context.load_test_entities();
     context.index_property::<Test, TestType>();
 }

@@ -6,6 +6,7 @@ use crate::error::ModelError;
 use crate::infection_importation::ImportCasesFromFile;
 use crate::reports::ReportParams;
 use crate::settings::SettingCategory;
+use crate::surveillance::test_manager::{Sensitivity, TestAvailability, TestType};
 use crate::symptom_status_manager::{SymptomAgeGroup, SymptomDelayDistLogNormParams};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
@@ -23,6 +24,13 @@ pub enum RateFnType {
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct SettingProperties {
     pub alpha: f64,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+pub struct TestProperties {
+    pub test_type: TestType,
+    pub sensitivity: Sensitivity,
+    pub availability: TestAvailability,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -68,6 +76,8 @@ pub struct Params {
     pub settings_properties: HashMap<SettingCategory, SettingProperties>,
     /// ratios used to initialize individuals itineraries by setting type.
     pub itinerary_ratios: HashMap<SettingCategory, f64>,
+    // vector of test properties to define test entities.
+    pub test_properties: Vec<TestProperties>,
     /// Prevalence report with a period and name required
     pub prevalence_report: ReportParams,
     /// Incidence report with a period and name required
@@ -277,6 +287,25 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error 
         )));
     }
 
+    // Check test_properties
+    let mut test_types_seen = Vec::new();
+    for test_prop in &parameters.test_properties {
+        // Check for duplicate test types
+        if test_types_seen.contains(&test_prop.test_type) {
+            return Err(Box::new(ModelError::ModelError(
+                "test_properties contains duplicate test types.".to_string(),
+            )));
+        }
+        test_types_seen.push(test_prop.test_type);
+
+        // Check test sensitivity is between 0 and 1
+        if !(0.0..=1.0).contains(&test_prop.sensitivity.0) {
+            return Err(Box::new(ModelError::ModelError(
+                "Test sensitivity must be between 0 and 1, inclusive.".to_string(),
+            )));
+        }
+    }
+
     Ok(())
 }
 
@@ -356,6 +385,7 @@ impl Default for Params {
             },
             settings_properties: HashMap::new(),
             itinerary_ratios: HashMap::new(),
+            test_properties: Vec::new(),
             prevalence_report: ReportParams {
                 write: false,
                 filename: None,
