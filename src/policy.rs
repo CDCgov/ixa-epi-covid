@@ -101,18 +101,52 @@ mod tests {
     use ixa::{Context, HashMap};
 
     use crate::{
-        Age, Params,
-        parameters::{GlobalParams, SettingProperties, TestProperties},
-        population_loader::Alive,
-        settings::SettingCategory,
-        surveillance::{
+        Age, Params, parameters::{GlobalParams, SettingProperties, TestProperties}, pop_reader::{FIPSCode, PopulationReaderSettingCategory, parser::{parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id}}, population_loader::{Alive, HomeId}, settings::{PersonId, SettingCategory, SettingCode}, surveillance::{
             test_manager::{Sensitivity, Test, TestAvailability, TestType, TestsConductedToday},
-            test_strategy::TestStrategy,
-        },
+            test_strategy::{TestStrategy},
+        }, symptom_status_manager::SymptomStatus
     };
 
     use super::*;
+    fn make_home_id(home_id: &[u8]) -> SettingCode {
+        SettingCode(parse_fips_home_id(home_id).unwrap().1)
+    }
 
+    fn make_school_id(school_id: &[u8]) -> SettingCode {
+        SettingCode(parse_fips_school_id(school_id).unwrap().1)
+    }
+
+    fn make_workplace_id(workplace_id: &[u8]) -> SettingCode {
+        SettingCode(parse_fips_workplace_id(workplace_id).unwrap().1)
+    }
+
+    fn make_community_id(home_id: &[u8]) -> SettingCode {
+        let home_id = make_home_id(home_id).0;
+        SettingCode(
+            FIPSCode::with_category(
+                home_id.state_code(),
+                home_id.county_code(),
+                home_id.census_tract_code(),
+                PopulationReaderSettingCategory::CensusTract.encode(),
+            )
+            .unwrap(),
+        )
+    }
+
+    fn add_person_to_test_settings(context: &mut Context, person: PersonId) {
+        let home_code = make_home_id(b"160379602000010");
+        let school_code = make_school_id(b"160379602000010");
+        let workplace_code = make_workplace_id(b"160379602000010");
+        let community_code = make_community_id(b"160379602000010");
+        context.add_person_to_settings(
+            person,
+            Some(home_code),
+            Some(school_code),
+            Some(workplace_code),
+            Some(community_code),
+        );
+    }
+    
     fn setup() -> Context {
         let mut context = Context::new();
         let parameters = Params {
@@ -155,7 +189,7 @@ mod tests {
     }
 
     #[test]
-    fn test_add_policy_population() {
+    fn test_add_exogenous_policy() {
         let mut context = setup();
 
         let test_strategy = TestStrategy {
@@ -165,25 +199,48 @@ mod tests {
             post_test_strategy: None,
         };
 
-        let policy: ExogenousPolicy<Alive, TestStrategy> = ExogenousPolicy {
+        let policy_one: ExogenousPolicy<Alive, TestStrategy> = ExogenousPolicy {
             trigger: TimeTrigger {
                 start_time: 1.0,
-                end_time: 5.0,
+                end_time: 2.0,
             },
             intervention: test_strategy,
             group: Alive(true),
         };
 
-        let _p1 = context.add_entity(with!(Person, Age(30))).unwrap();
-        let _p2 = context.add_entity(with!(Person, Age(40))).unwrap();
+        let policy_two: ExogenousPolicy<Age, TestStrategy> = ExogenousPolicy {
+            trigger: TimeTrigger {
+                start_time: 3.0,
+                end_time: 4.0,
+            },
+            intervention: test_strategy,
+            group: Age(30),
+        };
 
-        context.add_exogenous_policy(policy);
+        let policy_three: ExogenousPolicy<HomeId, TestStrategy> = ExogenousPolicy {
+            trigger: TimeTrigger {
+                start_time: 5.0,
+                end_time: 6.0,
+            },
+            intervention: test_strategy,
+            group: HomeId(Some(make_home_id(b"160379602000010"))),
+        };
+
+        let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
+        let p2 = context.add_entity(with!(Person, Age(40))).unwrap();
+
+        add_person_to_test_settings(&mut context, p1);
+        add_person_to_test_settings(&mut context, p2);
+
+        context.add_exogenous_policy(policy_one);
+        context.add_exogenous_policy(policy_two);
+        context.add_exogenous_policy(policy_three);
 
         let pcr_test_id = context
             .query_result_iterator(with!(Test, test_strategy.test_type))
             .next()
             .unwrap();
-
+        // policy one
         context.add_plan(0.5, move |context| {
             assert_eq!(
                 context
@@ -202,7 +259,7 @@ mod tests {
             );
         });
 
-        context.add_plan(5.5, move |context| {
+        context.add_plan(2.5, move |context| {
             assert_eq!(
                 context
                     .get_property::<Test, TestsConductedToday>(pcr_test_id)
@@ -210,150 +267,107 @@ mod tests {
                 2
             );
         });
+
+
+        context.add_plan(3.5, move |context| {
+            assert_eq!(
+                context
+                    .get_property::<Test, TestsConductedToday>(pcr_test_id)
+                    .0,
+                3
+            );
+        });
+
+        context.add_plan(4.5, move |context| {
+            assert_eq!(
+                context
+                    .get_property::<Test, TestsConductedToday>(pcr_test_id)
+                    .0,
+                3
+            );
+        });
+
+        //policy three
+
+        context.add_plan(5.5, move |context| {
+            assert_eq!(
+                context
+                    .get_property::<Test, TestsConductedToday>(pcr_test_id)
+                    .0,
+                5
+            );
+        });
+
+        context.add_plan(6.5, move |context| {
+            assert_eq!(
+                context
+                    .get_property::<Test, TestsConductedToday>(pcr_test_id)
+                    .0,
+                5
+            );
+        });
+
         context.execute()
     }
 
-    // #[test]
-    // fn test_add_policy_query() {
-    //     let mut context = setup();
+    #[test]
+    fn test_endogenous_policy() {
+        let mut context = setup();
 
-    //     let isolation_matrix = [
-    //         [0.0, 0.0, 0.0, 0.0],
-    //         [1.0, 0.0, 0.0, 0.0],
-    //         [1.0, 0.0, 0.0, 0.0],
-    //         [1.0, 0.0, 0.0, 0.0],
-    //     ];
+        let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
 
-    //     let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
+        let test_strategy = TestStrategy {
+            test_type: TestType::PCR,
+            testing_adherence: 1.0,
+            testing_delay: 0.0,
+            post_test_strategy: None,
+        };
+        
+        let endogenous_policy: EndogenousPolicy<SymptomStatus, TestStrategy> = EndogenousPolicy {
+            intervention: test_strategy,
+            group: SymptomStatus::Mild,
+        };
 
-    //     let policy: ExogenousPolicy<Age> = ExogenousPolicy {
-    //         trigger: Trigger::Time(TimeTrigger {
-    //             start_time: 1.0,
-    //             end_time: 5.0,
-    //         }),
-    //         intervention: Intervention::Isolation(isolation_modifier),
-    //         group: Age(30),
-    //     };
+        context.add_endogenous_policy(endogenous_policy);
 
-    //     let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
-    //     let p2 = context.add_entity(with!(Person, Age(40))).unwrap();
+        let pcr_test_id = context
+            .query_result_iterator(with!(Test, test_strategy.test_type))
+            .next()
+            .unwrap();
 
-    //     add_person_to_test_settings(&mut context, p1);
-    //     add_person_to_test_settings(&mut context, p2);
+        context.add_plan(0.5, move |context| {
+            assert_eq!(
+                context
+                    .get_property::<Test, TestsConductedToday>(pcr_test_id)
+                    .0,
+                0
+            );
+        });
 
-    //     // Policies must be added after population is added
-    //     context.add_exogenous_policy(policy);
+        context.add_plan(1.0, move |context| {
+            context.set_property(p1, SymptomStatus::Mild);
+        });
 
-    //     context.add_plan(0.5, move |context| {
-    //         assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
-    //         assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
-    //     });
+        context.add_plan(1.5, move |context| {
+            assert_eq!(
+                context
+                    .get_property::<Test, TestsConductedToday>(pcr_test_id)
+                    .0,
+                1
+            );
+        });
 
-    //     context.add_plan(1.5, move |context| {
-    //         assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 1);
-    //         assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
-    //     });
+        context.add_plan(2.0, move |context| {
+            context.set_property(p1, SymptomStatus::Resolved);
+        });
 
-    //     context.add_plan(5.5, move |context| {
-    //         assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
-    //         assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
-    //     });
-    //     context.execute()
-    // }
-
-    // #[test]
-    // fn test_add_policy_setting_code() {
-    //     let mut context = setup();
-
-    //     let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
-    //     let p2 = context.add_entity(with!(Person, Age(40))).unwrap();
-
-    //     add_person_to_test_settings(&mut context, p1);
-    //     add_person_to_test_settings(&mut context, p2);
-
-    //     let isolation_matrix = [
-    //         [0.0, 0.0, 0.0, 0.0],
-    //         [1.0, 0.0, 0.0, 0.0],
-    //         [1.0, 0.0, 0.0, 0.0],
-    //         [1.0, 0.0, 0.0, 0.0],
-    //     ];
-
-    //     let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
-    //     let policy: ExogenousPolicy<HomeId> = ExogenousPolicy {
-    //         trigger: Trigger::Time(TimeTrigger {
-    //             start_time: 1.0,
-    //             end_time: 5.0,
-    //         }),
-    //         intervention: Intervention::Isolation(isolation_modifier),
-    //         group: HomeId(Some(make_home_id(b"160379602000010"))),
-    //     };
-
-    //     context.add_exogenous_policy(policy);
-
-    //     context.add_plan(0.5, move |context| {
-    //         assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
-    //         assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
-    //     });
-
-    //     context.add_plan(1.5, move |context| {
-    //         assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 1);
-    //         assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 1);
-    //     });
-
-    //     context.add_plan(5.5, move |context| {
-    //         assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
-    //         assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
-    //     });
-    //     context.execute()
-    // }
-
-    // #[test]
-    // fn test_endogenous_policy() {
-    //     let mut context = setup();
-
-    //     let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
-    //     let p2 = context.add_entity(with!(Person, Age(40))).unwrap();
-
-    //     add_person_to_test_settings(&mut context, p1);
-    //     add_person_to_test_settings(&mut context, p2);
-
-    //     let isolation_matrix = [
-    //         [0.0, 0.0, 0.0, 0.0],
-    //         [1.0, 0.0, 0.0, 0.0],
-    //         [1.0, 0.0, 0.0, 0.0],
-    //         [1.0, 0.0, 0.0, 0.0],
-    //     ];
-
-    //     let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
-
-    //     let individual_policy: EndogenousPolicy<SymptomStatus> = EndogenousPolicy {
-    //         intervention: Intervention::Isolation(isolation_modifier),
-    //         group: SymptomStatus::Mild,
-    //     };
-
-    //     context.add_endogenous_policy(individual_policy);
-
-    //     context.add_plan(0.5, move |context| {
-    //         assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
-    //         assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
-    //     });
-
-    //     context.add_plan(1.0, move |context| {
-    //         context.set_property(p1, SymptomStatus::Mild);
-    //     });
-
-    //     context.add_plan(1.5, move |context| {
-    //         assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 1);
-    //         assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
-    //     });
-
-    //     context.add_plan(2.0, move |context| {
-    //         context.set_property(p1, SymptomStatus::Resolved);
-    //     });
-
-    //     context.add_plan(2.5, move |context| {
-    //         assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
-    //         assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
-    //     });
-    // }
+        context.add_plan(2.5, move |context| {
+            assert_eq!(
+                context
+                    .get_property::<Test, TestsConductedToday>(pcr_test_id)
+                    .0,
+                1
+            );
+        });
+    }
 }
