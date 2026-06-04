@@ -5,8 +5,8 @@ use crate::settings::SETTING_COUNT;
 use crate::surveillance::test_manager::{ContextTestExt, TestType};
 
 define_rng!(PostTestStrategyRng);
-
-#[derive(Debug, Clone)]
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
 pub struct ContactTracingStrategy {
     test_type: TestType,            // Type of test to be taken after being identified
     contact_tracing_adherence: f64, // probability someone contact traces
@@ -15,7 +15,7 @@ pub struct ContactTracingStrategy {
     setting_contact_tracing: [f64; SETTING_COUNT], // setting-specific probabilities of contact tracing, indexed by setting type
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct PostTestStrategy {
     contact_tracing_strategy: Option<ContactTracingStrategy>, // contact tracing strategy to be implemented after testing positive
     itinerary_modification: Option<bool>, // whether or not a person modifies their itinerary after testing positive
@@ -27,16 +27,25 @@ pub trait ContextPostTestStrategyExt:
     fn post_test_action(&mut self, person_id: PersonId, post_test_strategy: PostTestStrategy) {
         if let Some(itinerary_modification) = post_test_strategy.itinerary_modification {
             if itinerary_modification {
-                // Implement itinerary modification logic here, e.g., self.modify_itinerary(person_id);
+                println!(
+                    "Implementing itinerary modification for person {}",
+                    person_id
+                );
             }
         }
         // Implement itinerary modification logic here, e.g., self.modify_itinerary(person_id);
         if let Some(contact_tracing_strategy) = post_test_strategy.contact_tracing_strategy {
-            // implement contact tracing logic here.
+            println!(
+                "Implementing contact tracing strategy for person {}: {:?}",
+                person_id, contact_tracing_strategy
+            );
         }
     }
     fn initialize_post_test_strategy(&mut self, post_test_strategy: PostTestStrategy) {
-        // register any itinerary modifier
+        println!(
+            "Initializing post-test strategy for the model: {:?}",
+            post_test_strategy
+        );
     }
 }
 impl ContextPostTestStrategyExt for Context {}
