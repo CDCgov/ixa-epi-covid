@@ -47,46 +47,61 @@ impl TestTrait for TestStrategy {
     }
 }
 
-impl InterventionTrait for TestStrategy {
-    fn endogenous_activate<P>(&self, context: &mut Context, group_property: P)
+// impl InterventionTrait for TestStrategy {
+//     fn endogenous_activate<P>(&self, context: &mut Context, group_property: P)
+//     where
+//         P: Property<Person> + std::fmt::Debug,
+//         P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+//     {
+//         let strategy = *self;
+//         context.subscribe_to_event::<PropertyChangeEvent<Person, P>>(move |context, event| {
+//             if event.current == group_property {
+//                 context.conduct_test(event.entity_id, strategy);
+//             }
+//         });
+//     }
+
+//     fn exogenous_activate<P>(&self, context: &mut Context, group_property: P)
+//     where
+//         P: Property<Person> + std::fmt::Debug,
+//         P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+//     {
+//         let strategy = *self;
+
+//         let person_ids: Vec<_> = context
+//             .query_result_iterator(with!(Person, group_property))
+//             .collect();
+//         for person_id in person_ids {
+//             context.conduct_test(person_id, strategy);
+//         }
+//     }
+
+//     fn exogenous_deactivate<P>(&self, context: &mut Context, group_property: P)
+//     where
+//         P: Property<Person> + std::fmt::Debug,
+//         P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+//     {
+//         println!(
+//             "Deactivating test strategy intervention for group {:?} with strategy {:?}",
+//             group_property, self
+//         );
+//         println!("{}", context.get_current_time());
+//     }
+// }
+
+impl InterventionTrait for TestStrategy{
+    fn activate<P>(&self, context: &mut Context, group_property: P)
     where
         P: Property<Person> + std::fmt::Debug,
-        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-    {
-        let strategy = *self;
-        context.subscribe_to_event::<PropertyChangeEvent<Person, P>>(move |context, event| {
-            if event.current == group_property {
-                context.conduct_test(event.entity_id, strategy);
-            }
-        });
+        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug{
+
     }
-
-    fn exogenous_activate<P>(&self, context: &mut Context, group_property: P)
+    fn deactivate<P>(&self, context: &mut Context, group_property: P)
     where
         P: Property<Person> + std::fmt::Debug,
-        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-    {
-        let strategy = *self;
-
-        let person_ids: Vec<_> = context
-            .query_result_iterator(with!(Person, group_property))
-            .collect();
-        for person_id in person_ids {
-            context.conduct_test(person_id, strategy);
+        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug{
+            
         }
-    }
-
-    fn exogenous_deactivate<P>(&self, context: &mut Context, group_property: P)
-    where
-        P: Property<Person> + std::fmt::Debug,
-        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-    {
-        println!(
-            "Deactivating test strategy intervention for group {:?} with strategy {:?}",
-            group_property, self
-        );
-        println!("{}", context.get_current_time());
-    }
 }
 
 pub trait ContextTestStrategyExt:

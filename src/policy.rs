@@ -1,109 +1,82 @@
-use ixa::prelude::*;
+use ixa::{prelude::*, prelude_for_plugins::IxaEvent};
 use serde::Serialize;
 
 use crate::{
     ContextParametersExt,
     settings::{ContextSettingExt, Person},
-    surveillance::test_strategy::ContextTestStrategyExt,
 };
 
+pub trait TriggerEventTrait: IxaEvent + Copy {
+    fn get_trigger_value(&self) -> f64;
+}
+
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub struct TimeTrigger {
-    start_time: f64,
-    end_time: f64,
+pub struct Trigger<E: TriggerEventTrait, F: TriggerEventTrait> {
+    pub start_event: E,
+    pub end_event: Option<F>,
 }
 
 pub trait InterventionTrait: std::fmt::Debug + Copy + 'static {
-    fn exogenous_activate<P>(&self, context: &mut Context, group_property: P)
+    fn activate<P>(&self, context: &mut Context, group_property: P)
     where
         P: Property<Person> + std::fmt::Debug,
         P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug;
-    fn exogenous_deactivate<P>(&self, context: &mut Context, group_property: P)
-    where
-        P: Property<Person> + std::fmt::Debug,
-        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug;
-    fn endogenous_activate<P>(&self, context: &mut Context, group_property: P)
+    fn deactivate<P>(&self, context: &mut Context, group_property: P)
     where
         P: Property<Person> + std::fmt::Debug,
         P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug;
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub struct ExogenousPolicy<P, I>
+pub struct Policy<P, I, E, F>
 where
     P: Property<Person> + std::fmt::Debug,
     P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
     I: InterventionTrait,
+    E: TriggerEventTrait,
+    F: TriggerEventTrait,
 {
-    trigger: TimeTrigger,
-    intervention: I,
-    group: P,
-}
-
-#[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub struct EndogenousPolicy<P, I>
-where
-    P: Property<Person> + std::fmt::Debug,
-    P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-    I: InterventionTrait,
-{
+    trigger: Trigger<E, F>,
     intervention: I,
     group: P,
 }
 
 pub trait ContextPolicyExt:
-    PluginContext
-    + ContextEntitiesExt
-    + ContextParametersExt
-    + ContextSettingExt
-    + ContextTestStrategyExt
+    PluginContext + ContextEntitiesExt + ContextParametersExt + ContextSettingExt
 {
-    fn add_exogenous_policy<P, I>(&mut self, policy: ExogenousPolicy<P, I>)
+    fn add_policy<P, I, E, F>(&mut self, policy: Policy<P, I, E, F>)
     where
         P: Property<Person> + std::fmt::Debug,
         P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
         I: InterventionTrait,
+        E: TriggerEventTrait + 'static,
+        F: TriggerEventTrait + 'static,
     {
-        let start_time = policy.trigger.start_time;
-        let end_time = policy.trigger.end_time;
-        let group_property = policy.group;
-        let intervention = policy.intervention;
-
-        self.add_plan(start_time, move |context| {
-            intervention.exogenous_activate(context, group_property);
-        });
-        self.add_plan(end_time, move |context| {
-            intervention.exogenous_deactivate(context, group_property);
+        let start_event = policy.trigger.start_event;
+        let end_event = policy.trigger.end_event;
+        self.subscribe_to_event::<E>(move |context, event| {
+            let group_property = policy.group;
+            let intervention = policy.intervention;
+            if event.get_trigger_value() == start_event.get_trigger_value() {
+                intervention.activate(context, group_property);
+            } else if let Some(end_event) = end_event
+                && event.get_trigger_value() == end_event.get_trigger_value()
+            {
+                intervention.deactivate(context, group_property);
+            }
         });
     }
-
-    fn add_endogenous_policy<P, I>(&mut self, policy: EndogenousPolicy<P, I>)
-    where
-        P: Property<Person> + std::fmt::Debug,
-        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-        I: InterventionTrait;
 }
-impl ContextPolicyExt for Context {
-    fn add_endogenous_policy<P, I>(&mut self, policy: EndogenousPolicy<P, I>)
-    where
-        P: Property<Person> + std::fmt::Debug,
-        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-        I: InterventionTrait,
-    {
-        let group_property = policy.group;
-        let intervention = policy.intervention;
-        intervention.endogenous_activate(self, group_property);
-    }
-}
+impl ContextPolicyExt for Context {}
 
 #[cfg(test)]
 mod tests {
     use ixa::{Context, HashMap};
 
     use crate::{
-        Age, Params, parameters::{GlobalParams, SettingProperties, TestProperties}, pop_reader::{FIPSCode, PopulationReaderSettingCategory, parser::{parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id}}, population_loader::{Alive, HomeId}, settings::{PersonId, SettingCategory, SettingCode}, surveillance::{
+        Age, Params, custom_events::{ContextCustromEventExt, TimeEvent}, parameters::{GlobalParams, SettingProperties, TestProperties}, pop_reader::{FIPSCode, PopulationReaderSettingCategory, parser::{parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id}}, population_loader::{Alive, HomeId}, settings::{PersonId, SettingCategory, SettingCode}, surveillance::{
             test_manager::{Sensitivity, Test, TestAvailability, TestType, TestsConductedToday},
-            test_strategy::{TestStrategy},
+            test_strategy::TestStrategy,
         }, symptom_status_manager::SymptomStatus
     };
 
@@ -189,7 +162,7 @@ mod tests {
     }
 
     #[test]
-    fn test_add_exogenous_policy() {
+    fn test_add_policy() {
         let mut context = setup();
 
         let test_strategy = TestStrategy {
@@ -199,28 +172,28 @@ mod tests {
             post_test_strategy: None,
         };
 
-        let policy_one: ExogenousPolicy<Alive, TestStrategy> = ExogenousPolicy {
-            trigger: TimeTrigger {
-                start_time: 1.0,
-                end_time: 2.0,
+        let policy_one: Policy<Alive, TestStrategy, TimeEvent, TimeEvent> = Policy {
+            trigger: Trigger {
+                start_event: TimeEvent { time: 1.0 },
+                end_event: Some(TimeEvent { time: 2.0 }),
             },
             intervention: test_strategy,
             group: Alive(true),
         };
 
-        let policy_two: ExogenousPolicy<Age, TestStrategy> = ExogenousPolicy {
-            trigger: TimeTrigger {
-                start_time: 3.0,
-                end_time: 4.0,
+        let policy_two: Policy<Age, TestStrategy, TimeEvent, TimeEvent> = Policy {
+            trigger: Trigger {
+                start_event: TimeEvent { time: 3.0 },
+                end_event: Some(TimeEvent { time: 4.0 }),
             },
             intervention: test_strategy,
             group: Age(30),
         };
 
-        let policy_three: ExogenousPolicy<HomeId, TestStrategy> = ExogenousPolicy {
-            trigger: TimeTrigger {
-                start_time: 5.0,
-                end_time: 6.0,
+        let policy_three: Policy<HomeId, TestStrategy, TimeEvent, TimeEvent> = Policy {
+            trigger: Trigger {
+                start_event: TimeEvent { time: 5.0 },
+                end_event: Some(TimeEvent { time: 6.0 }),
             },
             intervention: test_strategy,
             group: HomeId(Some(make_home_id(b"160379602000010"))),
@@ -232,9 +205,9 @@ mod tests {
         add_person_to_test_settings(&mut context, p1);
         add_person_to_test_settings(&mut context, p2);
 
-        context.add_exogenous_policy(policy_one);
-        context.add_exogenous_policy(policy_two);
-        context.add_exogenous_policy(policy_three);
+        context.add_policy(policy_one);
+        context.add_policy(policy_two);
+        context.add_policy(policy_three);
 
         let pcr_test_id = context
             .query_result_iterator(with!(Test, test_strategy.test_type))
@@ -306,12 +279,18 @@ mod tests {
                 5
             );
         });
-
+        context.emit_time_event(0.0);
+        context.emit_time_event(1.0);
+        context.emit_time_event(2.0);
+        context.emit_time_event(3.0);
+        context.emit_time_event(4.0);
+        context.emit_time_event(5.0);
+        context.emit_time_event(6.0);
         context.execute()
     }
 
     #[test]
-    fn test_endogenous_policy() {
+    fn test_policy_symptomatic() {
         let mut context = setup();
 
         let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
@@ -323,12 +302,16 @@ mod tests {
             post_test_strategy: None,
         };
         
-        let endogenous_policy: EndogenousPolicy<SymptomStatus, TestStrategy> = EndogenousPolicy {
+        let policy: Policy<SymptomStatus, TestStrategy, TimeEvent, TimeEvent> = Policy {
+            trigger: Trigger {
+                start_event: TimeEvent { time: 0.0 },
+                end_event: None,
+            },
             intervention: test_strategy,
             group: SymptomStatus::Mild,
         };
 
-        context.add_endogenous_policy(endogenous_policy);
+        context.add_policy(policy);
 
         let pcr_test_id = context
             .query_result_iterator(with!(Test, test_strategy.test_type))
@@ -369,5 +352,7 @@ mod tests {
                 1
             );
         });
+
+        context.emit_time_event(0.0);
     }
 }
