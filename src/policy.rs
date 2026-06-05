@@ -1,127 +1,70 @@
-use ixa::prelude::*;
+use ixa::{prelude::*, prelude_for_plugins::IxaEvent};
 use serde::Serialize;
 
 use crate::{
     ContextParametersExt,
-    itinerary_manager::{ContextItineraryModifierExt, ItineraryModifier},
     settings::{ContextSettingExt, Person},
 };
 
-#[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub struct TimeTrigger {
-    start_time: f64,
-    end_time: f64,
+pub trait TriggerEventTrait: IxaEvent + Copy {
+    fn get_trigger_value(&self) -> f64;
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub enum Trigger {
-    Time(TimeTrigger),
+pub struct Trigger<E: TriggerEventTrait, F: TriggerEventTrait> {
+    pub start_event: E,
+    pub end_event: Option<F>,
+}
+
+pub trait InterventionTrait: std::fmt::Debug + Copy + 'static {
+    fn activate<P>(&self, context: &mut Context, group_property: P)
+    where
+        P: Property<Person> + std::fmt::Debug,
+        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug;
+    fn deactivate<P>(&self, context: &mut Context, group_property: P)
+    where
+        P: Property<Person> + std::fmt::Debug,
+        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug;
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub enum Intervention {
-    SchoolClosure(ItineraryModifier),
-    ShelterInPlace(ItineraryModifier),
-    Isolation(ItineraryModifier),
-}
-
-#[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub struct ExogenousPolicy<P>
+pub struct Policy<P, I, E, F>
 where
     P: Property<Person> + std::fmt::Debug,
     P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+    I: InterventionTrait,
+    E: TriggerEventTrait,
+    F: TriggerEventTrait,
 {
-    trigger: Trigger,
-    intervention: Intervention,
-    group: P,
-}
-
-#[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub struct EndogenousPolicy<P>
-where
-    P: Property<Person> + std::fmt::Debug,
-    P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-{
-    intervention: Intervention,
+    trigger: Trigger<E, F>,
+    intervention: I,
     group: P,
 }
 
 pub trait ContextPolicyExt:
-    PluginContext
-    + ContextEntitiesExt
-    + ContextParametersExt
-    + ContextItineraryModifierExt
-    + ContextSettingExt
+    PluginContext + ContextEntitiesExt + ContextParametersExt + ContextSettingExt
 {
-    fn add_exogenous_policy<P>(&mut self, policy: ExogenousPolicy<P>)
+    fn add_policy<P, I, E, F>(&mut self, policy: Policy<P, I, E, F>)
     where
         P: Property<Person> + std::fmt::Debug,
         P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+        I: InterventionTrait,
+        E: TriggerEventTrait + 'static,
+        F: TriggerEventTrait + 'static,
     {
-        match policy.intervention {
-            Intervention::SchoolClosure(_)
-            | Intervention::ShelterInPlace(_)
-            | Intervention::Isolation(_) => {
-                self.add_exogenous_policy_with_itinerary_modifier(policy);
+        let start_event = policy.trigger.start_event;
+        let end_event = policy.trigger.end_event;
+        self.subscribe_to_event::<E>(move |context, event| {
+            let group_property = policy.group;
+            let intervention = policy.intervention;
+            if event.get_trigger_value() == start_event.get_trigger_value() {
+                intervention.activate(context, group_property);
+            } else if let Some(end_event) = end_event
+                && event.get_trigger_value() == end_event.get_trigger_value()
+            {
+                intervention.deactivate(context, group_property);
             }
-        }
-    }
-
-    fn add_exogenous_policy_with_itinerary_modifier<P>(&mut self, policy: ExogenousPolicy<P>)
-    where
-        P: Property<Person> + std::fmt::Debug,
-        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-    {
-        let trigger = policy.trigger;
-        let intervention = policy.intervention;
-        let group_property = policy.group;
-        let intervention_modifier = match intervention {
-            Intervention::SchoolClosure(modifier)
-            | Intervention::ShelterInPlace(modifier)
-            | Intervention::Isolation(modifier) => modifier,
-        };
-        match trigger {
-            Trigger::Time(time_trigger) => {
-                self.add_plan(time_trigger.start_time, move |context| {
-                    context.register_itinerary_modifier::<P>(group_property, intervention_modifier);
-                });
-                self.add_plan(time_trigger.end_time, move |context| {
-                    context.remove_itinerary_modifier_by_property::<P>(
-                        group_property.make_canonical(),
-                    );
-                });
-            }
-        }
-    }
-
-    fn add_endogenous_policy<P>(&mut self, policy: EndogenousPolicy<P>)
-    where
-        P: Property<Person> + std::fmt::Debug,
-        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-    {
-        let intervention = policy.intervention;
-
-        match intervention {
-            Intervention::SchoolClosure(_)
-            | Intervention::ShelterInPlace(_)
-            | Intervention::Isolation(_) => {
-                self.add_endogenous_policy_with_itinerary_modifier(policy);
-            }
-        }
-    }
-
-    fn add_endogenous_policy_with_itinerary_modifier<P>(&mut self, policy: EndogenousPolicy<P>)
-    where
-        P: Property<Person> + std::fmt::Debug,
-        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-    {
-        let modifer = match policy.intervention {
-            Intervention::SchoolClosure(modifier)
-            | Intervention::ShelterInPlace(modifier)
-            | Intervention::Isolation(modifier) => modifier,
-        };
-        let group_property = policy.group;
-        self.register_itinerary_modifier::<P>(group_property, modifer);
+        });
     }
 }
 impl ContextPolicyExt for Context {}
@@ -132,13 +75,15 @@ mod tests {
 
     use crate::{
         Age, Params,
-        itinerary_manager::define_itinerary_modifier,
+        custom_events::{ContextCustromEventExt, InfectionEvent, TimeEvent},
+        infectiousness_manager::InfectionStatus,
+        itinerary_manager::{ItineraryModifier, define_itinerary_modifier},
         parameters::{GlobalParams, SettingProperties},
         pop_reader::{
             FIPSCode, PopulationReaderSettingCategory,
             parser::{parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id},
         },
-        population_loader::{Alive, HomeId},
+        population_loader::Alive,
         settings::{PersonId, SettingCategory, SettingCode},
         symptom_status_manager::SymptomStatus,
     };
@@ -212,7 +157,7 @@ mod tests {
     }
 
     #[test]
-    fn test_add_policy_population() {
+    fn test_add_policy_time_event() {
         let mut context = setup();
 
         let isolation_matrix = [
@@ -223,12 +168,12 @@ mod tests {
         ];
 
         let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
-        let policy: ExogenousPolicy<Alive> = ExogenousPolicy {
-            trigger: Trigger::Time(TimeTrigger {
-                start_time: 1.0,
-                end_time: 5.0,
-            }),
-            intervention: Intervention::Isolation(isolation_modifier),
+        let policy: Policy<Alive, ItineraryModifier, TimeEvent, TimeEvent> = Policy {
+            trigger: Trigger {
+                start_event: TimeEvent { time: 1.0 },
+                end_event: Some(TimeEvent { time: 5.0 }),
+            },
+            intervention: isolation_modifier,
             group: Alive(true),
         };
 
@@ -238,7 +183,7 @@ mod tests {
         add_person_to_test_settings(&mut context, p1);
         add_person_to_test_settings(&mut context, p2);
 
-        context.add_exogenous_policy(policy);
+        context.add_policy(policy);
 
         context.add_plan(0.5, move |context| {
             assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
@@ -254,106 +199,18 @@ mod tests {
             assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
             assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
         });
+
+        context.emit_time_event(1.0);
+        context.emit_time_event(5.0);
+
         context.execute()
     }
 
     #[test]
-    fn test_add_policy_query() {
+    fn test_add_policy_infection_event() {
         let mut context = setup();
 
-        let isolation_matrix = [
-            [0.0, 0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0, 0.0],
-        ];
-
-        let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
-
-        let policy: ExogenousPolicy<Age> = ExogenousPolicy {
-            trigger: Trigger::Time(TimeTrigger {
-                start_time: 1.0,
-                end_time: 5.0,
-            }),
-            intervention: Intervention::Isolation(isolation_modifier),
-            group: Age(30),
-        };
-
-        let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
-        let p2 = context.add_entity(with!(Person, Age(40))).unwrap();
-
-        add_person_to_test_settings(&mut context, p1);
-        add_person_to_test_settings(&mut context, p2);
-
-        // Policies must be added after population is added
-        context.add_exogenous_policy(policy);
-
-        context.add_plan(0.5, move |context| {
-            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
-            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
-        });
-
-        context.add_plan(1.5, move |context| {
-            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 1);
-            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
-        });
-
-        context.add_plan(5.5, move |context| {
-            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
-            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
-        });
-        context.execute()
-    }
-
-    #[test]
-    fn test_add_policy_setting_code() {
-        let mut context = setup();
-
-        let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
-        let p2 = context.add_entity(with!(Person, Age(40))).unwrap();
-
-        add_person_to_test_settings(&mut context, p1);
-        add_person_to_test_settings(&mut context, p2);
-
-        let isolation_matrix = [
-            [0.0, 0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0, 0.0],
-        ];
-
-        let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
-        let policy: ExogenousPolicy<HomeId> = ExogenousPolicy {
-            trigger: Trigger::Time(TimeTrigger {
-                start_time: 1.0,
-                end_time: 5.0,
-            }),
-            intervention: Intervention::Isolation(isolation_modifier),
-            group: HomeId(Some(make_home_id(b"160379602000010"))),
-        };
-
-        context.add_exogenous_policy(policy);
-
-        context.add_plan(0.5, move |context| {
-            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
-            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
-        });
-
-        context.add_plan(1.5, move |context| {
-            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 1);
-            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 1);
-        });
-
-        context.add_plan(5.5, move |context| {
-            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
-            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
-        });
-        context.execute()
-    }
-
-    #[test]
-    fn test_endogenous_policy() {
-        let mut context = setup();
+        context.subscribe_to_infections();
 
         let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
         let p2 = context.add_entity(with!(Person, Age(40))).unwrap();
@@ -370,16 +227,25 @@ mod tests {
 
         let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
 
-        let individual_policy: EndogenousPolicy<SymptomStatus> = EndogenousPolicy {
-            intervention: Intervention::Isolation(isolation_modifier),
-            group: SymptomStatus::Mild,
-        };
+        let policy: Policy<SymptomStatus, ItineraryModifier, InfectionEvent, InfectionEvent> =
+            Policy {
+                trigger: Trigger {
+                    start_event: InfectionEvent { value: 1.0 },
+                    end_event: None,
+                },
+                intervention: isolation_modifier,
+                group: SymptomStatus::Mild,
+            };
 
-        context.add_endogenous_policy(individual_policy);
+        context.add_policy(policy);
 
         context.add_plan(0.5, move |context| {
             assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
             assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
+        });
+
+        context.add_plan(0.9, move |context| {
+            context.set_property(p2, InfectionStatus::Infectious);
         });
 
         context.add_plan(1.0, move |context| {

@@ -4,6 +4,7 @@ use std::{
     collections::HashMap,
 };
 
+use crate::{policy::InterventionTrait, settings::SETTING_COUNT};
 use crate::{
     population_loader::{Person, PersonId},
     settings::{Itinerary, SETTING_COUNT},
@@ -24,7 +25,29 @@ impl PartialEq for dyn ItineraryModifierTrait {
     }
 }
 
-pub trait ItineraryModifierStorageTrait: std::fmt::Debug + Any {
+#[derive(Debug, PartialEq, Clone, Serialize, Copy)]
+pub struct ItineraryModifier {
+    modifier_activity: ItineraryTransitionMatrix,
+}
+
+impl InterventionTrait for ItineraryModifier {
+    fn activate<P>(&self, context: &mut Context, group_property: P)
+    where
+        P: Property<Person> + std::fmt::Debug,
+        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+    {
+        context.register_itinerary_modifier(group_property, *self);
+    }
+    fn deactivate<P>(&self, context: &mut Context, group_property: P)
+    where
+        P: Property<Person> + std::fmt::Debug,
+        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+    {
+        context.remove_itinerary_modifier_by_property::<P>(group_property.make_canonical());
+    }
+}
+
+pub trait ItineraryModifierTrait: std::fmt::Debug + Any {
     fn get_itinerary_modifiers(
         &self,
         context: &Context,
