@@ -2,7 +2,9 @@ use ixa::{prelude::*, prelude_for_plugins::IxaEvent};
 use serde::Serialize;
 
 use crate::{
-    ContextParametersExt, custom_events::{ContextCustromEventExt, HospitalizationThresholdEvent}, settings::{ContextSettingExt, Person}
+    ContextParametersExt,
+    custom_events::{ContextCustomEventExt, HospitalizationThresholdEvent},
+    settings::{ContextSettingExt, Person},
 };
 
 #[derive(IxaEvent, Copy, Clone, Debug)]
@@ -11,15 +13,18 @@ pub struct PolicyEvent {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub enum PolicyTrigger{
-    TimeTrigger{
+pub enum PolicyTrigger {
+    // this is where the trigger attributes will live like start and end
+    TimeTrigger {
         start_time: f64,
         end_time: Option<f64>,
-    }, // this is where the trigger attributes will live like start and end
+    },
+    // this is an example and uses a custom event that is generated tracking hospitalizations
     HospitalizationThresholdTrigger {
         threshold: usize,
     },
-    OnSimulationInitializationTrigger, // this is for policies that are active for the entire simulation and don't need a trigger event to activate them.
+    // this is for policies that are active for the entire simulation and don't need a trigger event to activate them.
+    OnSimulationInitializationTrigger,
 }
 
 impl PolicyTrigger {
@@ -27,7 +32,10 @@ impl PolicyTrigger {
     // Any time there is a match can it live inside the enum
     fn emit_policy_event(&self, context: &mut Context) {
         match self {
-            PolicyTrigger::TimeTrigger { start_time, end_time } => {
+            PolicyTrigger::TimeTrigger {
+                start_time,
+                end_time,
+            } => {
                 context.add_plan(*start_time, move |context| {
                     context.emit_event(PolicyEvent { active: true });
                 });
@@ -40,14 +48,16 @@ impl PolicyTrigger {
             PolicyTrigger::HospitalizationThresholdTrigger { threshold } => {
                 let threshold = *threshold;
                 context.set_hospitalization_threshold(threshold);
-                context.subscribe_to_event::<HospitalizationThresholdEvent>(move |context, event| {
-                    if event.above_threshold {
-                        context.emit_event(PolicyEvent { active: true });
-                    } else {
-                        context.emit_event(PolicyEvent { active: false });
-                    }
-                });
-            },
+                context.subscribe_to_event::<HospitalizationThresholdEvent>(
+                    move |context, event| {
+                        if event.above_threshold {
+                            context.emit_event(PolicyEvent { active: true });
+                        } else {
+                            context.emit_event(PolicyEvent { active: false });
+                        }
+                    },
+                );
+            }
             PolicyTrigger::OnSimulationInitializationTrigger => {
                 context.emit_event(PolicyEvent { active: true });
             }
@@ -82,28 +92,28 @@ pub trait ContextPolicyExt:
     PluginContext + ContextEntitiesExt + ContextParametersExt + ContextSettingExt
 {
     fn intitialize_policy_trigger(&mut self, trigger: &PolicyTrigger);
-    fn activate_constant_policy<P, I>(&mut self, intervention: I, group_property: P)
-    where
-        P: Property<Person> + std::fmt::Debug,
-        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-        I: InterventionTrait;
     fn add_policy<P, I>(&mut self, policy: Policy<P, I>)
     where
         P: Property<Person> + std::fmt::Debug,
         P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
         I: InterventionTrait,
-    {   
-
+    {
         let policy_trigger = policy.trigger;
 
         self.subscribe_to_event::<PolicyEvent>(move |context, event| {
             let group_property = policy.group;
             let intervention = policy.intervention;
             if event.active {
-                println!("Activating policy with group property {:?} and intervention {:?}", group_property, intervention);
+                println!(
+                    "Activating policy with group property {:?} and intervention {:?}",
+                    group_property, intervention
+                );
                 intervention.activate(context, group_property);
             } else {
-                println!("Deactivating policy with group property {:?} and intervention {:?}", group_property, intervention);
+                println!(
+                    "Deactivating policy with group property {:?} and intervention {:?}",
+                    group_property, intervention
+                );
                 intervention.deactivate(context, group_property);
             }
         });
@@ -111,22 +121,12 @@ pub trait ContextPolicyExt:
         // logic to generate events which start the policy.
         // Subscriptions happens first because some policies might emit an event right away
         self.intitialize_policy_trigger(&policy_trigger);
-        
     }
 }
 impl ContextPolicyExt for Context {
     fn intitialize_policy_trigger(&mut self, trigger: &PolicyTrigger) {
         trigger.emit_policy_event(self);
     }
-
-    fn activate_constant_policy<P, I>(&mut self, intervention: I, group_property: P)
-    where
-        P: Property<Person> + std::fmt::Debug,
-        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-        I: InterventionTrait,
-    {
-        intervention.activate(self, group_property);
-    } 
 }
 
 #[cfg(test)]
@@ -280,12 +280,11 @@ mod tests {
 
         let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
 
-        let policy: Policy<Alive, ItineraryModifier> =
-            Policy {
-                trigger: PolicyTrigger::HospitalizationThresholdTrigger {  threshold: 1 },
-                intervention: isolation_modifier,
-                group: Alive(true),
-            };
+        let policy: Policy<Alive, ItineraryModifier> = Policy {
+            trigger: PolicyTrigger::HospitalizationThresholdTrigger { threshold: 1 },
+            intervention: isolation_modifier,
+            group: Alive(true),
+        };
 
         context.add_policy(policy);
 
@@ -294,16 +293,15 @@ mod tests {
             assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
         });
 
-
         context.add_plan(1.0, move |context| {
             context.set_property::<Person, SymptomData>(
-                        p1,
-                        SymptomData::Critical {
-                            mild_time: 1.0,
-                            severe_time: 1.0,
-                            critical_time: 1.0,
-                        },
-                    );
+                p1,
+                SymptomData::Critical {
+                    mild_time: 1.0,
+                    severe_time: 1.0,
+                    critical_time: 1.0,
+                },
+            );
             println!("{:?}", context.get_property::<Person, SymptomStatus>(p1));
         });
 
@@ -314,14 +312,14 @@ mod tests {
 
         context.add_plan(2.0, move |context| {
             context.set_property::<Person, SymptomData>(
-                        p1,
-                        SymptomData::Resolved {
-                            mild_time: 1.0,
-                            severe_time: None,
-                            critical_time: None,
-                            resolved_time: 2.0,
-                        },
-                    );
+                p1,
+                SymptomData::Resolved {
+                    mild_time: 1.0,
+                    severe_time: None,
+                    critical_time: None,
+                    resolved_time: 2.0,
+                },
+            );
         });
 
         context.add_plan(2.5, move |context| {
@@ -350,12 +348,11 @@ mod tests {
 
         let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
 
-        let policy: Policy<SymptomStatus, ItineraryModifier> =
-            Policy {
-                trigger: PolicyTrigger::OnSimulationInitializationTrigger,
-                intervention: isolation_modifier,
-                group: SymptomStatus::Mild,
-            };
+        let policy: Policy<SymptomStatus, ItineraryModifier> = Policy {
+            trigger: PolicyTrigger::OnSimulationInitializationTrigger,
+            intervention: isolation_modifier,
+            group: SymptomStatus::Mild,
+        };
 
         context.add_policy(policy);
 
@@ -364,14 +361,8 @@ mod tests {
             assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
         });
 
-
         context.add_plan(1.0, move |context| {
-            context.set_property::<Person, SymptomData>(
-                        p1,
-                        SymptomData::Mild {
-                            mild_time: 1.0,
-                        },
-                    );
+            context.set_property::<Person, SymptomData>(p1, SymptomData::Mild { mild_time: 1.0 });
         });
 
         context.add_plan(1.5, move |context| {
@@ -381,14 +372,14 @@ mod tests {
 
         context.add_plan(2.0, move |context| {
             context.set_property::<Person, SymptomData>(
-                        p1,
-                        SymptomData::Resolved {
-                            mild_time: 1.0,
-                            severe_time: None,
-                            critical_time: None,
-                            resolved_time: 2.0,
-                        },
-                    );
+                p1,
+                SymptomData::Resolved {
+                    mild_time: 1.0,
+                    severe_time: None,
+                    critical_time: None,
+                    resolved_time: 2.0,
+                },
+            );
         });
 
         context.add_plan(2.5, move |context| {
@@ -397,5 +388,4 @@ mod tests {
         });
         context.execute()
     }
-
 }

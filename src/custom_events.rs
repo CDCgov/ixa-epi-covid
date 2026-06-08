@@ -1,14 +1,14 @@
 use ixa::{
-    Context, PluginContext, define_data_plugin, prelude_for_plugins::{IxaEvent, PropertyChangeEvent}
+    Context, PluginContext, define_data_plugin,
+    prelude_for_plugins::{IxaEvent, PropertyChangeEvent},
 };
 
-use crate::{settings::{Person}, symptom_status_manager::SymptomStatus};
+use crate::{settings::Person, symptom_status_manager::SymptomStatus};
 
 #[derive(IxaEvent, Copy, Clone, Debug)]
 pub struct HospitalizationThresholdEvent {
     pub above_threshold: bool,
 }
-
 
 /// An index of settings as represented by their setting codes.
 #[derive(Default)]
@@ -21,7 +21,7 @@ impl HospitalizationData {
     pub fn new() -> Self {
         Self {
             hospitalization_counter: 0,
-            threshold: 0 
+            threshold: 0,
         }
     }
 
@@ -46,18 +46,18 @@ impl HospitalizationData {
     pub fn get_threshold(&self) -> usize {
         self.threshold
     }
-
 }
 
-define_data_plugin!(HospitalizationDataPlugin, HospitalizationData, |context| {
-    let hospitalization_data = HospitalizationData::default();
-    hospitalization_data
+define_data_plugin!(HospitalizationDataPlugin, HospitalizationData, |_context| {
+    HospitalizationData::new()
 });
 
-
-pub trait ContextCustromEventExt: PluginContext {
+pub trait ContextCustomEventExt: PluginContext {
     fn emit_hospitalization_threshold_event(&mut self, above_threshold: bool) {
-        println!("Emitting HospitalizationThresholdEvent with above_threshold {}", above_threshold);
+        println!(
+            "Emitting HospitalizationThresholdEvent with above_threshold {}",
+            above_threshold
+        );
         self.emit_event(HospitalizationThresholdEvent { above_threshold });
     }
     fn increment_hospitalization_counter(&mut self) {
@@ -90,19 +90,22 @@ pub trait ContextCustromEventExt: PluginContext {
             move |context, event| {
                 if let SymptomStatus::Critical = event.current {
                     context.increment_hospitalization_counter();
-                    if context.get_hospitalization_counter() >= context.get_hospitalization_threshold() {
+                    if context.get_hospitalization_counter()
+                        >= context.get_hospitalization_threshold()
+                    {
                         context.emit_hospitalization_threshold_event(true);
                     }
                 }
                 if let SymptomStatus::Critical = event.previous {
                     context.decrement_hospitalization_counter();
-                    if context.get_hospitalization_counter() <= context.get_hospitalization_threshold() {
+                    if context.get_hospitalization_counter()
+                        <= context.get_hospitalization_threshold()
+                    {
                         context.emit_hospitalization_threshold_event(false);
                     }
                 }
-
             },
         );
     }
 }
-impl ContextCustromEventExt for Context {}
+impl ContextCustomEventExt for Context {}
