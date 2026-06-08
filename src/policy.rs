@@ -10,6 +10,7 @@ use crate::{
 #[derive(IxaEvent, Copy, Clone, Debug)]
 pub struct PolicyEvent {
     active: bool,
+    policy_trigger: PolicyTrigger,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
@@ -36,30 +37,48 @@ impl PolicyTrigger {
                 start_time,
                 end_time,
             } => {
+                let policy_trigger = *self;
                 context.add_plan(*start_time, move |context| {
-                    context.emit_event(PolicyEvent { active: true });
+                    context.emit_event(PolicyEvent {
+                        active: true,
+                        policy_trigger,
+                    });
                 });
                 if let Some(end_time) = end_time {
                     context.add_plan(*end_time, move |context| {
-                        context.emit_event(PolicyEvent { active: false });
+                        context.emit_event(PolicyEvent {
+                            active: false,
+                            policy_trigger,
+                        });
                     });
                 }
             }
             PolicyTrigger::HospitalizationThresholdTrigger { threshold } => {
                 let threshold = *threshold;
+                let policy_trigger = *self;
                 context.set_hospitalization_threshold(threshold);
                 context.subscribe_to_event::<HospitalizationThresholdEvent>(
                     move |context, event| {
                         if event.above_threshold {
-                            context.emit_event(PolicyEvent { active: true });
+                            context.emit_event(PolicyEvent {
+                                active: true,
+                                policy_trigger,
+                            });
                         } else {
-                            context.emit_event(PolicyEvent { active: false });
+                            context.emit_event(PolicyEvent {
+                                active: false,
+                                policy_trigger,
+                            });
                         }
                     },
                 );
             }
             PolicyTrigger::OnSimulationInitializationTrigger => {
-                context.emit_event(PolicyEvent { active: true });
+                let policy_trigger = *self;
+                context.emit_event(PolicyEvent {
+                    active: true,
+                    policy_trigger,
+                });
             }
         }
     }
@@ -103,7 +122,9 @@ pub trait ContextPolicyExt:
         self.subscribe_to_event::<PolicyEvent>(move |context, event| {
             let group_property = policy.group;
             let intervention = policy.intervention;
-            if event.active {
+            let policy_trigger_event = event.policy_trigger;
+            if event.active && policy_trigger_event == policy_trigger {
+                println!("{}", context.get_current_time());
                 println!(
                     "Activating policy with group property {:?} and intervention {:?}",
                     group_property, intervention
@@ -128,7 +149,6 @@ impl ContextPolicyExt for Context {
         trigger.emit_policy_event(self);
     }
 }
-
 #[cfg(test)]
 mod tests {
     use ixa::{Context, HashMap};
