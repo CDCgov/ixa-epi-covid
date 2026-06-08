@@ -25,13 +25,13 @@ pub trait ContextPostTestStrategyExt:
     PluginContext + ContextEntitiesExt + ContextRandomExt + ContextTestExt
 {
     fn post_test_action(&mut self, person_id: PersonId, post_test_strategy: PostTestStrategy) {
-        if let Some(itinerary_modification) = post_test_strategy.itinerary_modification {
-            if itinerary_modification {
-                println!(
-                    "Implementing itinerary modification for person {}",
-                    person_id
-                );
-            }
+        if let Some(itinerary_modification) = post_test_strategy.itinerary_modification
+            && itinerary_modification
+        {
+            println!(
+                "Implementing itinerary modification for person {}",
+                person_id
+            );
         }
         // Implement itinerary modification logic here, e.g., self.modify_itinerary(person_id);
         if let Some(contact_tracing_strategy) = post_test_strategy.contact_tracing_strategy {

@@ -10,20 +10,27 @@ use crate::surveillance::{
 
 define_rng!(TestStrategyRng);
 
+#[derive(Debug, Clone, Copy)]
+pub enum TestStrategy {
+    Active(TestStrategyProperties),
+    Passive(TestStrategyProperties),
+}
+
 pub trait TestTrait {
     fn determine_if_testing_occurs(&mut self) -> bool;
     fn conduct_test(&mut self, context: &mut Context, person_id: PersonId);
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct TestStrategy {
+pub struct TestStrategyProperties {
     pub test_type: TestType,
     pub testing_adherence: f64,
     pub testing_delay: f64,
     pub post_test_strategy: Option<PostTestStrategy>,
 }
 
-impl TestTrait for TestStrategy {
+// this test strategy is used when people need to be queried and tested.
+impl TestTrait for TestStrategyProperties {
     fn determine_if_testing_occurs(&mut self) -> bool {
         self.testing_adherence > 0.0
     }
@@ -34,74 +41,50 @@ impl TestTrait for TestStrategy {
             // Simulate testing delay
             let test_type = self.test_type;
             let testing_delay = self.testing_delay;
-            let post_test_strategy = self.post_test_strategy.clone();
+            let post_test_strategy = self.post_test_strategy;
             context.add_plan(context.get_current_time() + testing_delay, move |context| {
                 let result = context.test(test_type, person_id);
-                if result {
-                    if let Some(post_test_strategy) = post_test_strategy.clone() {
-                        context.post_test_action(person_id, post_test_strategy);
-                    }
+                if result && let Some(post_test_strategy) = post_test_strategy {
+                    context.post_test_action(person_id, post_test_strategy);
                 }
             });
         }
     }
 }
 
-// impl InterventionTrait for TestStrategy {
-//     fn endogenous_activate<P>(&self, context: &mut Context, group_property: P)
-//     where
-//         P: Property<Person> + std::fmt::Debug,
-//         P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-//     {
-//         let strategy = *self;
-//         context.subscribe_to_event::<PropertyChangeEvent<Person, P>>(move |context, event| {
-//             if event.current == group_property {
-//                 context.conduct_test(event.entity_id, strategy);
-//             }
-//         });
-//     }
-
-//     fn exogenous_activate<P>(&self, context: &mut Context, group_property: P)
-//     where
-//         P: Property<Person> + std::fmt::Debug,
-//         P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-//     {
-//         let strategy = *self;
-
-//         let person_ids: Vec<_> = context
-//             .query_result_iterator(with!(Person, group_property))
-//             .collect();
-//         for person_id in person_ids {
-//             context.conduct_test(person_id, strategy);
-//         }
-//     }
-
-//     fn exogenous_deactivate<P>(&self, context: &mut Context, group_property: P)
-//     where
-//         P: Property<Person> + std::fmt::Debug,
-//         P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-//     {
-//         println!(
-//             "Deactivating test strategy intervention for group {:?} with strategy {:?}",
-//             group_property, self
-//         );
-//         println!("{}", context.get_current_time());
-//     }
-// }
-
-impl InterventionTrait for TestStrategy{
+impl InterventionTrait for TestStrategy {
     fn activate<P>(&self, context: &mut Context, group_property: P)
     where
         P: Property<Person> + std::fmt::Debug,
-        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug{
-
+        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+    {
+        let strategy = *self;
+        match strategy {
+            TestStrategy::Active(strategy) => {
+                let person_ids: Vec<_> = context
+                    .query_result_iterator(with!(Person, group_property))
+                    .collect();
+                for person_id in person_ids {
+                    context.conduct_test(person_id, strategy);
+                }
+            }
+            TestStrategy::Passive(strategy) => {
+                context.subscribe_to_event::<PropertyChangeEvent<Person, P>>(
+                    move |context, event| {
+                        if event.current == group_property {
+                            context.conduct_test(event.entity_id, strategy);
+                        }
+                    },
+                );
+            }
+        }
     }
-    fn deactivate<P>(&self, context: &mut Context, group_property: P)
+    fn deactivate<P>(&self, _context: &mut Context, _group_property: P)
     where
         P: Property<Person> + std::fmt::Debug,
-        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug{
-            
-        }
+        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+    {
+    }
 }
 
 pub trait ContextTestStrategyExt:

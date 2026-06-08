@@ -54,6 +54,7 @@
                             "School": {"alpha": 0.0},
                             "Community": {"alpha": 0.0}},
         "itinerary_ratios": {"Home": 0.25, "Work": 0.25, "School": 0.25, "Community": 0.25},
+        "test_properties": [],
         "prevalence_report": {
             "write": true,
             "filename": "person_property_count.csv",

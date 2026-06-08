@@ -3,17 +3,85 @@ use serde::Serialize;
 
 use crate::{
     ContextParametersExt,
+    custom_events::{ContextCustomEventExt, HospitalizationThresholdEvent},
     settings::{ContextSettingExt, Person},
 };
 
-pub trait TriggerEventTrait: IxaEvent + Copy {
-    fn get_trigger_value(&self) -> f64;
+#[derive(IxaEvent, Copy, Clone, Debug)]
+pub struct PolicyEvent {
+    active: bool,
+    policy_trigger: PolicyTrigger,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub struct Trigger<E: TriggerEventTrait, F: TriggerEventTrait> {
-    pub start_event: E,
-    pub end_event: Option<F>,
+pub enum PolicyTrigger {
+    // this is where the trigger attributes will live like start and end
+    TimeTrigger {
+        start_time: f64,
+        end_time: Option<f64>,
+    },
+    // this is an example and uses a custom event that is generated tracking hospitalizations
+    HospitalizationThresholdTrigger {
+        threshold: usize,
+    },
+    // this is for policies that are active for the entire simulation and don't need a trigger event to activate them.
+    OnSimulationInitializationTrigger,
+}
+
+impl PolicyTrigger {
+    // This is where future trait methods will come from.
+    // Any time there is a match can it live inside the enum
+    fn emit_policy_event(&self, context: &mut Context) {
+        match self {
+            PolicyTrigger::TimeTrigger {
+                start_time,
+                end_time,
+            } => {
+                let policy_trigger = *self;
+                context.add_plan(*start_time, move |context| {
+                    context.emit_event(PolicyEvent {
+                        active: true,
+                        policy_trigger,
+                    });
+                });
+                if let Some(end_time) = end_time {
+                    context.add_plan(*end_time, move |context| {
+                        context.emit_event(PolicyEvent {
+                            active: false,
+                            policy_trigger,
+                        });
+                    });
+                }
+            }
+            PolicyTrigger::HospitalizationThresholdTrigger { threshold } => {
+                let threshold = *threshold;
+                let policy_trigger = *self;
+                context.set_hospitalization_threshold(threshold);
+                context.subscribe_to_event::<HospitalizationThresholdEvent>(
+                    move |context, event| {
+                        if event.above_threshold {
+                            context.emit_event(PolicyEvent {
+                                active: true,
+                                policy_trigger,
+                            });
+                        } else {
+                            context.emit_event(PolicyEvent {
+                                active: false,
+                                policy_trigger,
+                            });
+                        }
+                    },
+                );
+            }
+            PolicyTrigger::OnSimulationInitializationTrigger => {
+                let policy_trigger = *self;
+                context.emit_event(PolicyEvent {
+                    active: true,
+                    policy_trigger,
+                });
+            }
+        }
+    }
 }
 
 pub trait InterventionTrait: std::fmt::Debug + Copy + 'static {
@@ -28,15 +96,13 @@ pub trait InterventionTrait: std::fmt::Debug + Copy + 'static {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub struct Policy<P, I, E, F>
+pub struct Policy<P, I>
 where
     P: Property<Person> + std::fmt::Debug,
     P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
     I: InterventionTrait,
-    E: TriggerEventTrait,
-    F: TriggerEventTrait,
 {
-    trigger: Trigger<E, F>,
+    trigger: PolicyTrigger,
     intervention: I,
     group: P,
 }
@@ -44,40 +110,63 @@ where
 pub trait ContextPolicyExt:
     PluginContext + ContextEntitiesExt + ContextParametersExt + ContextSettingExt
 {
-    fn add_policy<P, I, E, F>(&mut self, policy: Policy<P, I, E, F>)
+    fn intitialize_policy_trigger(&mut self, trigger: &PolicyTrigger);
+    fn add_policy<P, I>(&mut self, policy: Policy<P, I>)
     where
         P: Property<Person> + std::fmt::Debug,
         P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
         I: InterventionTrait,
-        E: TriggerEventTrait + 'static,
-        F: TriggerEventTrait + 'static,
     {
-        let start_event = policy.trigger.start_event;
-        let end_event = policy.trigger.end_event;
-        self.subscribe_to_event::<E>(move |context, event| {
+        let policy_trigger = policy.trigger;
+
+        self.subscribe_to_event::<PolicyEvent>(move |context, event| {
             let group_property = policy.group;
             let intervention = policy.intervention;
-            if event.get_trigger_value() == start_event.get_trigger_value() {
+            let policy_trigger_event = event.policy_trigger;
+            if event.active && policy_trigger_event == policy_trigger {
+                println!("{}", context.get_current_time());
+                println!(
+                    "Activating policy with group property {:?} and intervention {:?}",
+                    group_property, intervention
+                );
                 intervention.activate(context, group_property);
-            } else if let Some(end_event) = end_event
-                && event.get_trigger_value() == end_event.get_trigger_value()
-            {
+            } else {
+                println!(
+                    "Deactivating policy with group property {:?} and intervention {:?}",
+                    group_property, intervention
+                );
                 intervention.deactivate(context, group_property);
             }
         });
+
+        // logic to generate events which start the policy.
+        // Subscriptions happens first because some policies might emit an event right away
+        self.intitialize_policy_trigger(&policy_trigger);
     }
 }
-impl ContextPolicyExt for Context {}
-
+impl ContextPolicyExt for Context {
+    fn intitialize_policy_trigger(&mut self, trigger: &PolicyTrigger) {
+        trigger.emit_policy_event(self);
+    }
+}
 #[cfg(test)]
 mod tests {
     use ixa::{Context, HashMap};
 
     use crate::{
-        Age, Params, custom_events::{ContextCustromEventExt, TimeEvent}, parameters::{GlobalParams, SettingProperties, TestProperties}, pop_reader::{FIPSCode, PopulationReaderSettingCategory, parser::{parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id}}, population_loader::{Alive, HomeId}, settings::{PersonId, SettingCategory, SettingCode}, surveillance::{
+        Age, Params,
+        parameters::{GlobalParams, SettingProperties, TestProperties},
+        pop_reader::{
+            FIPSCode, PopulationReaderSettingCategory,
+            parser::{parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id},
+        },
+        population_loader::{Alive, HomeId},
+        settings::{PersonId, SettingCategory, SettingCode},
+        surveillance::{
             test_manager::{Sensitivity, Test, TestAvailability, TestType, TestsConductedToday},
-            test_strategy::TestStrategy,
-        }, symptom_status_manager::SymptomStatus
+            test_strategy::{TestStrategy, TestStrategyProperties},
+        },
+        symptom_status_manager::{SymptomData, SymptomStatus},
     };
 
     use super::*;
@@ -119,7 +208,7 @@ mod tests {
             Some(community_code),
         );
     }
-    
+
     fn setup() -> Context {
         let mut context = Context::new();
         let parameters = Params {
@@ -162,38 +251,40 @@ mod tests {
     }
 
     #[test]
-    fn test_add_policy() {
+    fn test_add_policy_active_test() {
         let mut context = setup();
 
-        let test_strategy = TestStrategy {
+        let test_strategy_properties = TestStrategyProperties {
             test_type: TestType::PCR,
             testing_adherence: 1.0,
             testing_delay: 0.0,
             post_test_strategy: None,
         };
 
-        let policy_one: Policy<Alive, TestStrategy, TimeEvent, TimeEvent> = Policy {
-            trigger: Trigger {
-                start_event: TimeEvent { time: 1.0 },
-                end_event: Some(TimeEvent { time: 2.0 }),
+        let test_strategy = TestStrategy::Active(test_strategy_properties);
+
+        let policy_one: Policy<Alive, TestStrategy> = Policy {
+            trigger: PolicyTrigger::TimeTrigger {
+                start_time: 1.0,
+                end_time: Some(2.0),
             },
             intervention: test_strategy,
             group: Alive(true),
         };
 
-        let policy_two: Policy<Age, TestStrategy, TimeEvent, TimeEvent> = Policy {
-            trigger: Trigger {
-                start_event: TimeEvent { time: 3.0 },
-                end_event: Some(TimeEvent { time: 4.0 }),
+        let policy_two: Policy<Age, TestStrategy> = Policy {
+            trigger: PolicyTrigger::TimeTrigger {
+                start_time: 3.0,
+                end_time: Some(4.0),
             },
             intervention: test_strategy,
             group: Age(30),
         };
 
-        let policy_three: Policy<HomeId, TestStrategy, TimeEvent, TimeEvent> = Policy {
-            trigger: Trigger {
-                start_event: TimeEvent { time: 5.0 },
-                end_event: Some(TimeEvent { time: 6.0 }),
+        let policy_three: Policy<HomeId, TestStrategy> = Policy {
+            trigger: PolicyTrigger::TimeTrigger {
+                start_time: 5.0,
+                end_time: Some(6.0),
             },
             intervention: test_strategy,
             group: HomeId(Some(make_home_id(b"160379602000010"))),
@@ -210,7 +301,7 @@ mod tests {
         context.add_policy(policy_three);
 
         let pcr_test_id = context
-            .query_result_iterator(with!(Test, test_strategy.test_type))
+            .query_result_iterator(with!(Test, test_strategy_properties.test_type))
             .next()
             .unwrap();
         // policy one
@@ -240,7 +331,6 @@ mod tests {
                 2
             );
         });
-
 
         context.add_plan(3.5, move |context| {
             assert_eq!(
@@ -279,34 +369,26 @@ mod tests {
                 5
             );
         });
-        context.emit_time_event(0.0);
-        context.emit_time_event(1.0);
-        context.emit_time_event(2.0);
-        context.emit_time_event(3.0);
-        context.emit_time_event(4.0);
-        context.emit_time_event(5.0);
-        context.emit_time_event(6.0);
+
         context.execute()
     }
 
     #[test]
-    fn test_policy_symptomatic() {
+    fn test_add_policy_passive_test() {
         let mut context = setup();
 
         let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
 
-        let test_strategy = TestStrategy {
+        let test_strategy_properties = TestStrategyProperties {
             test_type: TestType::PCR,
             testing_adherence: 1.0,
             testing_delay: 0.0,
             post_test_strategy: None,
         };
-        
-        let policy: Policy<SymptomStatus, TestStrategy, TimeEvent, TimeEvent> = Policy {
-            trigger: Trigger {
-                start_event: TimeEvent { time: 0.0 },
-                end_event: None,
-            },
+        let test_strategy = TestStrategy::Passive(test_strategy_properties);
+
+        let policy: Policy<SymptomStatus, TestStrategy> = Policy {
+            trigger: PolicyTrigger::OnSimulationInitializationTrigger,
             intervention: test_strategy,
             group: SymptomStatus::Mild,
         };
@@ -314,7 +396,7 @@ mod tests {
         context.add_policy(policy);
 
         let pcr_test_id = context
-            .query_result_iterator(with!(Test, test_strategy.test_type))
+            .query_result_iterator(with!(Test, test_strategy_properties.test_type))
             .next()
             .unwrap();
 
@@ -328,7 +410,7 @@ mod tests {
         });
 
         context.add_plan(1.0, move |context| {
-            context.set_property(p1, SymptomStatus::Mild);
+            context.set_property::<Person, SymptomData>(p1, SymptomData::Mild { mild_time: 1.0 });
         });
 
         context.add_plan(1.5, move |context| {
@@ -341,7 +423,15 @@ mod tests {
         });
 
         context.add_plan(2.0, move |context| {
-            context.set_property(p1, SymptomStatus::Resolved);
+            context.set_property::<Person, SymptomData>(
+                p1,
+                SymptomData::Resolved {
+                    mild_time: 1.0,
+                    severe_time: None,
+                    critical_time: None,
+                    resolved_time: 2.0,
+                },
+            );
         });
 
         context.add_plan(2.5, move |context| {
@@ -352,7 +442,6 @@ mod tests {
                 1
             );
         });
-
-        context.emit_time_event(0.0);
+        context.execute()
     }
 }
