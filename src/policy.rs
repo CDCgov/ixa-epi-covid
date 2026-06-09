@@ -118,23 +118,14 @@ pub trait ContextPolicyExt:
         I: InterventionTrait,
     {
         let policy_trigger = policy.trigger;
+        let group_property = policy.group;
+        let intervention = policy.intervention;
 
         self.subscribe_to_event::<PolicyEvent>(move |context, event| {
-            let group_property = policy.group;
-            let intervention = policy.intervention;
             let policy_trigger_event = event.policy_trigger;
             if event.active && policy_trigger_event == policy_trigger {
-                println!("{}", context.get_current_time());
-                println!(
-                    "Activating policy with group property {:?} and intervention {:?}",
-                    group_property, intervention
-                );
                 intervention.activate(context, group_property);
             } else {
-                println!(
-                    "Deactivating policy with group property {:?} and intervention {:?}",
-                    group_property, intervention
-                );
                 intervention.deactivate(context, group_property);
             }
         });
