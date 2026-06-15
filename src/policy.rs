@@ -26,6 +26,13 @@ pub enum PolicyTrigger {
     },
     // this is for policies that are active for the entire simulation and don't need a trigger event to activate them.
     OnSimulationInitializationTrigger,
+    // this is for policies that are active for a certain duration at regular intervals, like weekends.
+    PeriodicTimeTrigger {
+        interval: f64,
+        duration: f64,
+        start_time: f64,
+        end_time: Option<f64>,
+    },
 }
 
 impl PolicyTrigger {
@@ -79,6 +86,44 @@ impl PolicyTrigger {
                     active: true,
                     policy_trigger,
                 });
+            }
+            PolicyTrigger::PeriodicTimeTrigger {
+                interval,
+                duration,
+                start_time,
+                end_time,
+            } => {
+                let policy_trigger = *self;
+                let interval = *interval;
+                let duration = *duration;
+                context.add_plan(*start_time, move |context| {
+                    context.emit_event(PolicyEvent {
+                        active: true,
+                        policy_trigger,
+                    });
+                });
+                context.add_plan(*start_time + duration, move |context| {
+                    context.emit_event(PolicyEvent {
+                        active: false,
+                        policy_trigger,
+                    });
+                });
+                let mut next_time = *start_time + interval;
+                while end_time.is_none_or(|et| next_time < et) {
+                    context.add_plan(next_time, move |context| {
+                        context.emit_event(PolicyEvent {
+                            active: true,
+                            policy_trigger,
+                        });
+                    });
+                    context.add_plan(next_time + duration, move |context| {
+                        context.emit_event(PolicyEvent {
+                            active: false,
+                            policy_trigger,
+                        });
+                    });
+                    next_time += interval;
+                }
             }
         }
     }
@@ -156,6 +201,8 @@ mod tests {
         settings::{PersonId, SettingCategory, SettingCode},
         symptom_status_manager::{SymptomData, SymptomStatus},
     };
+
+    define_multi_property!((Age, SymptomStatus), Person);
 
     use super::*;
     fn make_home_id(home_id: &[u8]) -> SettingCode {
@@ -397,6 +444,148 @@ mod tests {
             assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
             assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
         });
+        context.execute()
+    }
+
+    #[test]
+    fn test_add_policy_periodic_time_trigger() {
+        let mut context = setup();
+        context.set_start_time(0.0);
+        let weekend_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+        ];
+
+        let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None);
+        let policy: Policy<Age, ItineraryModifier> = Policy {
+            trigger: PolicyTrigger::PeriodicTimeTrigger {
+                interval: 7.0,
+                duration: 2.0,
+                start_time: 1.0,
+                end_time: Some(15.0),
+            },
+            intervention: weekend_modifier,
+            group: Age(30),
+        };
+
+        let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
+        let p2 = context.add_entity(with!(Person, Age(40))).unwrap();
+
+        add_person_to_test_settings(&mut context, p1);
+        add_person_to_test_settings(&mut context, p2);
+
+        context.add_policy(policy);
+
+        context.add_plan(0.5, move |context| {
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
+        });
+
+        context.add_plan(1.0, move |context| {
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 1);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
+        });
+
+        context.add_plan(2.0, move |context| {
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 1);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
+        });
+
+        context.add_plan(3.0, move |context| {
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
+        });
+
+        context.add_plan(4.0, move |context| {
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
+        });
+
+        context.add_plan(6.0, move |context| {
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
+        });
+
+        context.add_plan(8.0, move |context| {
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 1);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
+        });
+
+        context.add_plan(10.0, move |context| {
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
+        });
+
+        context.execute()
+    }
+
+    #[test]
+    fn test_add_policy_with_multi_property() {
+        let mut context = setup();
+
+        let isolation_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+        ];
+
+        let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
+        let policy: Policy<(Age, SymptomStatus), ItineraryModifier> = Policy {
+            trigger: PolicyTrigger::TimeTrigger {
+                start_time: 1.0,
+                end_time: Some(5.0),
+            },
+            intervention: isolation_modifier,
+            group: (Age(30), SymptomStatus::Mild),
+        };
+
+        let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
+        let p2 = context.add_entity(with!(Person, Age(40))).unwrap();
+
+        add_person_to_test_settings(&mut context, p1);
+        add_person_to_test_settings(&mut context, p2);
+
+        context.add_policy(policy);
+
+        context.add_plan(0.5, move |context| {
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
+        });
+
+        context.add_plan(1.0, move |context| {
+            context.set_property::<Person, SymptomData>(p1, SymptomData::Mild { mild_time: 1.0 });
+        });
+
+        context.add_plan(1.5, move |context| {
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 1);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
+        });
+
+        context.add_plan(2.0, move |context| {
+            context.set_property::<Person, SymptomData>(
+                p1,
+                SymptomData::Resolved {
+                    mild_time: 1.0,
+                    severe_time: None,
+                    critical_time: None,
+                    resolved_time: 2.0,
+                },
+            );
+        });
+
+        context.add_plan(2.0, move |context| {
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
+        });
+
+        context.add_plan(5.5, move |context| {
+            assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);
+            assert_eq!(context.get_active_settings_for_person(p2).unwrap().len(), 4);
+        });
+
         context.execute()
     }
 }
