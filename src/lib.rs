@@ -1,5 +1,6 @@
 pub mod abort_run;
 pub mod custom_events;
+pub mod calendar;
 pub mod error;
 pub mod infection_importation;
 pub mod infection_propagation_loop;

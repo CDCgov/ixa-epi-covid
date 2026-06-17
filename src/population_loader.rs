@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use crate::error::ModelError;
 use crate::parameters::ContextParametersExt;
+use crate::pop_reader::{CountyCode, StateCode, TractCode};
 use crate::pop_reader::{
     PersonRecord,
     archive::{PersonRecordIterator, set_data_path},
@@ -61,6 +62,19 @@ impl_property!(
 );
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+pub struct State(pub StateCode);
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+pub struct County(pub CountyCode);
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+pub struct Tract(pub TractCode);
+
+impl_property!(State, Person);
+impl_property!(County, Person);
+impl_property!(Tract, Person);
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
 pub struct HomeId(pub Option<SettingCode>);
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
 pub struct SchoolId(pub Option<SettingCode>);
@@ -92,6 +106,9 @@ fn create_person_from_record(
     let home_id = person_record.home_id.ok_or_else(|| {
         ModelError::ModelError("person record is missing required home_id".to_string())
     })?;
+    let state = State(home_id.state_code());
+    let county = County(home_id.county_code());
+    let tract = Tract(home_id.census_tract_code());
     let home_id = SettingCode(home_id);
     let community_id = home_id.extract_community();
 
@@ -105,6 +122,9 @@ fn create_person_from_record(
         person_record.school_id.map(SettingCode),
         Some(community_id),
     );
+    context.set_property(person_id, state);
+    context.set_property(person_id, county);
+    context.set_property(person_id, tract);
     Ok(())
 }
 

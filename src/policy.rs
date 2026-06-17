@@ -31,7 +31,7 @@ pub enum PolicyTrigger {
         interval: f64,
         duration: f64,
         start_time: f64,
-        end_time: Option<f64>,
+        end_time: f64,
     },
 }
 
@@ -109,7 +109,7 @@ impl PolicyTrigger {
                     });
                 });
                 let mut next_time = *start_time + interval;
-                while end_time.is_none_or(|et| next_time < et) {
+                while next_time < *end_time {
                     context.add_plan(next_time, move |context| {
                         context.emit_event(PolicyEvent {
                             active: true,
@@ -147,9 +147,9 @@ where
     P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
     I: InterventionTrait,
 {
-    trigger: PolicyTrigger,
-    intervention: I,
-    group: P,
+    pub trigger: PolicyTrigger,
+    pub intervention: I,
+    pub group: P,
 }
 
 pub trait ContextPolicyExt:
@@ -464,7 +464,7 @@ mod tests {
                 interval: 7.0,
                 duration: 2.0,
                 start_time: 1.0,
-                end_time: Some(15.0),
+                end_time: 15.0,
             },
             intervention: weekend_modifier,
             group: Age(30),

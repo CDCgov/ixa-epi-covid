@@ -4,6 +4,7 @@ use std::{fmt::Debug, path::PathBuf};
 
 use crate::error::ModelError;
 use crate::infection_importation::ImportCasesFromFile;
+use crate::itinerary_manager::ItineraryModifier;
 use crate::reports::ReportParams;
 use crate::settings::SettingCategory;
 use crate::symptom_status_manager::{SymptomAgeGroup, SymptomDelayDistLogNormParams};
@@ -23,6 +24,11 @@ pub enum RateFnType {
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct SettingProperties {
     pub alpha: f64,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+pub struct Weekends {
+    pub itinerary_modifier: Option<ItineraryModifier>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -68,6 +74,8 @@ pub struct Params {
     pub settings_properties: HashMap<SettingCategory, SettingProperties>,
     /// ratios used to initialize individuals itineraries by setting type.
     pub itinerary_ratios: HashMap<SettingCategory, f64>,
+    /// itinerary modifier for weekends
+    pub weekends: Weekends,
     /// Prevalence report with a period and name required
     pub prevalence_report: ReportParams,
     /// Incidence report with a period and name required
@@ -356,6 +364,9 @@ impl Default for Params {
             },
             settings_properties: HashMap::new(),
             itinerary_ratios: HashMap::new(),
+            weekends: Weekends {
+                itinerary_modifier: None,
+            },
             prevalence_report: ReportParams {
                 write: false,
                 filename: None,

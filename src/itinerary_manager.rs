@@ -1,4 +1,5 @@
 use ixa::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
@@ -25,7 +26,7 @@ impl PartialEq for dyn ItineraryModifierTrait {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Copy)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Copy)]
 pub struct ItineraryModifier {
     modifier_activity: ItineraryTransitionMatrix,
 }

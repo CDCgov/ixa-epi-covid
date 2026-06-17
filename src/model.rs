@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::calendar;
 #[allow(unused_imports)]
 use crate::{
     abort_run, error::ModelError, infection_importation, infection_propagation_loop, parameters,
@@ -37,6 +38,8 @@ pub fn initialize_model(
     info!("Infection propagation loop initialized");
     infection_importation::init(context)?;
     info!("Infection importation initialized");
+    calendar::init(context);
+    info!("Calendar initialized");
     reports::init(context)?;
     info!("Reports initialized");
     abort_run::init(context);
