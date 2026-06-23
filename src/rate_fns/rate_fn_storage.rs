@@ -69,7 +69,7 @@ mod test {
     use crate::{
         Age,
         parameters::{GlobalParams, Params},
-        population_loader::PersonId,
+        population_loader::PersonId, settings::Person,
     };
 
     use super::*;

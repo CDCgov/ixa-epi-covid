@@ -35,6 +35,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "250f629c0161ad8107cf89319e990051fae62832fd343083bea452d93e2205fd"
 
 [[package]]
+<<<<<<< HEAD
 name = "alloca"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -44,6 +45,8 @@ dependencies = [
 ]
 
 [[package]]
+=======
+>>>>>>> 9dd8d16 (work in progress plus version update)
 name = "android_system_properties"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -184,9 +187,15 @@ dependencies = [
 
 [[package]]
 name = "bytes"
+<<<<<<< HEAD
 version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
+=======
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ae3f5d315924270530207e2a68396c3cc547f6dca3fbdca317cfb1a51edb593"
+>>>>>>> 9dd8d16 (work in progress plus version update)
 
 [[package]]
 name = "bytesize"
@@ -450,9 +459,15 @@ dependencies = [
 
 [[package]]
 name = "ctor"
+<<<<<<< HEAD
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7335955a5f85f95f3188623240e081e7b2059a8ad1bae68944b7cfdd718fb10"
+=======
+version = "1.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01334b89b69ff726750c5ce5073fc8bd860e99aa9a8fc5ca11b04730e3aee97a"
+>>>>>>> 9dd8d16 (work in progress plus version update)
 dependencies = [
  "linktime-proc-macro",
 ]
@@ -517,12 +532,15 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
+=======
+>>>>>>> 9dd8d16 (work in progress plus version update)
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -652,9 +670,15 @@ checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
 
 [[package]]
 name = "hashbrown"
+<<<<<<< HEAD
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f467dd6dccf739c208452f8014c75c18bb8301b050ad1cfb27153803edb0f51"
+=======
+version = "0.17.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+>>>>>>> 9dd8d16 (work in progress plus version update)
 
 [[package]]
 name = "heck"
@@ -757,9 +781,14 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "ixa"
+<<<<<<< HEAD
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28adace56d30d4e3c5a5fb067eb4e58c12b3035646d8aeaba950bc523d4511bf"
+=======
+version = "2.0.0-beta2.5"
+source = "git+https://github.com/CDCgov/ixa?branch=RobertJacobsonCDC_944_triggers#cff397256fded298d85cf1a2623424bcad46295a"
+>>>>>>> 9dd8d16 (work in progress plus version update)
 dependencies = [
  "approx",
  "bytesize",
@@ -793,9 +822,14 @@ dependencies = [
 
 [[package]]
 name = "ixa-derive"
+<<<<<<< HEAD
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67327babaf3a484300b8b6e85a3f12ddefa48ba076875d5c92b3804aa24131f9"
+=======
+version = "2.0.0-beta.2"
+source = "git+https://github.com/CDCgov/ixa?branch=RobertJacobsonCDC_944_triggers#cff397256fded298d85cf1a2623424bcad46295a"
+>>>>>>> 9dd8d16 (work in progress plus version update)
 dependencies = [
  "quote",
  "syn",
@@ -868,9 +902,15 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "linktime-proc-macro"
+<<<<<<< HEAD
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a44cd706ff0d503ee32b2071166510ca27e281228de10cd3aa8d35ff94560f81"
+=======
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c7b0a3383c2a1002d11349c92c85a666a5fb679e96c79d782cf0dbe557fd6ee"
+>>>>>>> 9dd8d16 (work in progress plus version update)
 
 [[package]]
 name = "linux-raw-sys"
@@ -1316,7 +1356,11 @@ checksum = "73389e0c99e664f919275ab5b5b0471391fe9a8de61e1dff9b1eaf56a90f16e3"
 dependencies = [
  "bytecheck",
  "bytes",
+<<<<<<< HEAD
  "hashbrown 0.17.0",
+=======
+ "hashbrown 0.17.1",
+>>>>>>> 9dd8d16 (work in progress plus version update)
  "indexmap",
  "munge",
  "ptr_meta",
@@ -1684,9 +1728,15 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
+<<<<<<< HEAD
 version = "1.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddd74a9687298c6858e9b88ec8935ec45d22e8fd5e6394fa1bd4e99a87789c76"
+=======
+version = "1.23.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "144d6b123cef80b301b8f72a9e2ca4370ddec21950d0a103dd22c437006d2db7"
+>>>>>>> 9dd8d16 (work in progress plus version update)
 dependencies = [
  "js-sys",
  "wasm-bindgen",

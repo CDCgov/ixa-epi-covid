@@ -62,17 +62,17 @@ impl_property!(
 );
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct State(pub StateCode);
+pub struct State(pub Option<StateCode>);
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct County(pub CountyCode);
+pub struct County(pub Option<CountyCode>);
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct Tract(pub TractCode);
+pub struct Tract(pub Option<TractCode>);
 
-impl_property!(State, Person);
-impl_property!(County, Person);
-impl_property!(Tract, Person);
+impl_property!(State, Person, default_const = State(None));
+impl_property!(County, Person, default_const = County(None));
+impl_property!(Tract, Person, default_const = Tract(None));
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
 pub struct HomeId(pub Option<SettingCode>);
@@ -106,9 +106,9 @@ fn create_person_from_record(
     let home_id = person_record.home_id.ok_or_else(|| {
         ModelError::ModelError("person record is missing required home_id".to_string())
     })?;
-    let state = State(home_id.state_code());
-    let county = County(home_id.county_code());
-    let tract = Tract(home_id.census_tract_code());
+    let state = State(Some(home_id.state_code()));
+    let county = County(Some(home_id.county_code()));
+    let tract = Tract(Some(home_id.census_tract_code()));
     let home_id = SettingCode(home_id);
     let community_id = home_id.extract_community();
 

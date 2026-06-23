@@ -34,17 +34,15 @@ pub struct ItineraryModifier {
 impl InterventionTrait for ItineraryModifier {
     fn activate<P>(&self, context: &mut Context, group_property: P)
     where
-        P: Property<Person> + std::fmt::Debug,
-        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+        P: Property<Person> + std::fmt::Debug + std::hash::Hash + Eq,
     {
         context.register_itinerary_modifier(group_property, *self);
     }
     fn deactivate<P>(&self, context: &mut Context, group_property: P)
     where
-        P: Property<Person> + std::fmt::Debug,
-        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+        P: Property<Person> + std::fmt::Debug + std::hash::Hash + Eq,
     {
-        context.remove_itinerary_modifier_by_property::<P>(group_property.make_canonical());
+        context.remove_itinerary_modifier_by_property::<P>(group_property);
     }
 }
 

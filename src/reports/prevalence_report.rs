@@ -117,7 +117,7 @@ mod test {
         population_loader::PersonId,
         rate_fns::load_rate_fns,
         reports::ReportParams,
-        settings::SettingCode,
+        settings::{Person, SettingCode},
     };
     use ixa::{csv, prelude::*};
     use std::path::PathBuf;

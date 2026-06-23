@@ -1,7 +1,7 @@
 use crate::error::ModelError;
 use crate::infectiousness_manager::InfectionData;
-use crate::population_loader::{Person, PersonId};
-use crate::settings::SettingCode;
+use crate::population_loader::{PersonId};
+use crate::settings::{Person, SettingCode};
 use ixa::prelude::*;
 use ixa::profiling::open_span;
 use serde::{Deserialize, Serialize};
@@ -62,7 +62,7 @@ mod test {
         population_loader::PersonId,
         rate_fns::load_rate_fns,
         reports::ReportParams,
-        settings::SettingCode,
+        settings::{Person, SettingCode},
     };
     use ixa::{
         Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt,
