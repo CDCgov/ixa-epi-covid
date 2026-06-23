@@ -4,6 +4,7 @@ use std::{fmt::Debug, path::PathBuf};
 
 use crate::error::ModelError;
 use crate::infection_importation::ImportCasesFromFile;
+use crate::itinerary_modifiers::ItineraryTransitionMatrix;
 use crate::reports::ReportParams;
 use crate::school_calendar::{SchoolCalendarModifier, SchoolCalendarModifierType};
 use crate::settings::SettingCategory;
@@ -24,6 +25,11 @@ pub enum RateFnType {
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct SettingProperties {
     pub alpha: f64,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+pub struct Weekends {
+    pub itinerary_modifier: Option<ItineraryTransitionMatrix>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
