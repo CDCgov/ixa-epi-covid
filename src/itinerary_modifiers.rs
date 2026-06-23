@@ -1,11 +1,11 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::any::Any;
 
 use crate::{itinerary_manager::ItineraryModifierTrait, settings::SETTING_COUNT};
 
 const TRANSIENT_STATE_COUNT: usize = SETTING_COUNT * 2;
 
-#[derive(Debug, PartialEq, Clone, Serialize, Copy)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Copy)]
 pub struct ItineraryTransitionMatrix {
     activity_matrix: [[f64; SETTING_COUNT]; SETTING_COUNT],
     location_matrix: [[f64; SETTING_COUNT]; SETTING_COUNT],
