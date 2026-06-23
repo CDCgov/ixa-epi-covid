@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     population_loader::{Person, PersonId},
-    settings::{ItineraryRatios, SETTING_COUNT},
+    settings::{Itinerary, SETTING_COUNT},
 };
 
 use dyn_clone::DynClone;
@@ -159,7 +159,9 @@ impl ContextItineraryModifierExt for Context {
     }
 
     fn get_itinerary(&self, person_id: PersonId) -> [f64; SETTING_COUNT] {
-        let base_itinerary = self.get_property::<Person, ItineraryRatios>(person_id);
+        let base_itinerary = self
+            .get_property::<Person, Itinerary>(person_id)
+            .itinerary_ratios;
         let modifiers = self.get_itinerary_modifiers(person_id);
         let mut layered_modifier: Option<Box<dyn ItineraryModifierTrait>> = None;
         for modifier in modifiers {
@@ -169,9 +171,9 @@ impl ContextItineraryModifierExt for Context {
             });
         }
         if let Some(mut layered_modifier) = layered_modifier {
-            layered_modifier.apply(&base_itinerary.itinerary_ratios)
+            layered_modifier.apply(&base_itinerary)
         } else {
-            base_itinerary.itinerary_ratios
+            base_itinerary
         }
     }
 }
@@ -182,7 +184,7 @@ mod test {
     use crate::Age;
     use crate::itinerary_modifiers::define_itinerary_modifier;
     use crate::parameters::{GlobalParams, Params, SettingProperties};
-    use crate::settings::{ItineraryRatios, SettingCategory};
+    use crate::settings::{Itinerary, SettingCategory};
     use ixa::HashMap;
 
     fn setup() -> Context {
@@ -362,7 +364,8 @@ mod test {
 
         context.set_property(
             p1,
-            ItineraryRatios {
+            Itinerary {
+                setting_ids: [None, None, None, None],
                 itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
             },
         );
@@ -413,7 +416,8 @@ mod test {
         context.register_itinerary_modifier(Age(11), isolation_modifier);
         context.set_property(
             p1,
-            ItineraryRatios {
+            Itinerary {
+                setting_ids: [None, None, None, None],
                 itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
             },
         );

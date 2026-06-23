@@ -185,13 +185,18 @@ pub trait ContextSettingExt:
         person_id: PersonId,
     ) -> Result<SmallVec<[(SettingCode, f64, f64); SETTING_COUNT]>, ModelError> {
         let mut active_settings = SmallVec::<[(SettingCode, f64, f64); SETTING_COUNT]>::new();
-        let itinerary = self.get_property::<Person, Itinerary>(person_id);
+        let setting_ids = self
+            .get_property::<Person, Itinerary>(person_id)
+            .setting_ids;
+        let itinerary_ratios = self.get_itinerary(person_id);
 
         for category in SettingCategory::iter() {
-            if let Some(id) = itinerary.setting_ids[category] {
-                let ratio = itinerary.itinerary_ratios[category];
-                let multiplier = self.calculate_multiplier(id)?;
-                active_settings.push((id, ratio, multiplier));
+            if let Some(id) = setting_ids[category] {
+                let ratio = itinerary_ratios[category];
+                if ratio > 0.0 {
+                    let multiplier = self.calculate_multiplier(id)?;
+                    active_settings.push((id, ratio, multiplier));
+                }
             }
         }
         Ok(active_settings)
@@ -660,7 +665,7 @@ mod test {
     #[test]
     fn test_active_settings_with_itinerary_modifiers() {
         let mut context = setup_test_context(0.0);
-        let person_id = context.add_entity::<Person, _>((Age(20),)).unwrap();
+        let person_id = context.add_entity(with!(Person, Age(20))).unwrap();
         context.add_person_to_settings(
             person_id,
             Some(make_home_id(b"160379602000011")),
