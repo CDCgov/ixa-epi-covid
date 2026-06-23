@@ -757,9 +757,14 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "ixa"
+<<<<<<< HEAD
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28adace56d30d4e3c5a5fb067eb4e58c12b3035646d8aeaba950bc523d4511bf"
+=======
+version = "2.0.0"
+source = "git+https://github.com/CDCgov/ixa?branch=RobertJacobsonCDC_944_triggers#25770a23ef3649ad86e3d5e0d0613d21345b5998"
+>>>>>>> 2f18dea (work in progress)
 dependencies = [
  "approx",
  "bytesize",
@@ -794,8 +799,12 @@ dependencies = [
 [[package]]
 name = "ixa-derive"
 version = "2.0.0"
+<<<<<<< HEAD
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67327babaf3a484300b8b6e85a3f12ddefa48ba076875d5c92b3804aa24131f9"
+=======
+source = "git+https://github.com/CDCgov/ixa?branch=RobertJacobsonCDC_944_triggers#25770a23ef3649ad86e3d5e0d0613d21345b5998"
+>>>>>>> 2f18dea (work in progress)
 dependencies = [
  "quote",
  "syn",
