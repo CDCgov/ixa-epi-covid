@@ -184,7 +184,7 @@ pub trait ContextSettingExt:
     ) -> Result<Vec<(SettingCode, f64, f64)>, ModelError> {
         let mut active_settings = Vec::new();
         let setting_ids = self.get_property::<Person, SettingIds>(person_id);
-        let itinerary_ratios = self.get_modified_itinerary(person_id);
+        let itinerary_ratios = self.get_itinerary(person_id);
 
         for category in SettingCategory::iter() {
             if let Some(id) = setting_ids.setting_ids[category] {
@@ -337,7 +337,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::itinerary_manager::define_itinerary_modifier;
+    use crate::itinerary_modifiers::define_itinerary_modifier;
     use crate::population_loader::{CommunityId, HomeId, SchoolId, WorkId};
     use crate::{
         Age, Params,

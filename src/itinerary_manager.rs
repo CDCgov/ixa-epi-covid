@@ -142,7 +142,7 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
     }
 
     fn get_itinerary_modifiers(&self, person_id: PersonId) -> Vec<Box<dyn ItineraryModifierTrait>>;
-    fn get_modified_itinerary(&self, person_id: PersonId) -> [f64; SETTING_COUNT];
+    fn get_itinerary(&self, person_id: PersonId) -> [f64; SETTING_COUNT];
 }
 impl ContextItineraryModifierExt for Context {
     // This needs to be here to have access to the concrete context type for the get_itinerary trait method
@@ -158,7 +158,7 @@ impl ContextItineraryModifierExt for Context {
         modifiers
     }
 
-    fn get_modified_itinerary(&self, person_id: PersonId) -> [f64; SETTING_COUNT] {
+    fn get_itinerary(&self, person_id: PersonId) -> [f64; SETTING_COUNT] {
         let base_itinerary = self.get_property::<Person, ItineraryRatios>(person_id);
         let modifiers = self.get_itinerary_modifiers(person_id);
         let mut layered_modifier: Option<Box<dyn ItineraryModifierTrait>> = None;
@@ -369,12 +369,12 @@ mod test {
 
         context.register_itinerary_modifier(Age(11), weekend_modifier);
 
-        let modified_itinerary = context.get_modified_itinerary(p1);
+        let modified_itinerary = context.get_itinerary(p1);
         assert_eq!(modified_itinerary, [0.55, 0.0, 0.0, 0.45]);
 
         context.register_itinerary_modifier(Age(11), sip_modifier);
 
-        let modified_itinerary = context.get_modified_itinerary(p1);
+        let modified_itinerary = context.get_itinerary(p1);
         assert_eq!(modified_itinerary, [0.775, 0.0, 0.0, 0.225]);
     }
 
@@ -418,7 +418,7 @@ mod test {
             },
         );
 
-        let modified_itinerary = context.get_modified_itinerary(p1);
+        let modified_itinerary = context.get_itinerary(p1);
         assert_eq!(modified_itinerary, [1.0, 0.0, 0.0, 0.0]);
     }
 }
