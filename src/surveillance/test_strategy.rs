@@ -1,5 +1,6 @@
 use ixa::prelude::*;
 
+use crate::infectiousness_manager::InfectionData;
 use crate::population_loader::PersonId;
 use crate::settings::Person;
 use crate::surveillance::{
@@ -13,6 +14,7 @@ define_rng!(TestStrategyRng);
 pub enum TestStrategy {
     Active(TestStrategyProperties),
     Passive(TestStrategyProperties),
+    Importation(TestStrategyProperties),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -26,11 +28,21 @@ pub struct TestStrategyProperties {
 pub trait ContextTestStrategyExt:
     PluginContext + ContextEntitiesExt + ContextRandomExt + ContextTestExt + ContextPostTestStrategyExt
 {
-    fn determine_if_testing_occurs(&mut self, testing_strategy_properties: TestStrategyProperties) -> bool {
-        self.sample_bool(TestStrategyRng, testing_strategy_properties.testing_adherence)
+    fn determine_if_testing_occurs(
+        &mut self,
+        testing_strategy_properties: TestStrategyProperties,
+    ) -> bool {
+        self.sample_bool(
+            TestStrategyRng,
+            testing_strategy_properties.testing_adherence,
+        )
     }
 
-    fn conduct_test(&mut self, person_id: PersonId, test_strategy_properties: TestStrategyProperties) {
+    fn conduct_test(
+        &mut self,
+        person_id: PersonId,
+        test_strategy_properties: TestStrategyProperties,
+    ) {
         if self.determine_if_testing_occurs(test_strategy_properties) {
             // Simulate testing delay
             let test_type = test_strategy_properties.test_type;
@@ -47,43 +59,61 @@ pub trait ContextTestStrategyExt:
     }
 
     fn implement_test_strategy<P>(&mut self, group: P, test_strategy: TestStrategy)
-    where        
-    P: Property<Person> + std::fmt::Debug,
-    P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+    where
+        P: Property<Person> + std::fmt::Debug,
+        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
     {
         match test_strategy {
             TestStrategy::Active(props) => self.implement_active_strategy(group, props),
             TestStrategy::Passive(props) => self.implement_passive_strategy(group, props),
+            TestStrategy::Importation(props) => self.implement_importation_strategy(props),
         }
     }
 
-    fn implement_active_strategy<P>(&mut self, group: P, test_strategy_properties: TestStrategyProperties)
-    where        
-    P: Property<Person> + std::fmt::Debug,
-    P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
-    {   
+    fn implement_active_strategy<P>(
+        &mut self,
+        group: P,
+        test_strategy_properties: TestStrategyProperties,
+    ) where
+        P: Property<Person> + std::fmt::Debug,
+        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+    {
         let people: Vec<_> = self.query_result_iterator(with!(Person, group)).collect();
         for person_id in people {
             self.conduct_test(person_id, test_strategy_properties);
         }
     }
 
-    fn implement_passive_strategy<P>(&mut self, group: P, test_strategy_properties: TestStrategyProperties)
-    where        
-    P: Property<Person> + std::fmt::Debug,
-    P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+    fn implement_passive_strategy<P>(
+        &mut self,
+        group: P,
+        test_strategy_properties: TestStrategyProperties,
+    ) where
+        P: Property<Person> + std::fmt::Debug,
+        P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
     {
-        self.subscribe_to_event::<PropertyChangeEvent<Person, P>>(
+        self.subscribe_to_event::<PropertyChangeEvent<Person, P>>(move |context, event| {
+            if event.current == group {
+                context.conduct_test(event.entity_id, test_strategy_properties);
+            }
+        });
+    }
+
+    fn implement_importation_strategy(&mut self, test_strategy_properties: TestStrategyProperties) {
+        // individuals who are not infected by someone and the infection occurs at a time other zero uniquely identify them as
+        // being an importation case. We can establish a testing strategy for these individuals directly
+        self.subscribe_to_event::<PropertyChangeEvent<Person, InfectionData>>(
             move |context, event| {
-                if event.current == group {
-                    context.conduct_test(event.entity_id, test_strategy_properties);
+                let InfectionData::Infectious { infected_by, .. } = event.current else {
+                    return;
+                };
+                if let Some(_infected_by) = infected_by {
+                    if context.get_current_time() != 0.0 {
+                        context.conduct_test(event.entity_id, test_strategy_properties);
+                    }
                 }
             },
         );
     }
-
-
 }
 impl ContextTestStrategyExt for Context {}
-
-

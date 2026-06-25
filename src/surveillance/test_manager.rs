@@ -1,6 +1,5 @@
-use ixa::prelude::*;
+use ixa::{ExecutionPhase, HashMap, prelude::*, prelude_for_plugins::IxaEvent};
 use serde::{Deserialize, Serialize};
-use std::hash::Hasher;
 
 use crate::{
     ContextParametersExt,
@@ -10,7 +9,12 @@ use crate::{
 
 define_rng!(TestRng);
 
-define_entity!(Test);
+#[derive(IxaEvent, Copy, Clone, Debug)]
+#[allow(dead_code)]
+pub struct TestEvent {
+    result: bool,
+    person_id: PersonId,
+}
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]
 pub enum TestType {
@@ -18,125 +22,140 @@ pub enum TestType {
     Antigen,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct Sensitivity(pub f64);
-
-impl PartialEq for Sensitivity {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.to_bits() == other.0.to_bits()
-    }
-}
-
-impl Eq for Sensitivity {}
-
-impl std::hash::Hash for Sensitivity {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.to_bits().hash(state);
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]
+#[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub enum TestAvailability {
     Unconstrained,
-    MaxPerDay(usize),
+    MaxPerDay { limit: usize },
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]
-pub struct TestsConductedToday(pub usize);
+#[derive(Default)]
+struct TestData {
+    test_availability: HashMap<TestType, TestAvailability>,
+    test_conducted_per_day: HashMap<TestType, usize>,
+    test_sensitivity: HashMap<TestType, f64>,
+}
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]
-pub struct PositiveTestsConductedToday(pub usize);
+impl TestData {
+    fn get_test_availability(&self, test_type: TestType) -> TestAvailability {
+        *self
+            .test_availability
+            .get(&test_type)
+            .unwrap_or(&TestAvailability::Unconstrained)
+    }
 
-impl_property!(TestType, Test);
-impl_property!(Sensitivity, Test);
-impl_property!(TestAvailability, Test);
-impl_property!(
-    TestsConductedToday,
-    Test,
-    default_const = TestsConductedToday(0)
-);
-impl_property!(
-    PositiveTestsConductedToday,
-    Test,
-    default_const = PositiveTestsConductedToday(0)
-);
+    fn set_test_availability(&mut self, test_type: TestType, availability: TestAvailability) {
+        self.test_availability.insert(test_type, availability);
+    }
+
+    fn get_tests_conducted_per_day(&self, test_type: TestType) -> usize {
+        *self.test_conducted_per_day.get(&test_type).unwrap_or(&0)
+    }
+
+    fn increment_tests_conducted_per_day(&mut self, test_type: TestType) {
+        let count = self.test_conducted_per_day.entry(test_type).or_insert(0);
+        *count += 1;
+    }
+
+    fn get_test_sensitivity(&self, test_type: TestType) -> f64 {
+        *self.test_sensitivity.get(&test_type).unwrap_or(&1.0)
+    }
+
+    fn set_test_sensitivity(&mut self, test_type: TestType, sensitivity: f64) {
+        self.test_sensitivity.insert(test_type, sensitivity);
+    }
+
+    fn reset_daily_counts(&mut self, test_type: TestType) {
+        if let Some(count) = self.test_conducted_per_day.get_mut(&test_type) {
+            *count = 0;
+        }
+    }
+}
+
+define_data_plugin!(TestDataPlugin, TestData, TestData::default());
 
 #[allow(dead_code)]
 pub trait ContextTestExt:
     PluginContext + ContextEntitiesExt + ContextRandomExt + ContextParametersExt
 {
-    fn load_test_entities(&mut self) {
+    fn emit_test_event(&mut self, result: bool, person_id: PersonId) {
+        self.emit_event(TestEvent { result, person_id });
+    }
+
+    fn load_test_data(&mut self) {
         let test_properties = self.get_params().test_properties.clone();
+        let data = self.get_data_mut(TestDataPlugin);
         for test_property in test_properties {
-            let _test_entity = self
-                .add_entity(with!(
-                    Test,
-                    test_property.test_type,
-                    test_property.sensitivity,
-                    test_property.availability
-                ))
-                .unwrap();
+            data.set_test_availability(test_property.test_type, test_property.availability);
+            data.set_test_sensitivity(test_property.test_type, test_property.sensitivity);
         }
     }
 
-    fn check_test_availability(&self, test: TestId) -> bool {
-        let availability = self.get_property::<Test, TestAvailability>(test);
+    fn check_test_availability(&self, test: TestType) -> bool {
+        let test_data = self.get_data(TestDataPlugin);
+        let availability = test_data.get_test_availability(test);
         match availability {
             TestAvailability::Unconstrained => true,
-            TestAvailability::MaxPerDay(max) => {
-                let tests_conducted_today = self.get_property::<Test, TestsConductedToday>(test).0;
-                tests_conducted_today < max
+            TestAvailability::MaxPerDay { limit } => {
+                let tests_conducted_per_day = test_data.get_tests_conducted_per_day(test);
+                tests_conducted_per_day < limit
             }
         }
     }
 
-    fn increment_tests_conducted(&mut self, test: TestId) {
-        let mut tests_conducted_today = self.get_property::<Test, TestsConductedToday>(test).0;
-        tests_conducted_today += 1;
-        self.set_property::<Test, TestsConductedToday>(
-            test,
-            TestsConductedToday(tests_conducted_today),
-        );
-    }
-
-    fn increment_positive_tests_conducted(&mut self, test: TestId) {
-        let mut positive_tests_conducted_today = self
-            .get_property::<Test, PositiveTestsConductedToday>(test)
-            .0;
-        positive_tests_conducted_today += 1;
-        self.set_property::<Test, PositiveTestsConductedToday>(
-            test,
-            PositiveTestsConductedToday(positive_tests_conducted_today),
-        );
+    fn increment_tests_conducted(&mut self, test: TestType) {
+        let data = self.get_data_mut(TestDataPlugin);
+        data.increment_tests_conducted_per_day(test);
     }
 
     fn test(&mut self, test_type: TestType, person_id: PersonId) -> bool {
-        // the strategy type and test type together uniquely identify the test to be conducted, so we can query for the test id using both properties
-        let test_id = self
-            .query_result_iterator(with!(Test, test_type))
-            .next()
-            .unwrap();
         let infectious_status = self.get_property::<Person, InfectionStatus>(person_id);
-        let test_sensitivity = self.get_property::<Test, Sensitivity>(test_id).0;
-        if !self.check_test_availability(test_id) {
+        let test_data = self.get_data(TestDataPlugin);
+        let test_sensitivity = test_data.get_test_sensitivity(test_type);
+        if !self.check_test_availability(test_type) {
             return false;
         }
-        self.increment_tests_conducted(test_id);
+        self.increment_tests_conducted(test_type);
         match infectious_status {
             InfectionStatus::Infectious => {
                 let positive = self.sample_bool(TestRng, test_sensitivity);
-                if positive {
-                    self.increment_positive_tests_conducted(test_id);
-                }
+                self.emit_test_event(positive, person_id);
                 positive
             }
-            _ => false,
+            _ => {
+                self.emit_test_event(false, person_id);
+                false
+            }
+        }
+    }
+
+    fn get_tests_conducted_per_day(&self, test_type: TestType) -> usize {
+        let test_data = self.get_data(TestDataPlugin);
+        test_data.get_tests_conducted_per_day(test_type)
+    }
+
+    fn schedule_daily_reset(&mut self) {
+        let test_types: Vec<_> = self
+            .get_data(TestDataPlugin)
+            .test_availability
+            .keys()
+            .copied()
+            .collect();
+
+        for test_type in test_types {
+            self.add_periodic_plan_with_phase(
+                1.0,
+                move |context: &mut Context| {
+                    context
+                        .get_data_mut(TestDataPlugin)
+                        .reset_daily_counts(test_type);
+                },
+                ExecutionPhase::Last,
+            );
         }
     }
 }
 impl ContextTestExt for Context {}
 
 pub fn init(context: &mut Context) {
-    context.load_test_entities();
-    context.index_property::<Test, TestType>();
+    context.load_test_data();
 }

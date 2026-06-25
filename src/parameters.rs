@@ -6,7 +6,7 @@ use crate::error::ModelError;
 use crate::infection_importation::ImportCasesFromFile;
 use crate::reports::ReportParams;
 use crate::settings::SettingCategory;
-use crate::surveillance::test_manager::{Sensitivity, TestAvailability, TestType};
+use crate::surveillance::test_manager::{TestAvailability, TestType};
 use crate::symptom_status_manager::{SymptomAgeGroup, SymptomDelayDistLogNormParams};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
@@ -29,7 +29,7 @@ pub struct SettingProperties {
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct TestProperties {
     pub test_type: TestType,
-    pub sensitivity: Sensitivity,
+    pub sensitivity: f64,
     pub availability: TestAvailability,
 }
 
@@ -299,7 +299,7 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error 
         test_types_seen.push(test_prop.test_type);
 
         // Check test sensitivity is between 0 and 1
-        if !(0.0..=1.0).contains(&test_prop.sensitivity.0) {
+        if !(0.0..=1.0).contains(&test_prop.sensitivity) {
             return Err(Box::new(ModelError::ModelError(
                 "Test sensitivity must be between 0 and 1, inclusive.".to_string(),
             )));
