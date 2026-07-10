@@ -20,7 +20,7 @@ struct PersonPropertyReport {
 
 define_report!(PersonPropertyReport);
 
-define_multi_property!((Age, InfectionStatus, SymptomStatus), Person);
+define_multi_property!(Person, (Age, InfectionStatus, SymptomStatus));
 
 struct PropertyReportDataContainer {
     report_map_container: HashMap<(Age, InfectionStatus, SymptomStatus), usize>,

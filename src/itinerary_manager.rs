@@ -37,13 +37,12 @@ pub trait ItineraryModifierStorageTrait: std::fmt::Debug + Any {
 type PersonPropertyItineraryModifier<'a, P> = (
     P,
     // Use fully qualified syntax for the associated type because type aliases do not have type checking
-    HashMap<<P as Property<Person>>::CanonicalValue, Vec<Box<dyn ItineraryModifierTrait>>>,
+    HashMap<P, Vec<Box<dyn ItineraryModifierTrait>>>,
 );
 
 impl<P> ItineraryModifierStorageTrait for PersonPropertyItineraryModifier<'static, P>
 where
-    P: Property<Person> + std::fmt::Debug,
-    P::CanonicalValue: std::hash::Hash + Eq + std::fmt::Debug,
+    P: Property<Person> + std::fmt::Debug + std::hash::Hash + Eq,
 {
     fn get_itinerary_modifiers(
         &self,
@@ -53,7 +52,7 @@ where
         let (_person_property, modifier_map) = self;
         let property_val = context.get_property::<Person, P>(person_id);
         modifier_map
-            .get(&property_val.make_canonical())
+            .get(&property_val)
             .map(|v| v.iter().map(|b| dyn_clone::clone_box(b.as_ref())).collect())
     }
 
@@ -80,14 +79,13 @@ define_data_plugin!(
 pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
     /// Register a generic itinerary modifier.
     fn register_itinerary_modifier<
-        P: Property<Person> + std::fmt::Debug + 'static,
+        P: Property<Person> + std::fmt::Debug + std::hash::Hash + Eq + 'static,
         I: ItineraryModifierTrait,
     >(
         &mut self,
         person_property: P,
         itinerary_modifier: I,
-    ) where
-        P::CanonicalValue: std::hash::Hash + Eq,
+    ) 
     {
         if let Some(modifier_map) = self
             .get_data_mut(ItineraryModifierPlugin)
@@ -100,7 +98,7 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
             ) {
                 let (_property, itinerary_modifier_map) = downcast_modifier_map;
                 itinerary_modifier_map
-                    .entry(person_property.make_canonical())
+                    .entry(person_property)
                     .or_insert_with(Vec::new)
                     .push(Box::new(itinerary_modifier));
             }
@@ -108,7 +106,7 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
             let person_property_modifier: PersonPropertyItineraryModifier<P> = (
                 person_property,
                 HashMap::from_iter([(
-                    person_property.make_canonical(),
+                    person_property,
                     Vec::from([Box::new(itinerary_modifier) as Box<dyn ItineraryModifierTrait>]),
                 )]),
             );
@@ -120,11 +118,10 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
         }
     }
 
-    fn remove_itinerary_modifier_by_property<P: Property<Person> + 'static>(
+    fn remove_itinerary_modifier_by_property<P: Property<Person> + std::hash::Hash + Eq +'static>(
         &mut self,
-        property_value: P::CanonicalValue,
-    ) where
-        <P as ixa::prelude::Property<Person>>::CanonicalValue: std::hash::Hash + Eq,
+        property_value: P,
+    )
     {
         let modifier_map = self
             .get_data_mut(ItineraryModifierPlugin)
