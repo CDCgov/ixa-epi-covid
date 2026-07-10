@@ -85,8 +85,7 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
         &mut self,
         person_property: P,
         itinerary_modifier: I,
-    ) 
-    {
+    ) {
         if let Some(modifier_map) = self
             .get_data_mut(ItineraryModifierPlugin)
             .itinerary_modifier_map
@@ -118,11 +117,12 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
         }
     }
 
-    fn remove_itinerary_modifier_by_property<P: Property<Person> + std::hash::Hash + Eq +'static>(
+    fn remove_itinerary_modifier_by_property<
+        P: Property<Person> + std::hash::Hash + Eq + 'static,
+    >(
         &mut self,
         property_value: P,
-    )
-    {
+    ) {
         let modifier_map = self
             .get_data_mut(ItineraryModifierPlugin)
             .itinerary_modifier_map
