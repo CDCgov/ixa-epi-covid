@@ -42,7 +42,7 @@ type PersonPropertyItineraryModifier<'a, P> = (
 
 impl<P> ItineraryModifierStorageTrait for PersonPropertyItineraryModifier<'static, P>
 where
-    P: Property<Person> + std::fmt::Debug + std::hash::Hash + Eq,
+    P: IndexableProperty<Person>,
 {
     fn get_itinerary_modifiers(
         &self,
@@ -78,10 +78,7 @@ define_data_plugin!(
 
 pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
     /// Register a generic itinerary modifier.
-    fn register_itinerary_modifier<
-        P: Property<Person> + std::fmt::Debug + std::hash::Hash + Eq + 'static,
-        I: ItineraryModifierTrait,
-    >(
+    fn register_itinerary_modifier<P: IndexableProperty<Person>, I: ItineraryModifierTrait>(
         &mut self,
         person_property: P,
         itinerary_modifier: I,
@@ -117,9 +114,7 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
         }
     }
 
-    fn remove_itinerary_modifier_by_property<
-        P: Property<Person> + std::hash::Hash + Eq + 'static,
-    >(
+    fn remove_itinerary_modifier_by_property<P: IndexableProperty<Person>>(
         &mut self,
         property_value: P,
     ) {
