@@ -4,7 +4,6 @@ use std::{fmt::Debug, path::PathBuf};
 
 use crate::error::ModelError;
 use crate::infection_importation::ImportCasesFromFile;
-use crate::itinerary_modifiers::ItineraryTransitionMatrix;
 use crate::reports::ReportParams;
 use crate::school_calendar::{SchoolCalendarModifier, SchoolCalendarModifierType};
 use crate::settings::SettingCategory;
@@ -29,7 +28,9 @@ pub struct SettingProperties {
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct Weekends {
-    pub itinerary_modifier: Option<ItineraryTransitionMatrix>,
+    pub delay: Option<f64>,
+    pub prop_school_time_to_home: Option<f64>,
+    pub prop_school_time_to_comm: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -285,7 +286,7 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error 
             "At least one itinerary ratio must be greater than zero.".to_string(),
         )));
     }
-
+    
     let mut unique_school_calendar_modifiers: Vec<SchoolCalendarModifier> = Vec::new();
     for school_calendar_modifier in &parameters.school_calendar {
         let modifier_params = school_calendar_modifier.clone();
