@@ -4,7 +4,6 @@ use std::{fmt::Debug, path::PathBuf};
 
 use crate::error::ModelError;
 use crate::infection_importation::ImportCasesFromFile;
-use crate::itinerary_modifiers::ItineraryTransitionMatrix;
 use crate::reports::ReportParams;
 use crate::settings::SettingCategory;
 use crate::symptom_status_manager::{SymptomAgeGroup, SymptomDelayDistLogNormParams};
@@ -28,7 +27,9 @@ pub struct SettingProperties {
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct Weekends {
-    pub itinerary_modifier: Option<ItineraryTransitionMatrix>,
+    pub delay: Option<f64>,
+    pub prop_school_time_to_home: Option<f64>,
+    pub prop_school_time_to_comm: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -285,6 +286,33 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error 
         )));
     }
 
+    // Validate weekends parameter
+    if let Some(delay) = parameters.weekends.delay
+        && delay <= 0.0
+    {
+        return Err(Box::new(ModelError::ModelError(
+            "The delay for weekends must be greater than zero.".to_string(),
+        )));
+    }
+
+    if let (Some(proportion_home), Some(proportion_community)) = (
+        parameters.weekends.prop_school_time_to_home,
+        parameters.weekends.prop_school_time_to_comm,
+    ) {
+        if proportion_home <= 0.0 || proportion_community <= 0.0 {
+            return Err(Box::new(ModelError::ModelError(
+                "The proportions moved to home and community must be greater than zero."
+                    .to_string(),
+            )));
+        }
+        if (proportion_home + proportion_community - 1.0).abs() > f64::EPSILON {
+            return Err(Box::new(ModelError::ModelError(
+                "The sum of proportions moved to home and community must be equal to one."
+                    .to_string(),
+            )));
+        }
+    }
+
     Ok(())
 }
 
@@ -365,7 +393,9 @@ impl Default for Params {
             settings_properties: HashMap::new(),
             itinerary_ratios: HashMap::new(),
             weekends: Weekends {
-                itinerary_modifier: None,
+                delay: None,
+                prop_school_time_to_home: None,
+                prop_school_time_to_comm: None,
             },
             prevalence_report: ReportParams {
                 write: false,
