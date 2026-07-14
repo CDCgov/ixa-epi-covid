@@ -62,7 +62,7 @@ mod test {
         population_loader::PersonId,
         rate_fns::load_rate_fns,
         reports::ReportParams,
-        settings::{Person, SettingCode},
+        settings::{SettingCode},
     };
     use ixa::{
         Context, ContextEntitiesExt, ContextGlobalPropertiesExt, ContextRandomExt,

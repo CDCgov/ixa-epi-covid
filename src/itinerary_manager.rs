@@ -1,11 +1,9 @@
 use ixa::prelude::*;
-use serde::{Deserialize, Serialize};
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
 };
 
-use crate::{policy::InterventionTrait, settings::SETTING_COUNT};
 use crate::{
     population_loader::{Person, PersonId},
     settings::{Itinerary, SETTING_COUNT},
@@ -26,27 +24,7 @@ impl PartialEq for dyn ItineraryModifierTrait {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Copy)]
-pub struct ItineraryModifier {
-    modifier_activity: ItineraryTransitionMatrix,
-}
-
-impl InterventionTrait for ItineraryModifier {
-    fn activate<P>(&self, context: &mut Context, group_property: P)
-    where
-        P: Property<Person> + std::fmt::Debug + std::hash::Hash + Eq,
-    {
-        context.register_itinerary_modifier(group_property, *self);
-    }
-    fn deactivate<P>(&self, context: &mut Context, group_property: P)
-    where
-        P: Property<Person> + std::fmt::Debug + std::hash::Hash + Eq,
-    {
-        context.remove_itinerary_modifier_by_property::<P>(group_property);
-    }
-}
-
-pub trait ItineraryModifierTrait: std::fmt::Debug + Any {
+pub trait ItineraryModifierStorageTrait: std::fmt::Debug + Any {
     fn get_itinerary_modifiers(
         &self,
         context: &Context,
@@ -55,12 +33,7 @@ pub trait ItineraryModifierTrait: std::fmt::Debug + Any {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
-// this knows what P is and owns a hashmap
-// The trait gives us a type erased interface
-// Try to refactor to a single trait that has the type erased stuff we need to do
-// and a single concrete type
-// Then you can ask type erased questions of the trait interface
-// Can you bake in to the itinerary modifier the person property value.
+
 type PersonPropertyItineraryModifier<'a, P> = (
     P,
     // Use fully qualified syntax for the associated type because type aliases do not have type checking

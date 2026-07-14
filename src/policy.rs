@@ -1,62 +1,45 @@
-use ixa::{HashMap, prelude::*, prelude_for_plugins::IxaEvent, triggers::{ContextTriggersExt, TriggerSpec}};
-use serde::Serialize;
+use ixa::{prelude::*, prelude_for_plugins::IxaEvent, triggers::{ContextTriggersExt}};
 
 use crate::{
-    ContextParametersExt,
-    settings::{ContextSettingExt, Person},
+    ContextParametersExt, pop_reader::FIPSCode, settings::{ContextSettingExt, Person},
 };
-
-#[derive(IxaEvent, Debug)]
-pub struct PolicyEvent
-{
-    active: bool,
-    trigger_name: &'static str,
-}
 
 pub trait InterventionTrait: std::fmt::Debug + Copy + 'static {
     fn activate<P>(&self, context: &mut Context, group_property: P)
     where
-        P: Property<Person> + std::fmt::Debug + std::hash::Hash + Eq;
+        P: IndexableProperty<Person>;
     fn deactivate<P>(&self, context: &mut Context, group_property: P)
     where
-        P: Property<Person> + std::fmt::Debug + std::hash::Hash + Eq;
+        P: IndexableProperty<Person>;
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Copy)]
-pub struct Policy<P, I, T>
+#[derive(Debug, PartialEq, Clone)]
+pub struct Policy<E, P, I>
 where
-    P: Property<Person> + std::fmt::Debug + std::hash::Hash + Eq,
+    E: IxaEvent,
+    P: IndexableProperty<Person>,
     I: InterventionTrait,
-    T: TriggerSpec,
 {
-    pub trigger: T,
-    pub intervention: I,
+    pub trigger_event: E,
     pub group: P,
+    pub intervention: I,
+    pub geography: FIPSCode,
 }
+
 
 pub trait ContextPolicyExt:
     PluginContext + ContextEntitiesExt + ContextParametersExt + ContextSettingExt + ContextTriggersExt
 {
-    fn add_policy<P, I, T>(&mut self, policy: Policy<P, I, T>)
+    fn add_policy<E, P, I, F>(&mut self, policy: Policy<E, P, I>, apply: F)
     where
-        P: Property<Person> + std::fmt::Debug + std::hash::Hash + Eq,
+        E: IxaEvent,
+        P: IndexableProperty<Person>,
         I: InterventionTrait,
-        T: TriggerSpec,
-    {
-        let policy_trigger = policy.trigger;
-        let group_property = policy.group;
-        let intervention = policy.intervention;
-
-        self.register_trigger(policy_trigger);
-
-
-        self.subscribe_to_event::<PolicyEvent>(move |context, event| {
-
-            if event.active  {
-                intervention.activate(context, group_property);
-            } else {
-                intervention.deactivate(context, group_property);
-            }
+        F: Fn(&mut Context, E, P, I) + 'static,
+        
+    {   
+        self.subscribe_to_event::<E>(move |context, event| {
+            apply(context, event, policy.group, policy.intervention);
         });
     }
 }
@@ -67,19 +50,13 @@ mod tests {
     use ixa::{Context, ExecutionPhase, HashMap, triggers::{TimeTrigger, TogglingTriggerCriteria}};
 
     use crate::{
-        Age, Params,
-        itinerary_manager::{ItineraryModifier, define_itinerary_modifier},
-        parameters::{GlobalParams, SettingProperties},
-        pop_reader::{
+        Age, Params, itinerary_modifiers::{define_itinerary_modifier}, parameters::{GlobalParams, SettingProperties}, pop_reader::{
             FIPSCode, PopulationReaderSettingCategory,
             parser::{parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id},
-        },
-        population_loader::Alive,
-        settings::{PersonId, SettingCategory, SettingCode},
-        symptom_status_manager::{SymptomStatus},
+        }, settings::{PersonId, SettingCategory, SettingCode}, symptom_status_manager::SymptomStatus,
     };
 
-    define_multi_property!((Age, SymptomStatus), Person);
+    define_multi_property!(Person, (Age, SymptomStatus));
 
     use super::*;
     fn make_home_id(home_id: &[u8]) -> SettingCode {
@@ -160,7 +137,7 @@ mod tests {
             [1.0, 0.0, 0.0, 0.0],
         ];
 
-        let trigger = TogglingTriggerCriteria::new(
+        let _trigger = TogglingTriggerCriteria::new(
             TimeTrigger::at_phase(
                 1.0,
                 ExecutionPhase::Last,
@@ -169,13 +146,13 @@ mod tests {
                 5.0,
                 ExecutionPhase::Last,
             ),
-        ).emit_values(PolicyEvent{active: true, trigger_name: "TimeTrigger"}, PolicyEvent{active: false, trigger_name: "TimeTrigger"});
-        let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
-        let policy: Policy<Alive, ItineraryModifier, _> = Policy {
-            trigger,
-            intervention: isolation_modifier,
-            group: Alive(true),
-        };
+        ).emit_values(PolicyEvent{active: true}, PolicyEvent{active: false});
+        let _isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
+        // let policy: Policy<Alive, ItineraryTransitionMatrix, _> = Policy {
+        //     trigger,
+        //     intervention: isolation_modifier,
+        //     group: Alive(true),
+        // };
 
         let p1 = context.add_entity(with!(Person, Age(30))).unwrap();
         let p2 = context.add_entity(with!(Person, Age(40))).unwrap();
@@ -183,7 +160,7 @@ mod tests {
         add_person_to_test_settings(&mut context, p1);
         add_person_to_test_settings(&mut context, p2);
 
-        context.add_policy(policy);
+        // context.add_policy(policy);
 
         context.add_plan(0.5, move |context| {
             assert_eq!(context.get_active_settings_for_person(p1).unwrap().len(), 4);

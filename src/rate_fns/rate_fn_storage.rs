@@ -73,7 +73,6 @@ mod test {
     };
 
     use super::*;
-    use crate::population_loader::Person;
     use ixa::assert_almost_eq;
 
     struct TestRateFn;
