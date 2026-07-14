@@ -5,6 +5,7 @@ use std::{fmt::Debug, path::PathBuf};
 use crate::error::ModelError;
 use crate::infection_importation::ImportCasesFromFile;
 use crate::reports::ReportParams;
+use crate::school_closure::SchoolClosuresFromFile;
 use crate::settings::SettingCategory;
 use crate::symptom_status_manager::{SymptomAgeGroup, SymptomDelayDistLogNormParams};
 
@@ -66,6 +67,8 @@ pub struct Params {
     pub critical_to_resolved_delay: SymptomDelayDistLogNormParams,
     /// Setting properties by setting type
     pub settings_properties: HashMap<SettingCategory, SettingProperties>,
+    /// Parameters for virtual school closures
+    pub school_closures: SchoolClosuresFromFile,
     /// ratios used to initialize individuals itineraries by setting type.
     pub itinerary_ratios: HashMap<SettingCategory, f64>,
     /// Prevalence report with a period and name required
@@ -356,6 +359,10 @@ impl Default for Params {
             },
             settings_properties: HashMap::new(),
             itinerary_ratios: HashMap::new(),
+            school_closures: SchoolClosuresFromFile {
+                include: false,
+                filename: None,
+            },
             prevalence_report: ReportParams {
                 write: false,
                 filename: None,

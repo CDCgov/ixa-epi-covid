@@ -69,6 +69,10 @@ impl SettingMembership {
             .map(|members| members.len())
             .unwrap_or(0)
     }
+    
+    pub fn get_all_settings(&self) -> Vec<SettingCode> {
+        self.members.keys().copied().collect()
+    }
 }
 
 define_data_plugin!(SettingMembershipPlugin, SettingMembership, |context| {
@@ -340,6 +344,11 @@ pub trait ContextSettingExt:
         // Register setting membership for this person.
         let membership = self.get_data_mut(SettingMembershipPlugin);
         membership.add_members(&setting_ids, person_id);
+    }
+
+    fn get_all_settings(&self) -> Vec<SettingCode> {
+        let membership = self.get_data(SettingMembershipPlugin);
+        membership.get_all_settings()
     }
 }
 
