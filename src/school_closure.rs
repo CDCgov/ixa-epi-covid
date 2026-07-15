@@ -9,6 +9,12 @@ use crate::{
     ContextParametersExt, Params, error::ModelError, itinerary_manager::ContextItineraryModifierExt, itinerary_modifiers::{ItineraryTransitionMatrix, define_itinerary_modifier}, pop_reader::FIPSCode, population_loader::SchoolId, settings::{ContextSettingExt, Itinerary, Person, SettingCategory, SettingCode},
 };
 
+pub enum Geography {
+    State(StateCode),
+    County(u16, u16),
+    CensusTract(u16, u16, u32),
+}
+
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct SchoolClosureRecord {
     pub geography: FIPSCode,
