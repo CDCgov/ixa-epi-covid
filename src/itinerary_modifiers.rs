@@ -1,6 +1,6 @@
 use ixa::Context;
 use serde::{Deserialize, Serialize};
-use std::any::Any;
+use std::{any::Any, sync::Arc};
 
 use crate::{
     itinerary_manager::ItineraryModifier,
@@ -51,6 +51,15 @@ impl ItineraryModifier for ItineraryTransitionMatrix {
         self.acceptance_function
             .as_ref()
             .is_none_or(|acceptance| acceptance(context, person_id))
+    }
+    fn accept(
+        &self,
+        context: &Context,
+        person_id: PersonId,
+    ) -> bool {
+        self.acceptance_function
+            .as_ref()
+            .map_or(true, |acceptance| acceptance(context, person_id))
     }
 }
 
@@ -108,6 +117,7 @@ impl ItineraryTransitionMatrix {
         &self,
         itinerary_transition_matrix: &ItineraryTransitionMatrix,
     ) -> ItineraryTransitionMatrix {
+
         let mut layered_activity_matrix = [[0.0; SETTING_COUNT]; SETTING_COUNT];
         let mut layered_location_matrix = [[0.0; SETTING_COUNT]; SETTING_COUNT];
 
