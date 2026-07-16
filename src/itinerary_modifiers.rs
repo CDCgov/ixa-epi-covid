@@ -1,15 +1,37 @@
+use ixa::Context;
 use serde::{Deserialize, Serialize};
-use std::any::Any;
+use std::{any::Any, sync::Arc};
 
-use crate::{itinerary_manager::ItineraryModifierTrait, settings::SETTING_COUNT};
+use crate::{itinerary_manager::ItineraryModifierTrait, settings::{PersonId, SETTING_COUNT}};
 
 const TRANSIENT_STATE_COUNT: usize = SETTING_COUNT * 2;
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize, Copy)]
+type AcceptanceFunction = Arc<dyn Fn(&Context, PersonId) -> bool + Send + Sync + 'static>;
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ItineraryTransitionMatrix {
     activity_matrix: [[f64; SETTING_COUNT]; SETTING_COUNT],
     location_matrix: [[f64; SETTING_COUNT]; SETTING_COUNT],
     absorption_probabilities: Option<[[f64; SETTING_COUNT]; TRANSIENT_STATE_COUNT]>,
+    #[serde(skip, default)]
+    acceptance_function: Option<AcceptanceFunction>,
+}
+
+impl std::fmt::Debug for ItineraryTransitionMatrix {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ItineraryTransitionMatrix")
+            .field("activity_matrix", &self.activity_matrix)
+            .field("location_matrix", &self.location_matrix)
+            .field(
+                "absorption_probabilities",
+                &self.absorption_probabilities,
+            )
+            .field(
+                "has_acceptance_function",
+                &self.acceptance_function.is_some(),
+            )
+            .finish()
+    }
 }
 
 impl ItineraryModifierTrait for ItineraryTransitionMatrix {
@@ -25,6 +47,15 @@ impl ItineraryModifierTrait for ItineraryTransitionMatrix {
     }
     fn apply(&mut self, base_itinerary: &[f64; SETTING_COUNT]) -> [f64; SETTING_COUNT] {
         self.apply(base_itinerary)
+    }
+    fn accept(
+        &self,
+        context: &Context,
+        person_id: PersonId,
+    ) -> bool {
+        self.acceptance_function
+            .as_ref()
+            .map_or(true, |acceptance| acceptance(context, person_id))
     }
 }
 
@@ -85,6 +116,7 @@ impl ItineraryTransitionMatrix {
         &self,
         itinerary_transition_matrix: &ItineraryTransitionMatrix,
     ) -> ItineraryTransitionMatrix {
+
         let mut layered_activity_matrix = [[0.0; SETTING_COUNT]; SETTING_COUNT];
         let mut layered_location_matrix = [[0.0; SETTING_COUNT]; SETTING_COUNT];
 
@@ -96,11 +128,14 @@ impl ItineraryTransitionMatrix {
                     self.location_matrix[i][j] + itinerary_transition_matrix.location_matrix[i][j];
             }
         }
-
+        
+        // WARNING: You need to evaluated the acceptance function before they are layered.
+        // If both modifiers have acceptance functions, the layered modifier will not have an acceptance function.
         ItineraryTransitionMatrix {
             activity_matrix: layered_activity_matrix,
             location_matrix: layered_location_matrix,
             absorption_probabilities: None,
+            acceptance_function: None
         }
     }
 
@@ -208,11 +243,13 @@ impl ItineraryTransitionMatrix {
 pub fn define_itinerary_modifier(
     activity_matrix: Option<[[f64; SETTING_COUNT]; SETTING_COUNT]>,
     location_matrix: Option<[[f64; SETTING_COUNT]; SETTING_COUNT]>,
+    acceptance_function: Option<AcceptanceFunction>,
 ) -> ItineraryTransitionMatrix {
     ItineraryTransitionMatrix {
         activity_matrix: activity_matrix.unwrap_or([[0.0; SETTING_COUNT]; SETTING_COUNT]),
         location_matrix: location_matrix.unwrap_or([[0.0; SETTING_COUNT]; SETTING_COUNT]),
         absorption_probabilities: None,
+        acceptance_function
     }
 }
 
@@ -222,7 +259,7 @@ mod tests {
 
     #[test]
     fn test_define_itinerary_modifier_with_none() {
-        let modifier = define_itinerary_modifier(None, None);
+        let modifier = define_itinerary_modifier(None, None, None);
         assert_eq!(
             modifier.activity_matrix,
             [[0.0; SETTING_COUNT]; SETTING_COUNT]
@@ -241,7 +278,7 @@ mod tests {
         activity[0][0] = 0.5;
         location[0][1] = 0.3;
 
-        let modifier = define_itinerary_modifier(Some(activity), Some(location));
+        let modifier = define_itinerary_modifier(Some(activity), Some(location), None);
         assert_eq!(modifier.activity_matrix[0][0], 0.5);
         assert_eq!(modifier.location_matrix[0][1], 0.3);
     }
@@ -257,6 +294,7 @@ mod tests {
             },
             location_matrix: [[0.0; SETTING_COUNT]; SETTING_COUNT],
             absorption_probabilities: None,
+            acceptance_function: None,
         };
 
         matrix.normalize();
@@ -275,6 +313,7 @@ mod tests {
             },
             location_matrix: [[0.0; SETTING_COUNT]; SETTING_COUNT],
             absorption_probabilities: None,
+            acceptance_function: None,
         };
 
         matrix.normalize();
@@ -292,6 +331,7 @@ mod tests {
             },
             location_matrix: [[0.0; SETTING_COUNT]; SETTING_COUNT],
             absorption_probabilities: None,
+            acceptance_function: None,
         };
 
         let matrix2 = ItineraryTransitionMatrix {
@@ -302,6 +342,7 @@ mod tests {
             },
             location_matrix: [[0.0; SETTING_COUNT]; SETTING_COUNT],
             absorption_probabilities: None,
+            acceptance_function: None,
         };
 
         let layered = matrix1.layer(&matrix2);
@@ -319,6 +360,7 @@ mod tests {
             },
             location_matrix: [[0.0; SETTING_COUNT]; SETTING_COUNT],
             absorption_probabilities: None,
+            acceptance_function: None,
         };
 
         let (transient, absorbing) = matrix.build_transient_and_absorbing_matrix();

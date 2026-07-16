@@ -700,7 +700,7 @@ mod test {
             [0.0, 0.0, 0.0, 0.0],
         ];
 
-        let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None);
+        let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None, None);
 
         context.register_itinerary_modifier(Age(20), weekend_modifier);
 

@@ -45,7 +45,7 @@ pub trait ContextCalendarExt:
     ) {
         self.subscribe_to_event(move |context, event: Weekend| {
             if event.active {
-                context.register_itinerary_modifier(GoesToSchool(true), itinerary_modifier);
+                context.register_itinerary_modifier(GoesToSchool(true), itinerary_modifier.clone());
             } else {
                 context.remove_itinerary_modifier_by_property(GoesToSchool(true));
             }
@@ -79,7 +79,7 @@ fn define_weekend_itinerary_modifier(
         [0.0, 0.0, 0.0, 0.0],
     ];
 
-    define_itinerary_modifier(Some(weekend_matrix), None)
+    define_itinerary_modifier(Some(weekend_matrix), None, None)
 }
 
 #[cfg(test)]

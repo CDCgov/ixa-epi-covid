@@ -15,6 +15,7 @@ pub trait ItineraryModifierTrait: std::fmt::Debug + DynClone + 'static {
     fn layer(&mut self, other: Box<dyn ItineraryModifierTrait>) -> Box<dyn ItineraryModifierTrait>;
     fn apply(&mut self, base_itinerary: &[f64; SETTING_COUNT]) -> [f64; SETTING_COUNT];
     fn as_any(&self) -> &dyn Any;
+    fn accept(&self, context: &Context, person_id: PersonId) -> bool;
 }
 
 // This is implemented for testing
@@ -158,7 +159,13 @@ impl ContextItineraryModifierExt for Context {
         let mut layered_modifier: Option<Box<dyn ItineraryModifierTrait>> = None;
         for modifier in modifiers {
             layered_modifier = Some(match layered_modifier {
-                Some(mut existing) => existing.layer(modifier),
+                Some(mut existing) => {
+                    if modifier.accept(self, person_id){
+                        existing.layer(modifier)
+                    } else {
+                        existing
+                    }
+                },
                 None => modifier,
             });
         }
@@ -216,9 +223,9 @@ mod test {
             [0.5, 0.0, 0.0, 0.5],
             [0.0, 0.0, 0.0, 0.0],
         ];
-        let weekend_modifier = define_itinerary_modifier(Some(weekend_transient_matrix), None);
+        let weekend_modifier = define_itinerary_modifier(Some(weekend_transient_matrix), None, None);
 
-        context.register_itinerary_modifier(Age(11), weekend_modifier);
+        context.register_itinerary_modifier(Age(11), weekend_modifier.clone());
         let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
         let p2 = context.add_entity(with!(Person, Age(11))).unwrap();
         let modifiers_p1 = context.get_itinerary_modifiers(p1);
@@ -226,17 +233,17 @@ mod test {
         assert_eq!(modifiers_p1.len(), 0);
         assert_eq!(
             modifiers_p2,
-            vec![Box::new(weekend_modifier) as Box<dyn ItineraryModifierTrait>]
+            vec![Box::new(weekend_modifier.clone()) as Box<dyn ItineraryModifierTrait>]
         );
 
-        context.register_itinerary_modifier(Age(10), weekend_modifier);
+        context.register_itinerary_modifier(Age(10), weekend_modifier.clone());
         assert_eq!(
             context.get_itinerary_modifiers(p1),
-            vec![Box::new(weekend_modifier) as Box<dyn ItineraryModifierTrait>]
+            vec![Box::new(weekend_modifier.clone()) as Box<dyn ItineraryModifierTrait>]
         );
         assert_eq!(
             context.get_itinerary_modifiers(p2),
-            vec![Box::new(weekend_modifier) as Box<dyn ItineraryModifierTrait>]
+            vec![Box::new(weekend_modifier.clone()) as Box<dyn ItineraryModifierTrait>]
         );
     }
 
@@ -251,8 +258,7 @@ mod test {
             [0.0, 0.0, 0.0, 0.0],
         ];
 
-        let weekend_modifier = define_itinerary_modifier(Some(weekend_transient_matrix), None);
-
+        let weekend_modifier = define_itinerary_modifier(Some(weekend_transient_matrix), None, None);
         let school_transient_matrix = [
             [0.0, 0.0, 0.0, 0.0],
             [0.75, 0.0, 0.0, 0.25],
@@ -260,18 +266,17 @@ mod test {
             [0.75, 0.0, 0.0, 0.25],
         ];
 
-        let school_modifier = define_itinerary_modifier(Some(school_transient_matrix), None);
-
-        context.register_itinerary_modifier(Age(11), weekend_modifier);
-        context.register_itinerary_modifier(Age(11), school_modifier);
+        let school_modifier = define_itinerary_modifier(Some(school_transient_matrix), None, None);
+        context.register_itinerary_modifier(Age(11), weekend_modifier.clone());
+        context.register_itinerary_modifier(Age(11), school_modifier.clone());
         let p1 = context.add_entity(with!(Person, Age(11))).unwrap();
         let modifiers = context.get_itinerary_modifiers(p1);
         assert_eq!(modifiers.len(), 2);
         assert!(
-            modifiers.contains(&(Box::new(school_modifier) as Box<dyn ItineraryModifierTrait>))
+            modifiers.contains(&(Box::new(school_modifier.clone()) as Box<dyn ItineraryModifierTrait>))
         );
         assert!(
-            modifiers.contains(&(Box::new(weekend_modifier) as Box<dyn ItineraryModifierTrait>))
+            modifiers.contains(&(Box::new(weekend_modifier.clone()) as Box<dyn ItineraryModifierTrait>))
         );
     }
 
@@ -285,21 +290,21 @@ mod test {
             [0.0, 0.0, 0.0, 0.0],
         ];
 
-        let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None);
-        context.register_itinerary_modifier(Age(10), weekend_modifier);
-        context.register_itinerary_modifier(Age(11), weekend_modifier);
+        let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None, None);
+        context.register_itinerary_modifier(Age(10), weekend_modifier.clone());
+        context.register_itinerary_modifier(Age(11), weekend_modifier.clone());
         let p1 = context.add_entity(with!(Person, Age(11))).unwrap();
         let p2 = context.add_entity(with!(Person, Age(10))).unwrap();
         let modifiers_p1 = context.get_itinerary_modifiers(p1);
         assert_eq!(modifiers_p1.len(), 1);
         assert!(
-            modifiers_p1.contains(&(Box::new(weekend_modifier) as Box<dyn ItineraryModifierTrait>))
+            modifiers_p1.contains(&(Box::new(weekend_modifier.clone()) as Box<dyn ItineraryModifierTrait>))
         );
 
         let modifiers_p2 = context.get_itinerary_modifiers(p2);
         assert_eq!(modifiers_p2.len(), 1);
         assert!(
-            modifiers_p2.contains(&(Box::new(weekend_modifier) as Box<dyn ItineraryModifierTrait>))
+            modifiers_p2.contains(&(Box::new(weekend_modifier.clone()) as Box<dyn ItineraryModifierTrait>))
         );
 
         // This would remove all age based itinerary modifiers that is not ideal.
@@ -334,7 +339,7 @@ mod test {
             [0.0, 0.0, 0.0, 0.0],
         ];
 
-        let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None);
+        let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None, None);
 
         let sip_transient_matrix = [
             [0.0, 0.0, 0.0, 0.0],
@@ -350,7 +355,7 @@ mod test {
             [0.0, 0.0, 0.0, 1.0],
         ];
         let sip_modifier =
-            define_itinerary_modifier(Some(sip_transient_matrix), Some(sip_location_matrix));
+            define_itinerary_modifier(Some(sip_transient_matrix), Some(sip_location_matrix), None);
 
         let p1 = context.add_entity(with!(Person, Age(11))).unwrap();
 
@@ -400,8 +405,8 @@ mod test {
             [1.0, 0.0, 0.0, 0.0],
         ];
 
-        let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None);
-        let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None);
+        let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None, None);
+        let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None, None);
 
         let p1 = context.add_entity(with!(Person, Age(11))).unwrap();
         context.register_itinerary_modifier(Age(11), weekend_modifier);
