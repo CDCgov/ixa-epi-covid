@@ -85,6 +85,20 @@ impl_derived_property!(CommunityId, Person, [Itinerary], [], |itinerary| {
     CommunityId(itinerary.setting_ids[SettingCategory::Community])
 });
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+pub struct Student(pub bool);
+
+impl_derived_property!(Student, Person, [Itinerary], [], |itinerary| {
+    Student(itinerary.setting_ids[SettingCategory::School].is_some())
+});
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+pub struct Worker(pub bool);
+
+impl_derived_property!(Worker, Person, [Itinerary], [], |itinerary| {
+    Worker(itinerary.setting_ids[SettingCategory::Work].is_some())
+});
+
 fn create_person_from_record(
     context: &mut Context,
     person_record: PersonRecord,

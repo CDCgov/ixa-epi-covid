@@ -25,6 +25,12 @@ pub struct SettingProperties {
     pub alpha: f64,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+pub struct Weekends {
+    pub delay: Option<f64>,
+    pub prop_school_time_to_home: Option<f64>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Params {
     /// The random seed for the simulation.
@@ -68,6 +74,8 @@ pub struct Params {
     pub settings_properties: HashMap<SettingCategory, SettingProperties>,
     /// ratios used to initialize individuals itineraries by setting type.
     pub itinerary_ratios: HashMap<SettingCategory, f64>,
+    /// itinerary modifier for weekends
+    pub weekends: Weekends,
     /// Prevalence report with a period and name required
     pub prevalence_report: ReportParams,
     /// Incidence report with a period and name required
@@ -277,6 +285,23 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error 
         )));
     }
 
+    // Validate weekends parameter
+    if let Some(delay) = parameters.weekends.delay
+        && delay <= 0.0
+    {
+        return Err(Box::new(ModelError::ModelError(
+            "The delay for weekends must be greater than zero.".to_string(),
+        )));
+    }
+
+    if let Some(proportion_home) = parameters.weekends.prop_school_time_to_home
+        && !(0.0..=1.0).contains(&proportion_home)
+    {
+        return Err(Box::new(ModelError::ModelError(
+            "The proportion moved to home must be between 0 and 1, inclusive.".to_string(),
+        )));
+    }
+
     Ok(())
 }
 
@@ -356,6 +381,10 @@ impl Default for Params {
             },
             settings_properties: HashMap::new(),
             itinerary_ratios: HashMap::new(),
+            weekends: Weekends {
+                delay: None,
+                prop_school_time_to_home: None,
+            },
             prevalence_report: ReportParams {
                 write: false,
                 filename: None,
