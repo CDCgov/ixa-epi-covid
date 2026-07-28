@@ -69,7 +69,7 @@ impl SettingMembership {
             .map(|members| members.len())
             .unwrap_or(0)
     }
-    
+
     pub fn get_all_settings(&self) -> Vec<SettingCode> {
         self.members.keys().copied().collect()
     }
