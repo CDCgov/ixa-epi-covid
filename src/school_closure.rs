@@ -66,7 +66,7 @@ impl_derived_property!(SchoolCensusTract, Person, [Itinerary], [], |itinerary| {
     EnumDiscriminants,
 )]
 #[strum_discriminants(name(GeographyType))]
-#[strum_discriminants(derive(PartialOrd, Ord, Hash))]
+#[strum_discriminants(derive(PartialOrd, Ord, Hash, Deserialize, Serialize))]
 #[strum_discriminants(derive(IntoStaticStr), repr(u8))]
 pub enum Geography {
     CensusTract(u8, u16, u32),
@@ -96,15 +96,23 @@ impl Ord for Geography {
     }
 }
 
-fn filter_largest_geographies(geographies: Vec<Geography>) -> Vec<Geography> {
-    let Some(max_kind) = geographies.iter().map(|g| g.discriminant() as u8).max() else {
-        return Vec::new();
-    };
+fn filter_largest_nonoverlapping(mut geographies: Vec<Geography>) -> Vec<Geography> {
+    // Stable sorting preserves the input order among equal-sized geographies.
+    geographies.sort_by_key(|geography| std::cmp::Reverse(geography.discriminant() as u8));
 
-    geographies
-        .into_iter()
-        .filter(|g| (g.discriminant() as u8) == max_kind)
-        .collect()
+    let mut selected = Vec::new();
+
+    for geography in geographies {
+        let overlaps_selected = selected
+            .iter()
+            .any(|existing| overlaps(&geography, existing));
+
+        if !overlaps_selected {
+            selected.push(geography);
+        }
+    }
+
+    selected
 }
 
 fn overlaps(a: &Geography, b: &Geography) -> bool {
@@ -130,7 +138,7 @@ fn overlaps(a: &Geography, b: &Geography) -> bool {
     }
 }
 
-fn check_overlap(
+fn filter_overlap(
     new_geography: Geography,
     existing_geographies: &[Geography],
 ) -> Option<Vec<Geography>> {
@@ -149,9 +157,27 @@ fn check_overlap(
 
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct SchoolClosureRecord {
-    pub geography: Geography,
+    pub geography: GeographyType,
+    pub state: Option<u8>,
+    pub county: Option<u16>,
+    pub census_tract: Option<u32>,
     pub start_time: f64,
     pub end_time: f64,
+}
+
+impl SchoolClosureRecord {
+    pub fn to_geography(&self) -> Result<Geography, ModelError> {
+        match (self.state, self.county, self.census_tract) {
+            (Some(state), None, None) => Ok(Geography::State(state)),
+            (Some(state), Some(county), None) => Ok(Geography::County(state, county)),
+            (Some(state), Some(county), Some(tract)) => {
+                Ok(Geography::CensusTract(state, county, tract))
+            }
+            _ => Err(ModelError::ModelError(
+                "Invalid geography configuration in SchoolClosureRecord".to_string(),
+            )),
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -266,7 +292,7 @@ pub trait SchoolClosureContextExt:
         let mut new_overridden: Vec<Geography> = Vec::new();
         {
             let data = self.get_data_mut(SchoolClosureDataPlugin);
-            let overlaps = check_overlap(geography, &data.dominant_school_closures);
+            let overlaps = filter_overlap(geography, &data.dominant_school_closures);
             if let Some(overlapping_geographies) = overlaps {
                 println!(
                     "geography: {:?}, overlapping_geographies: {:?}",
@@ -312,11 +338,11 @@ pub trait SchoolClosureContextExt:
             self.remove_dominant_school_closure(geography);
             let overlapping_geographies = {
                 let data = self.get_data_mut(SchoolClosureDataPlugin);
-                check_overlap(geography, &data.overridden_school_closures)
+                filter_overlap(geography, &data.overridden_school_closures)
             };
 
             if let Some(geographies) = overlapping_geographies {
-                let filtered_geographies = filter_largest_geographies(geographies);
+                let filtered_geographies = filter_largest_nonoverlapping(geographies);
                 for geography in filtered_geographies {
                     self.remove_overridden_school_closure(geography);
                     self.add_dominant_school_closure(geography, itinerary_modifier);
@@ -393,7 +419,7 @@ fn create_school_closure_from_record(
     context.setup_school_closure_triggers(
         school_closure_record.start_time,
         school_closure_record.end_time,
-        school_closure_record.geography,
+        school_closure_record.to_geography()?,
     );
     Ok(())
 }
@@ -513,39 +539,41 @@ mod test {
     }
 
     #[test]
-    fn test_check_overlap() {
+    fn test_filter_overlap() {
         let g1 = Geography::State(1);
         let g2 = Geography::County(1, 2);
         let g3 = Geography::CensusTract(1, 2, 3);
         let g4 = Geography::State(2);
         let existing_geographies = vec![g1, g2, g3, g4];
         assert_eq!(
-            check_overlap(g1, &existing_geographies),
+            filter_overlap(g1, &existing_geographies),
             Some(vec![g1, g2, g3])
         );
         assert_eq!(
-            check_overlap(g2, &existing_geographies),
+            filter_overlap(g2, &existing_geographies),
             Some(vec![g1, g2, g3])
         );
         assert_eq!(
-            check_overlap(g3, &existing_geographies),
+            filter_overlap(g3, &existing_geographies),
             Some(vec![g1, g2, g3])
         );
-        assert_eq!(check_overlap(g4, &existing_geographies), Some(vec![g4]));
+        assert_eq!(filter_overlap(g4, &existing_geographies), Some(vec![g4]));
     }
 
     #[test]
-    fn test_filter_largest_geographies() {
+    fn test_filter_largest_nonoverlapping() {
         let g1 = Geography::State(1);
         let g2 = Geography::County(1, 2);
-        let g3 = Geography::CensusTract(1, 2, 3);
+        let g3 = Geography::CensusTract(3, 2, 3);
         let g4 = Geography::State(2);
-        let geographies = vec![g1, g2, g3, g4];
-        let geographies2 = vec![g2, g3];
-        let filtered = filter_largest_geographies(geographies);
-        assert_eq!(filtered, vec![g1, g4]);
-        let filtered2 = filter_largest_geographies(geographies2);
-        assert_eq!(filtered2, vec![g2]);
+        let g5 = Geography::County(2, 1);
+        let g6 = Geography::CensusTract(2, 2, 3);
+        let geographies = vec![g1, g2, g3, g4, g5, g6];
+        let geographies2 = vec![g5, g6];
+        let filtered = filter_largest_nonoverlapping(geographies);
+        assert_eq!(filtered, vec![g1, g4, g3]);
+        let filtered2 = filter_largest_nonoverlapping(geographies2);
+        assert_eq!(filtered2, vec![g5, g6]);
     }
 
     #[test]
