@@ -54,6 +54,10 @@
                             "School": {"alpha": 0.0},
                             "Community": {"alpha": 0.0}},
         "itinerary_ratios": {"Home": 0.25, "Work": 0.25, "School": 0.25, "Community": 0.25},
+        "school_closures": {
+            "include": true,
+            "filename": "input/results.csv"
+        },
         "prevalence_report": {
             "write": true,
             "filename": "person_property_count.csv",
