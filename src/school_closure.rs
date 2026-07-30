@@ -5,7 +5,7 @@ use crate::{
     error::ModelError,
     itinerary_manager::ContextItineraryModifierExt,
     itinerary_modifiers::{ItineraryTransitionMatrix, define_itinerary_modifier},
-    pop_reader::FIPSCode,
+    pop_reader::{FIPSCode, parser::parse_fips_community_id},
     population_loader::SchoolId,
     settings::{ContextSettingExt, Itinerary, Person, SettingCategory},
 };
@@ -84,11 +84,21 @@ pub trait SchoolClosureContextExt:
     ) {
         self.subscribe_to_event(move |context, event: SchoolClosure| {
             if event.active {
+                println!(
+                    "School closure event triggered for census tract {} at time {}",
+                    event.geography,
+                    context.get_current_time()
+                );
                 context.register_itinerary_modifier(
                     SchoolCensusTract(Some(event.geography)),
                     itinerary_modifier,
                 );
             } else {
+                println!(
+                    "School closure event ended for census tract {} at time {}",
+                    event.geography,
+                    context.get_current_time()
+                );
                 context.remove_itinerary_modifier_by_property(SchoolCensusTract(Some(
                     event.geography,
                 )));
@@ -102,6 +112,10 @@ fn create_school_closure_from_record(
     context: &mut Context,
     school_closure_record: SchoolClosureRecord,
 ) -> Result<(), ModelError> {
+    println!(
+        "Creating school closure from record: {:?}",
+        school_closure_record
+    );
     context.setup_school_closure_triggers(
         school_closure_record.start_time,
         school_closure_record.end_time,
@@ -114,15 +128,56 @@ fn read_school_closures_file(
     context: &mut Context,
     school_closure_file: PathBuf,
 ) -> Result<(), ModelError> {
+    println!(
+        "Reading school closures from file: {}",
+        school_closure_file.display()
+    );
     let mut reader = csv::Reader::from_path(school_closure_file)?;
     let mut raw_record = csv::ByteRecord::new();
-    let headers = reader.byte_headers()?.clone();
-
     while reader.read_byte_record(&mut raw_record)? {
-        let record: SchoolClosureRecord = raw_record.deserialize(Some(&headers))?;
+        let census_tract = raw_record.get(0).ok_or_else(|| {
+            ModelError::ModelError("Missing census tract in school closure record".to_string())
+        })?;
+        let census_tract_code = parse_fips_community_id(census_tract).unwrap().1;
+        println!(
+            "Parsed census tract code: {} from raw value: {:?}",
+            census_tract_code, census_tract
+        );
+        let record: SchoolClosureRecord = parse_school_closure_record(&raw_record)?;
         create_school_closure_from_record(context, record)?;
     }
     Ok(())
+}
+
+fn parse_school_closure_record(
+    record: &csv::ByteRecord,
+) -> Result<SchoolClosureRecord, ModelError> {
+    let census_tract = record.get(0).ok_or_else(|| {
+        ModelError::ModelError("Missing census tract in school closure record".to_string())
+    })?;
+
+    let parse_time = |index, field: &str| {
+        let value = record.get(index).ok_or_else(|| {
+            ModelError::ModelError(format!("Missing {field} in school closure record"))
+        })?;
+
+        std::str::from_utf8(value)
+            .map_err(|e| {
+                ModelError::ModelError(format!(
+                    "Invalid {field} encoding in school closure record: {e}"
+                ))
+            })?
+            .parse::<f64>()
+            .map_err(|e| {
+                ModelError::ModelError(format!("Invalid {field} in school closure record: {e}"))
+            })
+    };
+
+    Ok(SchoolClosureRecord {
+        census_tract: parse_fips_community_id(census_tract).unwrap().1,
+        start_time: parse_time(1, "start time")?,
+        end_time: parse_time(2, "end time")?,
+    })
 }
 
 fn load_school_closures(context: &mut Context) -> Result<(), ModelError> {

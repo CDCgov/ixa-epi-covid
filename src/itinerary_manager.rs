@@ -83,6 +83,11 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
         person_property: P,
         itinerary_modifier: I,
     ) {
+        println!(
+            "Registering itinerary modifier for property {:?} with value {:?}",
+            std::any::type_name::<P>(),
+            person_property
+        );
         if let Some(modifier_map) = self
             .get_data_mut(ItineraryModifierPlugin)
             .itinerary_modifier_map

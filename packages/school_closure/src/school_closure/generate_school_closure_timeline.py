@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-
 STATE_ALIASES = ("state_fips", "STATEFP", "state", "statefp")
 COUNTY_ALIASES = ("county_fips", "COUNTYFP", "county", "countyfp")
 TRACT_ALIASES = (
@@ -109,7 +108,9 @@ def normalize_tract(
     return geoid
 
 
-def build_mapping(records: Iterable[dict[str, object]]) -> tuple[
+def build_mapping(
+    records: Iterable[dict[str, object]],
+) -> tuple[
     dict[str, Tract], dict[str, set[str]], dict[tuple[str, str], set[str]]
 ]:
     by_geoid: dict[str, Tract] = {}
@@ -118,10 +119,12 @@ def build_mapping(records: Iterable[dict[str, object]]) -> tuple[
 
     for row_number, row in enumerate(records, start=1):
         state = normalize_state(
-            value_from(row, STATE_ALIASES, "state FIPS", row_number), row_number
+            value_from(row, STATE_ALIASES, "state FIPS", row_number),
+            row_number,
         )
         county = normalize_county(
-            value_from(row, COUNTY_ALIASES, "county FIPS", row_number), row_number
+            value_from(row, COUNTY_ALIASES, "county FIPS", row_number),
+            row_number,
         )
         tract_raw = value_from(row, TRACT_ALIASES, "census tract", row_number)
         geoid = normalize_tract(tract_raw, state, county, row_number)
@@ -129,9 +132,7 @@ def build_mapping(records: Iterable[dict[str, object]]) -> tuple[
 
         previous = by_geoid.get(geoid)
         if previous is not None and previous != tract:
-            raise InputError(
-                f"conflicting Census data for tract {geoid}"
-            )
+            raise InputError(f"conflicting Census data for tract {geoid}")
         by_geoid[geoid] = tract
         by_state.setdefault(state, set()).add(geoid)
         by_county.setdefault((state, county), set()).add(geoid)
@@ -176,7 +177,9 @@ def parse_time(value: object, field: str, row_number: int) -> float:
     try:
         result = float(clean(value))
     except ValueError as exc:
-        raise InputError(f"row {row_number}: invalid {field} {value!r}") from exc
+        raise InputError(
+            f"row {row_number}: invalid {field} {value!r}"
+        ) from exc
     if not math.isfinite(result):
         raise InputError(f"row {row_number}: {field} must be finite")
     return result
@@ -195,7 +198,8 @@ def transform(closures_path: Path, output_path: Path, year: int) -> int:
         missing = required.difference(reader.fieldnames or ())
         if missing:
             raise InputError(
-                "closure input is missing column(s): " + ", ".join(sorted(missing))
+                "closure input is missing column(s): "
+                + ", ".join(sorted(missing))
             )
         closure_rows = list(reader)
 
