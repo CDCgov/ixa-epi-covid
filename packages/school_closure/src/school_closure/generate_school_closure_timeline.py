@@ -6,6 +6,100 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+import polars as pl
+
+relationship_file = Path("input/school_district_tract_mapping.csv")
+
+
+def impacted_tracts(
+    district: str,
+    separator: str = ",",
+) -> pl.DataFrame:
+    """
+    Return census tracts intersecting an NCES school district.
+
+    Parameters
+    ----------
+    district:
+        Seven-digit NCES LEAID or an exact district name.
+        LEAID is preferred because district names may not be unique.
+
+    separator:
+        File delimiter. Use "," for CSV, "\\t" for tab-delimited,
+        or "|" for pipe-delimited files.
+    """
+    relationships = pl.read_csv(
+        relationship_file,
+        separator=separator,
+        infer_schema=False,  # Preserve identifiers as strings.
+    )
+
+    relationships = relationships.rename(
+        {column: column.upper() for column in relationships.columns}
+    )
+
+    required_columns = {
+        "LEAID",
+        "TRACT",
+    }
+
+    missing_columns = required_columns - set(relationships.columns)
+
+    if missing_columns:
+        raise ValueError(
+            f"Relationship file is missing columns: {sorted(missing_columns)}"
+        )
+
+    # The name field contains the release year, such as NAME_LEA24.
+    name_columns = [
+        column
+        for column in relationships.columns
+        if column.startswith("NAME_LEA")
+    ]
+
+    if len(name_columns) != 1:
+        raise ValueError(
+            "Could not identify a unique NAME_LEAxx column. "
+            f"Found: {name_columns}"
+        )
+
+    name_column = name_columns[0]
+    district_argument = str(district).strip()
+
+    # A numeric argument is interpreted as an NCES LEAID.
+    if district_argument.isdigit():
+        district_id = district_argument.zfill(7)
+
+        matches = relationships.filter(pl.col("LEAID") == district_id)
+    else:
+        matches = relationships.filter(
+            pl.col(name_column).str.strip_chars().str.to_lowercase()
+            == district_argument.lower()
+        )
+
+        candidates = matches.select(
+            "LEAID",
+            name_column,
+        ).unique()
+
+        if candidates.height > 1:
+            raise ValueError(
+                "District name is not unique. Use one of these LEAIDs: "
+                f"{candidates.to_dicts()}"
+            )
+
+    if matches.height == 0:
+        raise LookupError(f"No school district found for {district!r}")
+
+    result = matches.select(
+        pl.col("LEAID").alias("district_id"),
+        pl.col(name_column).alias("district_name"),
+        pl.col("TRACT").alias("tract_geoid"),
+    )
+
+    return result
+
+
 STATE_ALIASES = ("state_fips", "STATEFP", "state", "statefp")
 COUNTY_ALIASES = ("county_fips", "COUNTYFP", "county", "countyfp")
 TRACT_ALIASES = (
@@ -195,6 +289,7 @@ def transform(closures_path: Path, output_path: Path, year: int) -> int:
     with closures_path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         required = {"geography_type", "state_fips", "start_time", "end_time"}
+
         missing = required.difference(reader.fieldnames or ())
         if missing:
             raise InputError(
@@ -213,46 +308,65 @@ def transform(closures_path: Path, output_path: Path, year: int) -> int:
     by_geoid, by_state, by_county = download_mapping(state_fips_codes, year)
 
     for row_number, row in enumerate(closure_rows, start=2):
-        kind = clean(row["geography_type"]).casefold().replace("_", "")
-        state = normalize_state(row["state_fips"], row_number)
-        start = parse_time(row["start_time"], "start_time", row_number)
-        end = parse_time(row["end_time"], "end_time", row_number)
-        if end < start:
-            raise InputError(
-                f"row {row_number}: end_time {end} precedes start_time {start}"
+        kind = clean(row["geography_type"]).casefold()
+        if kind == "school_district":
+            school_district_tracts = impacted_tracts(
+                row.get("school_district_id")
             )
-
-        if kind == "state":
-            geoids = by_state.get(state, set())
-            label = f"state {state}"
-        elif kind == "county":
-            county = normalize_county(row.get("county_fips"), row_number)
-            geoids = by_county.get((state, county), set())
-            label = f"county {state}{county}"
-        elif kind in {"censustract", "tract"}:
-            county = normalize_county(row.get("county_fips"), row_number)
-            tract_raw = optional_value(row, TRACT_ALIASES)
-            geoid = normalize_tract(tract_raw, state, county, row_number)
-            geoids = {geoid} if geoid in by_geoid else set()
-            label = f"tract {geoid}"
+            for tract in school_district_tracts.get_column(
+                "tract_geoid"
+            ).to_list():
+                old = aggregate.get(tract)
+                start = parse_time(row["start_time"], "start_time", row_number)
+                end = parse_time(row["end_time"], "end_time", row_number)
+                if end < start:
+                    raise InputError(
+                        f"row {row_number}: end_time {end} precedes start_time {start}"
+                    )
+                aggregate[tract] = (
+                    start if old is None else min(old[0], start),
+                    end if old is None else max(old[1], end),
+                )
         else:
-            raise InputError(
-                f"row {row_number}: unsupported geography_type "
-                f"{row['geography_type']!r}"
-            )
+            state = normalize_state(row["state_fips"], row_number)
+            start = parse_time(row["start_time"], "start_time", row_number)
+            end = parse_time(row["end_time"], "end_time", row_number)
+            if end < start:
+                raise InputError(
+                    f"row {row_number}: end_time {end} precedes start_time {start}"
+                )
 
-        if not geoids:
-            raise InputError(
-                f"row {row_number}: {label} has no tracts in the "
-                f"{year} Census geography"
-            )
+            if kind == "state":
+                geoids = by_state.get(state, set())
+                label = f"state {state}"
+            elif kind == "county":
+                county = normalize_county(row.get("county_fips"), row_number)
+                geoids = by_county.get((state, county), set())
+                label = f"county {state}{county}"
+            elif kind in {"censustract", "tract"}:
+                county = normalize_county(row.get("county_fips"), row_number)
+                tract_raw = optional_value(row, TRACT_ALIASES)
+                geoid = normalize_tract(tract_raw, state, county, row_number)
+                geoids = {geoid} if geoid in by_geoid else set()
+                label = f"tract {geoid}"
+            else:
+                raise InputError(
+                    f"row {row_number}: unsupported geography_type "
+                    f"{row['geography_type']!r}"
+                )
 
-        for geoid in geoids:
-            old = aggregate.get(geoid)
-            aggregate[geoid] = (
-                start if old is None else min(old[0], start),
-                end if old is None else max(old[1], end),
-            )
+            if not geoids:
+                raise InputError(
+                    f"row {row_number}: {label} has no tracts in the "
+                    f"{year} Census geography"
+                )
+
+            for geoid in geoids:
+                old = aggregate.get(geoid)
+                aggregate[geoid] = (
+                    start if old is None else min(old[0], start),
+                    end if old is None else max(old[1], end),
+                )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8", newline="") as handle:
