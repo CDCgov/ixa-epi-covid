@@ -217,14 +217,123 @@ def plot_districts_per_tract(
 
     return tract_counts, figure, axes
 
+def plot_districts_per_county(
+    lea_county_data: pl.DataFrame,
+    state_fips: str | int,
+    output_path: str | Path | None = None,
+    show: bool = True,
+) -> tuple[pl.DataFrame, plt.Figure, plt.Axes]:
+    """
+    Plot the number of unique school districts intersecting each county
+    within a specified state.
+
+    Parameters
+    ----------
+    lea_county_data:
+        Polars DataFrame from the NCES grfXX_lea_county file. It must
+        contain LEAID and STCOUNTY columns.
+
+    state_fips:
+        State FIPS code, such as "06" or 6 for California.
+
+    output_path:
+        Optional destination for the histogram image.
+
+    show:
+        Whether to display the histogram.
+
+    Returns
+    -------
+    county_counts, figure, axes
+        county_counts contains one row per county and the number of
+        unique school districts intersecting it.
+    """
+    state_fips = str(state_fips).strip().zfill(2)
+
+    if len(state_fips) != 2 or not state_fips.isdigit():
+        raise ValueError(
+            "state_fips must be a one- or two-digit state FIPS code."
+        )
+
+    lea_county_data = lea_county_data.rename(
+        {
+            column: column.upper()
+            for column in lea_county_data.columns
+        }
+    )
+
+    required_columns = {"LEAID", "STCOUNTY"}
+    missing_columns = required_columns - set(lea_county_data.columns)
+
+    if missing_columns:
+        raise ValueError(
+            f"LEA county data is missing columns: "
+            f"{sorted(missing_columns)}"
+        )
+
+    # NCES names this field according to the release year,
+    # such as NAME_COUNTY24 or NAME_COUNTY25.
+    county_name_columns = [
+        column
+        for column in lea_county_data.columns
+        if column.startswith("NAME_COUNTY")
+    ]
+
+    county_counts = lea_county_data.filter(
+        pl.col("LEAID").is_not_null()
+        & pl.col("STCOUNTY").is_not_null()
+        & pl.col("STCOUNTY").str.starts_with(state_fips)
+    ).unique(subset=["STCOUNTY", "LEAID"]).group_by("LEAID").agg(
+        pl.col("STCOUNTY")
+        .n_unique()
+        .alias("county_count")
+    )
+    
+    maximum_count = int(county_counts.get_column("county_count").max())
+    bins = np.arange(0.5, maximum_count + 1.5, 1)
+
+    figure, axes = plt.subplots(figsize=(10, 6))
+
+    axes.hist(
+        county_counts.get_column("county_count").to_numpy(),
+        bins=bins,
+        color="#386CB0",
+        edgecolor="white",
+        linewidth=1,
+    )
+
+    axes.set(
+        title=(
+            "Number of Counties in a school district\n"
+            f"State FIPS: {state_fips}"
+        ),
+        xlabel="Number of counties",
+        ylabel="Number of school districts",
+    )
+
+    axes.set_xticks(range(1, maximum_count + 1))
+    axes.grid(axis="y", alpha=0.25)
+    figure.tight_layout()
+
+    if output_path is not None:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        figure.savefig(output_path, dpi=300, bbox_inches="tight")
+
+    if show:
+        plt.show()
+
+    return county_counts, figure, axes
+
 if __name__ == "__main__":
+    county_file = Path("input/grf25_lea_county.csv")
     lea_data = pl.read_csv(
-        relationship_file,
+        county_file,
         infer_schema=False,
     )   
 
-    tract_counts, figure, axes = plot_districts_per_tract(
-        lea_data=lea_data,
+    county_counts, figure, axes = plot_districts_per_county(
+        lea_county_data=lea_data,
         state_fips="18",
-        output_path="indiana_districts_per_tract.png",
+        output_path="indiana_districts_per_county.png",
     )
