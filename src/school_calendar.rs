@@ -1,58 +1,22 @@
-use ixa::{
-    ExecutionPhase, IxaEvent, impl_derived_property,
-    prelude::*,
-    triggers::{ContextTriggersExt, PeriodicTimeTrigger, TriggerCriterion},
-};
+use ixa::{impl_derived_property, prelude::*};
 use serde::Serialize;
+use std::sync::Arc;
 
 use crate::{
     ContextParametersExt, Params,
     itinerary_manager::ContextItineraryModifierExt,
-    itinerary_modifiers::{ItineraryTransitionMatrix, define_itinerary_modifier},
+    itinerary_modifiers::{
+        AcceptanceFunction, ItineraryTransitionMatrix, define_itinerary_modifier,
+    },
     settings::{Itinerary, Person, SettingCategory},
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct GoesToSchool(pub bool);
+pub struct Student(pub bool);
 
-impl_derived_property!(GoesToSchool, Person, [Itinerary], [], |itinerary| {
-    GoesToSchool(itinerary.setting_ids[SettingCategory::School].is_some())
+impl_derived_property!(Student, Person, [Itinerary], [], |itinerary| {
+    Student(itinerary.setting_ids[SettingCategory::School].is_some())
 });
-
-#[derive(IxaEvent)]
-struct Weekend {
-    active: bool,
-}
-
-pub trait ContextCalendarExt:
-    PluginContext + ContextEntitiesExt + ContextParametersExt + ContextTriggersExt
-{
-    fn setup_weekend_triggers(&mut self, delay: f64) {
-        let weekend_start_trigger = PeriodicTimeTrigger::every(7.0)
-            .with_phase(ExecutionPhase::Last)
-            .start_with_delay(delay)
-            .emit_value(Weekend { active: true });
-        let weekend_end_trigger = PeriodicTimeTrigger::every(7.0)
-            .with_phase(ExecutionPhase::Last)
-            .start_with_delay(delay + 2.0)
-            .emit_value(Weekend { active: false });
-        self.register_trigger(weekend_start_trigger);
-        self.register_trigger(weekend_end_trigger);
-    }
-    fn setup_weekend_itinerary_modification(
-        &mut self,
-        itinerary_modifier: ItineraryTransitionMatrix,
-    ) {
-        self.subscribe_to_event(move |context, event: Weekend| {
-            if event.active {
-                context.register_itinerary_modifier(GoesToSchool(true), itinerary_modifier.clone());
-            } else {
-                context.remove_itinerary_modifier_by_property(GoesToSchool(true));
-            }
-        });
-    }
-}
-impl ContextCalendarExt for Context {}
 
 pub fn init(context: &mut Context) {
     let Params { weekends, .. } = context.get_params().clone();
@@ -61,16 +25,19 @@ pub fn init(context: &mut Context) {
         weekends.prop_school_time_to_home,
         weekends.prop_school_time_to_comm,
     ) {
-        context.setup_weekend_triggers(delay);
-        let weekend_modifier =
-            define_weekend_itinerary_modifier(prop_school_time_to_home, prop_school_time_to_comm);
-        context.setup_weekend_itinerary_modification(weekend_modifier);
+        let weekend_modifier = define_weekend_itinerary_modifier(
+            prop_school_time_to_home,
+            prop_school_time_to_comm,
+            delay,
+        );
+        context.register_itinerary_modifier(Student(true), weekend_modifier);
     }
 }
 
 fn define_weekend_itinerary_modifier(
     prop_school_time_to_home: f64,
     prop_school_time_to_comm: f64,
+    delay: f64,
 ) -> ItineraryTransitionMatrix {
     let weekend_matrix = [
         [0.0, 0.0, 0.0, 0.0],
@@ -78,8 +45,10 @@ fn define_weekend_itinerary_modifier(
         [prop_school_time_to_home, 0.0, 0.0, prop_school_time_to_comm],
         [0.0, 0.0, 0.0, 0.0],
     ];
-
-    define_itinerary_modifier(Some(weekend_matrix), None, None)
+    let acceptance: AcceptanceFunction = Arc::new(move |context, _person| {
+        context.get_current_time() % 7.0 >= delay && context.get_current_time() % 7.0 <= delay + 2.0
+    });
+    define_itinerary_modifier(Some(weekend_matrix), None, Some(acceptance))
 }
 
 #[cfg(test)]
@@ -89,11 +58,11 @@ mod test {
 
     use super::*;
     use crate::Age;
-    use crate::parameters::{GlobalParams, Params, SettingProperties};
+    use crate::parameters::{GlobalParams, Params, SettingProperties, Weekends};
     use crate::pop_reader::parser::parse_fips_school_id;
     use crate::setting_code::SettingCode;
     use crate::settings::SettingCategory;
-    use ixa::HashMap;
+    use ixa::{ExecutionPhase, HashMap};
 
     fn make_school_id(school_id: &[u8]) -> SettingCode {
         SettingCode(parse_fips_school_id(school_id).unwrap().1)
@@ -121,51 +90,28 @@ mod test {
                 (SettingCategory::Work, 0.25),
                 (SettingCategory::Community, 0.25),
             ]),
+            weekends: Weekends {
+                delay: Some(3.0),
+                prop_school_time_to_home: Some(0.5),
+                prop_school_time_to_comm: Some(0.5),
+            },
             ..Default::default()
         };
         context
             .set_global_property_value(GlobalParams, parameters)
             .unwrap();
         crate::settings::init(&mut context).unwrap();
+        crate::school_calendar::init(&mut context);
         context
     }
 
     #[test]
-    fn test_weekend_triggers() {
+    fn test_weekend_conditions() {
         let mut context = setup();
-        let weekend_starts = Rc::new(RefCell::new(0));
-        let weekend_starts_clone: Rc<RefCell<usize>> = Rc::clone(&weekend_starts);
-        let weekend_ends = Rc::new(RefCell::new(0));
-        let weekend_ends_clone: Rc<RefCell<usize>> = Rc::clone(&weekend_ends);
-        context.setup_weekend_triggers(3.0);
-        context.subscribe_to_event(move |cxt, event: Weekend| {
-            if event.active {
-                assert_eq!(cxt.get_current_time() % 7.0, 3.0);
-                *weekend_starts_clone.borrow_mut() += 1;
-            } else {
-                assert_eq!(cxt.get_current_time() % 7.0, 5.0);
-                *weekend_ends_clone.borrow_mut() += 1;
-            }
-        });
-        context.add_plan_with_phase(18.0, ixa::Context::shutdown, ExecutionPhase::Last);
-        context.execute();
-        #[allow(clippy::cast_precision_loss, clippy::cast_lossless)]
-        let observed_weekend_starts = *weekend_starts.borrow();
-        let observed_weekend_ends = *weekend_ends.borrow();
-        // weekend starts on day 3, 10, and 17
-        // weekend ends on day 5, 12, and 19
-        assert_eq!(observed_weekend_starts, 3);
-        assert_eq!(observed_weekend_ends, 2);
-    }
-
-    #[test]
-    fn test_itinerary_modification_registration() {
-        let mut context = setup();
-        let weekend_modifier = define_weekend_itinerary_modifier(0.5, 0.5);
+        let weekend = Rc::new(RefCell::new(0));
+        let weekday = Rc::new(RefCell::new(0));
         let school_code = make_school_id(b"16037960200002");
         let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
-        // context.register_itinerary_modifier(GoesToSchool(true), weekend_modifier);
-        context.setup_weekend_itinerary_modification(weekend_modifier);
         context.set_property(
             p1,
             Itinerary {
@@ -173,25 +119,63 @@ mod test {
                 itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
             },
         );
-        context.add_plan(1.0, move |context| {
-            context.emit_event(Weekend { active: true });
-        });
-        context.add_plan(2.0, move |context| {
-            context.emit_event(Weekend { active: false });
-        });
-
-        context.add_plan(0.0, move |context| {
-            let itinerary = context.get_itinerary(p1);
-            assert_eq!(itinerary, [0.3, 0.0, 0.5, 0.2]);
-        });
-        context.add_plan(1.5, move |context| {
-            let itinerary = context.get_itinerary(p1);
-            assert_eq!(itinerary, [0.55, 0.0, 0.0, 0.45]);
-        });
-        context.add_plan(3.0, move |context| {
-            let itinerary = context.get_itinerary(p1);
-            assert_eq!(itinerary, [0.3, 0.0, 0.5, 0.2]);
-        });
+        for i in 0..20 {
+            let weekend_clone: Rc<RefCell<usize>> = Rc::clone(&weekend);
+            let weekday_clone: Rc<RefCell<usize>> = Rc::clone(&weekday);
+            context.add_plan(i as f64, move |context| {
+                let itinerary = context.get_itinerary(p1);
+                if itinerary == [0.3, 0.0, 0.5, 0.2] {
+                    *weekday_clone.borrow_mut() += 1;
+                } else if itinerary == [0.55, 0.0, 0.0, 0.45] {
+                    *weekend_clone.borrow_mut() += 1;
+                }
+            });
+        }
+        context.add_plan_with_phase(20.0, ixa::Context::shutdown, ExecutionPhase::Last);
         context.execute();
+        #[allow(clippy::cast_precision_loss, clippy::cast_lossless)]
+        let observed_weekend = *weekend.borrow();
+        let observed_weekday = *weekday.borrow();
+        // weekend starts on day 3, 10, and 17
+        // weekend ends on day 5, 12, and 19
+        assert_eq!(observed_weekend, 9);
+        assert_eq!(observed_weekday, 11);
     }
+
+    // #[test]
+    // fn test_itinerary_modification_registration() {
+    //     let mut context = setup();
+    //     let weekend_modifier = define_weekend_itinerary_modifier(0.5, 0.5);
+    //     let school_code = make_school_id(b"16037960200002");
+    //     let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
+    //     // context.register_itinerary_modifier(GoesToSchool(true), weekend_modifier);
+    //     context.setup_weekend_itinerary_modification(weekend_modifier);
+    //     context.set_property(
+    //         p1,
+    //         Itinerary {
+    //             setting_ids: [None, None, Some(school_code), None],
+    //             itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
+    //         },
+    //     );
+    //     context.add_plan(1.0, move |context| {
+    //         context.emit_event(Weekend { active: true });
+    //     });
+    //     context.add_plan(2.0, move |context| {
+    //         context.emit_event(Weekend { active: false });
+    //     });
+
+    //     context.add_plan(0.0, move |context| {
+    //         let itinerary = context.get_itinerary(p1);
+    //         assert_eq!(itinerary, [0.3, 0.0, 0.5, 0.2]);
+    //     });
+    //     context.add_plan(1.5, move |context| {
+    //         let itinerary = context.get_itinerary(p1);
+    //         assert_eq!(itinerary, [0.55, 0.0, 0.0, 0.45]);
+    //     });
+    //     context.add_plan(3.0, move |context| {
+    //         let itinerary = context.get_itinerary(p1);
+    //         assert_eq!(itinerary, [0.3, 0.0, 0.5, 0.2]);
+    //     });
+    //     context.execute();
+    // }
 }

@@ -288,10 +288,10 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error 
 
     // Validate weekends parameter
     if let Some(delay) = parameters.weekends.delay
-        && delay <= 0.0
+        && delay < 0.0
     {
         return Err(Box::new(ModelError::ModelError(
-            "The delay for weekends must be greater than zero.".to_string(),
+            "The delay for weekends must be non-negative.".to_string(),
         )));
     }
 

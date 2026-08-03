@@ -160,13 +160,19 @@ impl ContextItineraryModifierExt for Context {
         for modifier in modifiers {
             layered_modifier = Some(match layered_modifier {
                 Some(mut existing) => {
-                    if modifier.accept(self, person_id){
+                    if modifier.accept(self, person_id) {
                         existing.layer(modifier)
                     } else {
                         existing
                     }
-                },
-                None => modifier,
+                }
+                None => {
+                    if modifier.accept(self, person_id) {
+                        modifier
+                    } else {
+                        continue;
+                    }
+                }
             });
         }
         if let Some(mut layered_modifier) = layered_modifier {
@@ -179,12 +185,14 @@ impl ContextItineraryModifierExt for Context {
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use super::*;
     use crate::Age;
-    use crate::itinerary_modifiers::define_itinerary_modifier;
+    use crate::itinerary_modifiers::{AcceptanceFunction, define_itinerary_modifier};
     use crate::parameters::{GlobalParams, Params, SettingProperties};
     use crate::settings::{Itinerary, SettingCategory};
-    use ixa::HashMap;
+    use ixa::{ExecutionPhase, HashMap};
 
     fn setup() -> Context {
         let mut context = Context::new();
@@ -223,7 +231,8 @@ mod test {
             [0.5, 0.0, 0.0, 0.5],
             [0.0, 0.0, 0.0, 0.0],
         ];
-        let weekend_modifier = define_itinerary_modifier(Some(weekend_transient_matrix), None, None);
+        let weekend_modifier =
+            define_itinerary_modifier(Some(weekend_transient_matrix), None, None);
 
         context.register_itinerary_modifier(Age(11), weekend_modifier.clone());
         let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
@@ -258,7 +267,8 @@ mod test {
             [0.0, 0.0, 0.0, 0.0],
         ];
 
-        let weekend_modifier = define_itinerary_modifier(Some(weekend_transient_matrix), None, None);
+        let weekend_modifier =
+            define_itinerary_modifier(Some(weekend_transient_matrix), None, None);
         let school_transient_matrix = [
             [0.0, 0.0, 0.0, 0.0],
             [0.75, 0.0, 0.0, 0.25],
@@ -273,10 +283,12 @@ mod test {
         let modifiers = context.get_itinerary_modifiers(p1);
         assert_eq!(modifiers.len(), 2);
         assert!(
-            modifiers.contains(&(Box::new(school_modifier.clone()) as Box<dyn ItineraryModifierTrait>))
+            modifiers
+                .contains(&(Box::new(school_modifier.clone()) as Box<dyn ItineraryModifierTrait>))
         );
         assert!(
-            modifiers.contains(&(Box::new(weekend_modifier.clone()) as Box<dyn ItineraryModifierTrait>))
+            modifiers
+                .contains(&(Box::new(weekend_modifier.clone()) as Box<dyn ItineraryModifierTrait>))
         );
     }
 
@@ -298,13 +310,15 @@ mod test {
         let modifiers_p1 = context.get_itinerary_modifiers(p1);
         assert_eq!(modifiers_p1.len(), 1);
         assert!(
-            modifiers_p1.contains(&(Box::new(weekend_modifier.clone()) as Box<dyn ItineraryModifierTrait>))
+            modifiers_p1
+                .contains(&(Box::new(weekend_modifier.clone()) as Box<dyn ItineraryModifierTrait>))
         );
 
         let modifiers_p2 = context.get_itinerary_modifiers(p2);
         assert_eq!(modifiers_p2.len(), 1);
         assert!(
-            modifiers_p2.contains(&(Box::new(weekend_modifier.clone()) as Box<dyn ItineraryModifierTrait>))
+            modifiers_p2
+                .contains(&(Box::new(weekend_modifier.clone()) as Box<dyn ItineraryModifierTrait>))
         );
 
         // This would remove all age based itinerary modifiers that is not ideal.
@@ -421,5 +435,85 @@ mod test {
 
         let modified_itinerary = context.get_itinerary(p1);
         assert_eq!(modified_itinerary, [1.0, 0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn test_single_itinerary_modifier_with_acceptance_function() {
+        let mut context = setup();
+        let modifier_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [0.5, 0.0, 0.0, 0.5],
+            [0.5, 0.0, 0.0, 0.5],
+            [0.0, 0.0, 0.0, 0.0],
+        ];
+        let acceptance: AcceptanceFunction =
+            Arc::new(move |context, _person| context.get_current_time() > 5.0);
+        let modifier = define_itinerary_modifier(Some(modifier_matrix), None, Some(acceptance));
+        context.register_itinerary_modifier(Age(11), modifier);
+        let p1 = context.add_entity(with!(Person, Age(11))).unwrap();
+        context.set_property(
+            p1,
+            Itinerary {
+                setting_ids: [None, None, None, None],
+                itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
+            },
+        );
+
+        assert_eq!(context.get_itinerary(p1), [0.3, 0.0, 0.5, 0.2]);
+        context.add_plan_with_phase(10.0, ixa::Context::shutdown, ExecutionPhase::Last);
+        context.execute();
+        assert_eq!(context.get_itinerary(p1), [0.55, 0.0, 0.0, 0.45]);
+    }
+
+    #[test]
+    fn test_two_itinerary_modifiers_with_acceptance_function() {
+        let mut context = setup();
+        let modifier_one_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+        ];
+        let acceptance: AcceptanceFunction =
+            Arc::new(move |context, _person| context.get_current_time() > 5.0);
+        let modifier_one =
+            define_itinerary_modifier(Some(modifier_one_matrix), None, Some(acceptance));
+        context.register_itinerary_modifier(Age(11), modifier_one);
+
+        let modifier_two_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 0.0, 0.0],
+        ];
+        let acceptance_two: AcceptanceFunction = Arc::new(move |context, _person| {
+            context.get_current_time() < 10.0 && context.get_current_time() > 7.0
+        });
+        let modifier_two =
+            define_itinerary_modifier(Some(modifier_two_matrix), None, Some(acceptance_two));
+        context.register_itinerary_modifier(Age(11), modifier_two);
+
+        let p1 = context.add_entity(with!(Person, Age(11))).unwrap();
+        context.set_property(
+            p1,
+            Itinerary {
+                setting_ids: [None, None, None, None],
+                itinerary_ratios: [0.3, 0.2, 0.4, 0.1],
+            },
+        );
+
+        assert_eq!(context.get_itinerary(p1), [0.3, 0.2, 0.4, 0.1]);
+
+        context.add_plan(6.0, move |context| {
+            assert_eq!(context.get_itinerary(p1), [0.5, 0.0, 0.4, 0.1]);
+        });
+
+        context.add_plan(8.0, move |context| {
+            assert_eq!(context.get_itinerary(p1), [0.5, 0.0, 0.0, 0.5]);
+        });
+
+        context.add_plan_with_phase(20.0, ixa::Context::shutdown, ExecutionPhase::Last);
+        context.execute();
+        assert_eq!(context.get_itinerary(p1), [0.5, 0.0, 0.4, 0.1]);
     }
 }
