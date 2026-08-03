@@ -171,6 +171,8 @@ impl ContextItineraryModifierExt for Context {
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use super::*;
     use crate::Age;
     use crate::itinerary_modifiers::{

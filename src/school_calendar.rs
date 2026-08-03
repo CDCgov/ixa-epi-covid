@@ -151,7 +151,7 @@ mod test {
 
     use super::*;
     use crate::Age;
-    use crate::parameters::{GlobalParams, Params, SettingProperties};
+    use crate::parameters::{GlobalParams, Params, SettingProperties, Weekends};
     use crate::pop_reader::parser::parse_fips_school_id;
     use crate::setting_code::SettingCode;
     use crate::settings::SettingCategory;

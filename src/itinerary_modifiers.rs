@@ -52,15 +52,6 @@ impl ItineraryModifier for ItineraryTransitionMatrix {
             .as_ref()
             .is_none_or(|acceptance| acceptance(context, person_id))
     }
-    fn accept(
-        &self,
-        context: &Context,
-        person_id: PersonId,
-    ) -> bool {
-        self.acceptance_function
-            .as_ref()
-            .map_or(true, |acceptance| acceptance(context, person_id))
-    }
 }
 
 #[allow(dead_code)]
@@ -117,7 +108,6 @@ impl ItineraryTransitionMatrix {
         &self,
         itinerary_transition_matrix: &ItineraryTransitionMatrix,
     ) -> ItineraryTransitionMatrix {
-
         let mut layered_activity_matrix = [[0.0; SETTING_COUNT]; SETTING_COUNT];
         let mut layered_location_matrix = [[0.0; SETTING_COUNT]; SETTING_COUNT];
 
