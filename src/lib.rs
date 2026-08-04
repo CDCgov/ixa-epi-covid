@@ -1,5 +1,6 @@
 pub mod abort_run;
 pub mod error;
+pub mod geography;
 pub mod infection_importation;
 pub mod infection_propagation_loop;
 pub mod infectiousness_manager;
@@ -13,6 +14,7 @@ pub mod population_loader;
 pub mod rate_fns;
 pub mod reports;
 pub mod school_calendar;
+pub mod school_closure;
 mod setting_code;
 pub mod settings;
 pub mod symptom_status_manager;
