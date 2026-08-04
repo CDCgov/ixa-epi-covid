@@ -141,41 +141,4 @@ mod test {
         assert_eq!(observed_weekend, 9);
         assert_eq!(observed_weekday, 11);
     }
-
-    // #[test]
-    // fn test_itinerary_modification_registration() {
-    //     let mut context = setup();
-    //     let weekend_modifier = define_weekend_itinerary_modifier(0.5, 0.5);
-    //     let school_code = make_school_id(b"16037960200002");
-    //     let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
-    //     // context.register_itinerary_modifier(GoesToSchool(true), weekend_modifier);
-    //     context.setup_weekend_itinerary_modification(weekend_modifier);
-    //     context.set_property(
-    //         p1,
-    //         Itinerary {
-    //             setting_ids: [None, None, Some(school_code), None],
-    //             itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
-    //         },
-    //     );
-    //     context.add_plan(1.0, move |context| {
-    //         context.emit_event(Weekend { active: true });
-    //     });
-    //     context.add_plan(2.0, move |context| {
-    //         context.emit_event(Weekend { active: false });
-    //     });
-
-    //     context.add_plan(0.0, move |context| {
-    //         let itinerary = context.get_itinerary(p1);
-    //         assert_eq!(itinerary, [0.3, 0.0, 0.5, 0.2]);
-    //     });
-    //     context.add_plan(1.5, move |context| {
-    //         let itinerary = context.get_itinerary(p1);
-    //         assert_eq!(itinerary, [0.55, 0.0, 0.0, 0.45]);
-    //     });
-    //     context.add_plan(3.0, move |context| {
-    //         let itinerary = context.get_itinerary(p1);
-    //         assert_eq!(itinerary, [0.3, 0.0, 0.5, 0.2]);
-    //     });
-    //     context.execute();
-    // }
 }
