@@ -59,6 +59,10 @@
             "prop_school_time_to_home": 0.5,
             "prop_school_time_to_comm": 0.5
         },
+        "school_closures": {
+            "include": false,
+            "filename": "input/school_closure_test.csv"
+        },
         "prevalence_report": {
             "write": true,
             "filename": "person_property_count.csv",

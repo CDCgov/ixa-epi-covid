@@ -5,6 +5,7 @@ use std::{fmt::Debug, path::PathBuf};
 use crate::error::ModelError;
 use crate::infection_importation::ImportCasesFromFile;
 use crate::reports::ReportParams;
+use crate::school_closure::SchoolClosuresFromFile;
 use crate::settings::SettingCategory;
 use crate::symptom_status_manager::{SymptomAgeGroup, SymptomDelayDistLogNormParams};
 
@@ -77,6 +78,8 @@ pub struct Params {
     pub itinerary_ratios: HashMap<SettingCategory, f64>,
     /// itinerary modifier for weekends
     pub weekends: Weekends,
+    /// School closure parameters
+    pub school_closures: SchoolClosuresFromFile,
     /// Prevalence report with a period and name required
     pub prevalence_report: ReportParams,
     /// Incidence report with a period and name required
@@ -396,6 +399,10 @@ impl Default for Params {
                 delay: None,
                 prop_school_time_to_home: None,
                 prop_school_time_to_comm: None,
+            },
+            school_closures: SchoolClosuresFromFile {
+                include: false,
+                filename: None,
             },
             prevalence_report: ReportParams {
                 write: false,
