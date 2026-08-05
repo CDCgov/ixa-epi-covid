@@ -171,8 +171,6 @@ impl ContextItineraryModifierExt for Context {
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
-
     use super::*;
     use crate::Age;
     use crate::itinerary_modifiers::{
@@ -182,6 +180,7 @@ mod test {
     use crate::parameters::{GlobalParams, Params, SettingProperties};
     use crate::settings::{Itinerary, SettingCategory};
     use ixa::{ExecutionPhase, HashMap};
+    use std::rc::Rc;
 
     fn setup() -> Context {
         let mut context = Context::new();
