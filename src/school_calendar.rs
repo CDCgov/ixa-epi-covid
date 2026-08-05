@@ -1,12 +1,12 @@
 use ixa::{impl_derived_property, prelude::*};
 use serde::Serialize;
-use std::sync::Arc;
+use std::rc::Rc;
 
 use crate::{
     ContextParametersExt, Params,
     itinerary_manager::ContextItineraryModifierExt,
     itinerary_modifiers::{
-        AcceptanceFunction, ItineraryTransitionMatrix, define_itinerary_modifier,
+        AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
     },
     settings::{Itinerary, Person, SettingCategory},
 };
@@ -45,10 +45,10 @@ fn define_weekend_itinerary_modifier(
         [prop_school_time_to_home, 0.0, 0.0, prop_school_time_to_comm],
         [0.0, 0.0, 0.0, 0.0],
     ];
-    let acceptance: AcceptanceFunction = Arc::new(move |context, _person| {
+    let acceptance: AcceptanceFunction = Rc::new(move |context, _person| {
         context.get_current_time() % 7.0 >= delay && context.get_current_time() % 7.0 <= delay + 2.0
     });
-    define_itinerary_modifier(Some(weekend_matrix), None, Some(acceptance))
+    create_itinerary_transition_matrix(Some(weekend_matrix), None, Some(acceptance))
 }
 
 #[cfg(test)]

@@ -185,14 +185,13 @@ impl ContextItineraryModifierExt for Context {
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
-
     use super::*;
     use crate::Age;
-    use crate::itinerary_modifiers::{AcceptanceFunction, define_itinerary_modifier};
+    use crate::itinerary_modifiers::{AcceptanceFunction, create_itinerary_transition_matrix};
     use crate::parameters::{GlobalParams, Params, SettingProperties};
     use crate::settings::{Itinerary, SettingCategory};
     use ixa::{ExecutionPhase, HashMap};
+    use std::rc::Rc;
 
     fn setup() -> Context {
         let mut context = Context::new();
@@ -232,7 +231,7 @@ mod test {
             [0.0, 0.0, 0.0, 0.0],
         ];
         let weekend_modifier =
-            define_itinerary_modifier(Some(weekend_transient_matrix), None, None);
+            create_itinerary_transition_matrix(Some(weekend_transient_matrix), None, None);
 
         context.register_itinerary_modifier(Age(11), weekend_modifier.clone());
         let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
@@ -268,7 +267,7 @@ mod test {
         ];
 
         let weekend_modifier =
-            define_itinerary_modifier(Some(weekend_transient_matrix), None, None);
+            create_itinerary_transition_matrix(Some(weekend_transient_matrix), None, None);
         let school_transient_matrix = [
             [0.0, 0.0, 0.0, 0.0],
             [0.75, 0.0, 0.0, 0.25],
@@ -276,7 +275,8 @@ mod test {
             [0.75, 0.0, 0.0, 0.25],
         ];
 
-        let school_modifier = define_itinerary_modifier(Some(school_transient_matrix), None, None);
+        let school_modifier =
+            create_itinerary_transition_matrix(Some(school_transient_matrix), None, None);
         context.register_itinerary_modifier(Age(11), weekend_modifier.clone());
         context.register_itinerary_modifier(Age(11), school_modifier.clone());
         let p1 = context.add_entity(with!(Person, Age(11))).unwrap();
@@ -302,7 +302,7 @@ mod test {
             [0.0, 0.0, 0.0, 0.0],
         ];
 
-        let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None, None);
+        let weekend_modifier = create_itinerary_transition_matrix(Some(weekend_matrix), None, None);
         context.register_itinerary_modifier(Age(10), weekend_modifier.clone());
         context.register_itinerary_modifier(Age(11), weekend_modifier.clone());
         let p1 = context.add_entity(with!(Person, Age(11))).unwrap();
@@ -353,7 +353,7 @@ mod test {
             [0.0, 0.0, 0.0, 0.0],
         ];
 
-        let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None, None);
+        let weekend_modifier = create_itinerary_transition_matrix(Some(weekend_matrix), None, None);
 
         let sip_transient_matrix = [
             [0.0, 0.0, 0.0, 0.0],
@@ -368,8 +368,11 @@ mod test {
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
         ];
-        let sip_modifier =
-            define_itinerary_modifier(Some(sip_transient_matrix), Some(sip_location_matrix), None);
+        let sip_modifier = create_itinerary_transition_matrix(
+            Some(sip_transient_matrix),
+            Some(sip_location_matrix),
+            None,
+        );
 
         let p1 = context.add_entity(with!(Person, Age(11))).unwrap();
 
@@ -419,8 +422,9 @@ mod test {
             [1.0, 0.0, 0.0, 0.0],
         ];
 
-        let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None, None);
-        let isolation_modifier = define_itinerary_modifier(Some(isolation_matrix), None, None);
+        let weekend_modifier = create_itinerary_transition_matrix(Some(weekend_matrix), None, None);
+        let isolation_modifier =
+            create_itinerary_transition_matrix(Some(isolation_matrix), None, None);
 
         let p1 = context.add_entity(with!(Person, Age(11))).unwrap();
         context.register_itinerary_modifier(Age(11), weekend_modifier);
@@ -447,8 +451,9 @@ mod test {
             [0.0, 0.0, 0.0, 0.0],
         ];
         let acceptance: AcceptanceFunction =
-            Arc::new(move |context, _person| context.get_current_time() > 5.0);
-        let modifier = define_itinerary_modifier(Some(modifier_matrix), None, Some(acceptance));
+            Rc::new(move |context, _person| context.get_current_time() > 5.0);
+        let modifier =
+            create_itinerary_transition_matrix(Some(modifier_matrix), None, Some(acceptance));
         context.register_itinerary_modifier(Age(11), modifier);
         let p1 = context.add_entity(with!(Person, Age(11))).unwrap();
         context.set_property(
@@ -475,9 +480,9 @@ mod test {
             [0.0, 0.0, 0.0, 0.0],
         ];
         let acceptance: AcceptanceFunction =
-            Arc::new(move |context, _person| context.get_current_time() > 5.0);
+            Rc::new(move |context, _person| context.get_current_time() > 5.0);
         let modifier_one =
-            define_itinerary_modifier(Some(modifier_one_matrix), None, Some(acceptance));
+            create_itinerary_transition_matrix(Some(modifier_one_matrix), None, Some(acceptance));
         context.register_itinerary_modifier(Age(11), modifier_one);
 
         let modifier_two_matrix = [
@@ -486,11 +491,14 @@ mod test {
             [0.0, 0.0, 0.0, 1.0],
             [0.0, 0.0, 0.0, 0.0],
         ];
-        let acceptance_two: AcceptanceFunction = Arc::new(move |context, _person| {
+        let acceptance_two: AcceptanceFunction = Rc::new(move |context, _person| {
             context.get_current_time() < 10.0 && context.get_current_time() > 7.0
         });
-        let modifier_two =
-            define_itinerary_modifier(Some(modifier_two_matrix), None, Some(acceptance_two));
+        let modifier_two = create_itinerary_transition_matrix(
+            Some(modifier_two_matrix),
+            None,
+            Some(acceptance_two),
+        );
         context.register_itinerary_modifier(Age(11), modifier_two);
 
         let p1 = context.add_entity(with!(Person, Age(11))).unwrap();

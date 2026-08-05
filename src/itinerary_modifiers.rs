@@ -1,6 +1,6 @@
 use ixa::Context;
 use serde::{Deserialize, Serialize};
-use std::{any::Any, sync::Arc};
+use std::{any::Any, rc::Rc};
 
 use crate::{
     itinerary_manager::ItineraryModifierTrait,
@@ -9,7 +9,7 @@ use crate::{
 
 const TRANSIENT_STATE_COUNT: usize = SETTING_COUNT * 2;
 
-pub type AcceptanceFunction = Arc<dyn Fn(&Context, PersonId) -> bool + Send + Sync + 'static>;
+pub type AcceptanceFunction = Rc<dyn Fn(&Context, PersonId) -> bool>;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ItineraryTransitionMatrix {
@@ -235,7 +235,7 @@ impl ItineraryTransitionMatrix {
     }
 }
 
-pub fn define_itinerary_modifier(
+pub fn create_itinerary_transition_matrix(
     activity_matrix: Option<[[f64; SETTING_COUNT]; SETTING_COUNT]>,
     location_matrix: Option<[[f64; SETTING_COUNT]; SETTING_COUNT]>,
     acceptance_function: Option<AcceptanceFunction>,
@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn test_define_itinerary_modifier_with_none() {
-        let modifier = define_itinerary_modifier(None, None, None);
+        let modifier = create_itinerary_transition_matrix(None, None, None);
         assert_eq!(
             modifier.activity_matrix,
             [[0.0; SETTING_COUNT]; SETTING_COUNT]
@@ -273,7 +273,7 @@ mod tests {
         activity[0][0] = 0.5;
         location[0][1] = 0.3;
 
-        let modifier = define_itinerary_modifier(Some(activity), Some(location), None);
+        let modifier = create_itinerary_transition_matrix(Some(activity), Some(location), None);
         assert_eq!(modifier.activity_matrix[0][0], 0.5);
         assert_eq!(modifier.location_matrix[0][1], 0.3);
     }

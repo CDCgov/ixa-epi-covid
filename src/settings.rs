@@ -353,7 +353,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::itinerary_modifiers::define_itinerary_modifier;
+    use crate::itinerary_modifiers::create_itinerary_transition_matrix;
     use crate::population_loader::{CommunityId, HomeId, SchoolId, WorkId};
     use crate::{
         Age, Params,
@@ -700,7 +700,7 @@ mod test {
             [0.0, 0.0, 0.0, 0.0],
         ];
 
-        let weekend_modifier = define_itinerary_modifier(Some(weekend_matrix), None, None);
+        let weekend_modifier = create_itinerary_transition_matrix(Some(weekend_matrix), None, None);
 
         context.register_itinerary_modifier(Age(20), weekend_modifier);
 
