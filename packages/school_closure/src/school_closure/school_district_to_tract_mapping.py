@@ -196,11 +196,11 @@ def plot_districts_per_tract(
 
     axes.set(
         title=(
-            "School Districts Intersecting Each Census Tract\n"
+            "School Districts Per Census Tract\n"
             f"State FIPS: {state_fips}"
         ),
-        xlabel="Number of school districts",
-        ylabel="Number of census tracts",
+        xlabel="Number of school districts in a census tract",
+        ylabel="Count",
     )
 
     axes.set_xticks(range(1, maximum_count + 1))
@@ -216,6 +216,158 @@ def plot_districts_per_tract(
         plt.show()
 
     return tract_counts, figure, axes
+
+
+def plot_tracts_per_school_district(
+    lea_tract_data: pl.DataFrame,
+    state_fips: str | int,
+    output_path: str | Path | None = None,
+    show: bool = True,
+) -> tuple[pl.DataFrame, plt.Figure, plt.Axes]:
+    """
+    Plot the distribution of census-tract counts per school district.
+
+    Parameters
+    ----------
+    lea_tract_data:
+        Polars DataFrame from the NCES grfXX_lea_tract file.
+        It must contain LEAID and TRACT columns.
+
+    state_fips:
+        State FIPS code, such as "06" or 6 for California.
+
+    output_path:
+        Optional destination for the histogram image.
+
+    show:
+        Whether to display the histogram.
+
+    Returns
+    -------
+    district_counts, figure, axes
+        district_counts contains one row per district and its number
+        of unique intersecting census tracts.
+    """
+    state_fips = str(state_fips).strip().zfill(2)
+
+    if len(state_fips) != 2 or not state_fips.isdigit():
+        raise ValueError(
+            "state_fips must be a one- or two-digit state FIPS code."
+        )
+
+    lea_tract_data = lea_tract_data.rename(
+        {
+            column: column.upper()
+            for column in lea_tract_data.columns
+        }
+    )
+
+    required_columns = {"LEAID", "TRACT"}
+    missing_columns = required_columns - set(lea_tract_data.columns)
+
+    if missing_columns:
+        raise ValueError(
+            f"LEA tract data is missing columns: "
+            f"{sorted(missing_columns)}"
+        )
+
+    # The district-name column varies by release year:
+    # NAME_LEA24, NAME_LEA25, etc.
+    district_name_columns = [
+        column
+        for column in lea_tract_data.columns
+        if column.startswith("NAME_LEA")
+    ]
+
+    aggregations = [
+        pl.col("TRACT")
+        .n_unique()
+        .alias("census_tract_count")
+    ]
+
+    if len(district_name_columns) == 1:
+        district_name_column = district_name_columns[0]
+
+        aggregations.insert(
+            0,
+            pl.col(district_name_column)
+            .drop_nulls()
+            .first()
+            .alias("district_name"),
+        )
+
+    district_counts = (
+        lea_tract_data
+        .filter(
+            pl.col("LEAID").is_not_null()
+            & pl.col("TRACT").is_not_null()
+            # LEAID begins with the district's state FIPS code.
+            & pl.col("LEAID").str.starts_with(state_fips)
+        )
+        .group_by("LEAID")
+        .agg(aggregations)
+        .rename({"LEAID": "district_id"})
+        .sort(
+            "census_tract_count",
+            descending=True,
+        )
+    )
+
+    if district_counts.height == 0:
+        raise ValueError(
+            f"No school-district/tract relationships found for "
+            f"state FIPS {state_fips}."
+        )
+
+    tract_counts = (
+        district_counts
+        .get_column("census_tract_count")
+        .to_numpy()
+    )
+
+    maximum_count = int(tract_counts.max())
+
+    # Use one bin per integer for smaller ranges. For states containing
+    # very large districts, automatic bins produce a more readable plot.
+    if maximum_count <= 30:
+        bins = np.arange(0.5, maximum_count + 1.5, 1)
+    else:
+        bins = "auto"
+
+    figure, axes = plt.subplots(figsize=(10, 6))
+
+    axes.hist(
+        tract_counts,
+        bins=bins,
+        color="#386CB0",
+        edgecolor="white",
+        linewidth=1,
+    )
+
+    axes.set(
+        title=(
+            "Distribution of Census Tracts per School District\n"
+            f"State FIPS: {state_fips}"
+        ),
+        xlabel="Number of census tracts in a school district",
+        ylabel="Count",
+    )
+
+    if maximum_count <= 30:
+        axes.set_xticks(range(1, maximum_count + 1))
+
+    axes.grid(axis="y", alpha=0.25)
+    figure.tight_layout()
+
+    if output_path is not None:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        figure.savefig(output_path, dpi=300, bbox_inches="tight")
+
+    if show:
+        plt.show()
+
+    return district_counts, figure, axes
 
 def plot_districts_per_county(
     lea_county_data: pl.DataFrame,
@@ -326,14 +478,30 @@ def plot_districts_per_county(
     return county_counts, figure, axes
 
 if __name__ == "__main__":
-    county_file = Path("input/grf25_lea_county.csv")
-    lea_data = pl.read_csv(
-        county_file,
-        infer_schema=False,
-    )   
+    # county_file = Path("input/grf25_lea_county.csv")
+    # lea_data = pl.read_csv(
+    #     county_file,
+    #     infer_schema=False,
+    # )   
 
-    county_counts, figure, axes = plot_districts_per_county(
-        lea_county_data=lea_data,
+    # county_counts, figure, axes = plot_districts_per_county(
+    #     lea_county_data=lea_data,
+    #     state_fips="18",
+    #     output_path="indiana_districts_per_county.png",
+    # )
+    lea_tract_data = pl.read_csv(
+        "input/school_district_tract_mapping.csv",
+        infer_schema=False,
+    )
+
+    tract_counts, figure, axes = plot_districts_per_tract(
+            lea_data=lea_tract_data,
+            state_fips="18",
+            output_path="indiana_districts_per_tract.png",
+    )
+
+    district_counts, figure, axes = plot_tracts_per_school_district(
+        lea_tract_data=lea_tract_data,
         state_fips="18",
-        output_path="indiana_districts_per_county.png",
+        output_path="indiana_tracts_per_district.png",
     )
