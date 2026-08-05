@@ -1,14 +1,9 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{path::PathBuf, rc::Rc};
 
 use crate::{
-    ContextParametersExt, Params,
-    error::ModelError,
-    geography::{ContextGeographyExt, Geography, GeographyType, Region, RegionId},
-    itinerary_modifiers::{
-        AcceptanceFunction, ItineraryTransitionMatrix, define_itinerary_modifier,
-    },
-    population_loader::SchoolId,
-    settings::{ContextSettingExt, Itinerary, Person, SettingCategory},
+    ContextParametersExt, Params, error::ModelError, geography::{ContextGeographyExt, Geography, GeographyType, Region, RegionId}, itinerary_modifiers::{
+        AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
+    }, population_loader::SchoolId, settings::{ContextSettingExt, Itinerary, Person, SettingCategory},
 };
 use ixa::{
     ExecutionPhase, IxaEvent, csv, impl_derived_property,
@@ -367,17 +362,17 @@ fn define_virtual_school_closure_itinerary_modifier(region: RegionId) -> Itinera
         [0.0, 0.0, 0.0, 0.0],
     ];
     let acceptance_function: Option<AcceptanceFunction> =
-        Some(Arc::new(move |context, _person| {
+        Some(Rc::new(move |context, _person| {
             context.is_dominant_school_closure(region)
         }));
-    define_itinerary_modifier(None, Some(matrix), acceptance_function)
+    create_itinerary_transition_matrix(None, Some(matrix), acceptance_function)
 }
 
 #[cfg(test)]
 mod test {
-    use std::{cell::RefCell, rc::Rc};
+    use std::cell::RefCell;
 
-    use ixa::HashMap;
+use ixa::HashMap;
 
     use crate::{
         Age,
