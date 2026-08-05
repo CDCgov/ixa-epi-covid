@@ -360,7 +360,7 @@ pub fn init(context: &mut Context) -> Result<(), ModelError> {
 }
 
 fn define_virtual_school_closure_itinerary_modifier(region: RegionId) -> ItineraryTransitionMatrix {
-    let weekend_matrix = [
+    let matrix = [
         [0.0, 0.0, 0.0, 0.0],
         [0.0, 0.0, 0.0, 0.0],
         [1.0, 0.0, 0.0, 0.0],
@@ -370,7 +370,7 @@ fn define_virtual_school_closure_itinerary_modifier(region: RegionId) -> Itinera
         Some(Arc::new(move |context, _person| {
             context.is_dominant_school_closure(region)
         }));
-    define_itinerary_modifier(None, Some(weekend_matrix), acceptance_function)
+    define_itinerary_modifier(None, Some(matrix), acceptance_function)
 }
 
 #[cfg(test)]
