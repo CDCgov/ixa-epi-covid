@@ -20,7 +20,7 @@ struct PersonPropertyReport {
 
 define_report!(PersonPropertyReport);
 
-define_multi_property!((Age, InfectionStatus, SymptomStatus), Person);
+define_multi_property!(Person, (Age, InfectionStatus, SymptomStatus));
 
 struct PropertyReportDataContainer {
     report_map_container: HashMap<(Age, InfectionStatus, SymptomStatus), usize>,
@@ -165,6 +165,7 @@ mod test {
         context.add_plan(infection_time, move |context| {
             context.infect_person(target, Some(source), setting);
         });
+        context.add_plan(3.0, Context::shutdown);
         context.execute();
 
         let Params {
