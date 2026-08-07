@@ -5,6 +5,7 @@ use std::{fmt::Debug, path::PathBuf};
 use crate::error::ModelError;
 use crate::infection_importation::ImportCasesFromFile;
 use crate::reports::ReportParams;
+use crate::school_calendar::{SchoolCalendarModifier, SchoolCalendarModifierType};
 use crate::settings::SettingCategory;
 use crate::symptom_status_manager::{SymptomAgeGroup, SymptomDelayDistLogNormParams};
 
@@ -23,13 +24,6 @@ pub enum RateFnType {
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct SettingProperties {
     pub alpha: f64,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
-pub struct Weekends {
-    pub delay: Option<f64>,
-    pub prop_school_time_to_home: Option<f64>,
-    pub prop_school_time_to_comm: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -76,7 +70,7 @@ pub struct Params {
     /// ratios used to initialize individuals itineraries by setting type.
     pub itinerary_ratios: HashMap<SettingCategory, f64>,
     /// itinerary modifier for weekends
-    pub weekends: Weekends,
+    pub school_calendar: Vec<SchoolCalendarModifier>,
     /// Prevalence report with a period and name required
     pub prevalence_report: ReportParams,
     /// Incidence report with a period and name required
@@ -286,33 +280,34 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error 
         )));
     }
 
-    // Validate weekends parameter
-    if let Some(delay) = parameters.weekends.delay
-        && delay < 0.0
-    {
-        return Err(Box::new(ModelError::ModelError(
-            "The delay for weekends must be non-negative.".to_string(),
-        )));
-    }
-
-    if let (Some(proportion_home), Some(proportion_community)) = (
-        parameters.weekends.prop_school_time_to_home,
-        parameters.weekends.prop_school_time_to_comm,
-    ) {
-        if proportion_home <= 0.0 || proportion_community <= 0.0 {
-            return Err(Box::new(ModelError::ModelError(
-                "The proportions moved to home and community must be greater than zero."
-                    .to_string(),
-            )));
+    let mut unique_school_calendar_modifiers: Vec<SchoolCalendarModifier> = Vec::new();
+    for school_calendar_modifier in &parameters.school_calendar {
+        let modifier_params = school_calendar_modifier.clone();
+        modifier_params.validate()?;
+        for unique_modifier in &unique_school_calendar_modifiers {
+            if school_calendar_modifier == unique_modifier {
+                return Err(Box::new(ModelError::ModelError(
+                    "Duplicate school calendar modifiers are not allowed.".to_string(),
+                )));
+            }
+            if school_calendar_modifier.modifier == SchoolCalendarModifierType::Weekend
+                && unique_modifier.modifier == SchoolCalendarModifierType::Weekend
+            {
+                return Err(Box::new(ModelError::ModelError(
+                    "Only one weekend modifier is allowed.".to_string(),
+                )));
+            }
+            if school_calendar_modifier.modifier != SchoolCalendarModifierType::Weekend
+                && modifier_params.end_time.is_none()
+            {
+                return Err(Box::new(ModelError::ModelError(
+                    "end_time must be specified for non-weekend school calendar modifiers"
+                        .to_string(),
+                )));
+            }
         }
-        if (proportion_home + proportion_community - 1.0).abs() > f64::EPSILON {
-            return Err(Box::new(ModelError::ModelError(
-                "The sum of proportions moved to home and community must be equal to one."
-                    .to_string(),
-            )));
-        }
+        unique_school_calendar_modifiers.push(school_calendar_modifier.clone());
     }
-
     Ok(())
 }
 
@@ -392,11 +387,7 @@ impl Default for Params {
             },
             settings_properties: HashMap::new(),
             itinerary_ratios: HashMap::new(),
-            weekends: Weekends {
-                delay: None,
-                prop_school_time_to_home: None,
-                prop_school_time_to_comm: None,
-            },
+            school_calendar: Vec::new(),
             prevalence_report: ReportParams {
                 write: false,
                 filename: None,

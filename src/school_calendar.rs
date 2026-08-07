@@ -1,15 +1,16 @@
-use ixa::{impl_derived_property, prelude::*};
-use serde::Serialize;
-use std::rc::Rc;
+use std::{hash::Hash, rc::Rc};
 
 use crate::{
     ContextParametersExt, Params,
+    error::ModelError,
     itinerary_manager::ContextItineraryModifierExt,
     itinerary_modifiers::{
         AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
     },
     settings::{Itinerary, Person, SettingCategory},
 };
+use ixa::{impl_derived_property, prelude::*};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
 pub struct Student(pub bool);
@@ -18,37 +19,131 @@ impl_derived_property!(Student, Person, [Itinerary], [], |itinerary| {
     Student(itinerary.setting_ids[SettingCategory::School].is_some())
 });
 
-pub fn init(context: &mut Context) {
-    let Params { weekends, .. } = context.get_params().clone();
-    if let (Some(delay), Some(prop_school_time_to_home), Some(prop_school_time_to_comm)) = (
-        weekends.delay,
-        weekends.prop_school_time_to_home,
-        weekends.prop_school_time_to_comm,
-    ) {
-        let weekend_modifier = define_weekend_itinerary_modifier(
-            prop_school_time_to_home,
-            prop_school_time_to_comm,
-            delay,
-        );
-        context.register_itinerary_modifier(Student(true), weekend_modifier);
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum SchoolCalendarModifierType {
+    Weekend,
+    SummerBreak,
+    HolidayBreak,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SchoolCalendarModifier {
+    pub modifier: SchoolCalendarModifierType,
+    pub start_time: f64,
+    pub prop_school_time_to_home: f64,
+    pub prop_school_time_to_comm: f64,
+    pub end_time: Option<f64>,
+}
+
+impl SchoolCalendarModifier {
+    pub fn validate(&self) -> Result<(), ModelError> {
+        if self.start_time < 0.0 {
+            return Err(ModelError::ModelError(
+                "start_time must be >= 0.0".to_string(),
+            ));
+        }
+        if let Some(end_time) = self.end_time
+            && end_time < self.start_time
+        {
+            return Err(ModelError::ModelError(
+                "end_time must be >= start_time".to_string(),
+            ));
+        }
+        if self.prop_school_time_to_home < 0.0 || self.prop_school_time_to_home > 1.0 {
+            return Err(ModelError::ModelError(
+                "prop_school_time_to_home must be in [0.0, 1.0]".to_string(),
+            ));
+        }
+        if self.prop_school_time_to_comm < 0.0 || self.prop_school_time_to_comm > 1.0 {
+            return Err(ModelError::ModelError(
+                "prop_school_time_to_comm must be in [0.0, 1.0]".to_string(),
+            ));
+        }
+        if self.prop_school_time_to_home + self.prop_school_time_to_comm > 1.0 {
+            return Err(ModelError::ModelError(
+                "prop_school_time_to_home + prop_school_time_to_comm must be <= 1.0".to_string(),
+            ));
+        }
+        Ok(())
     }
 }
 
-fn define_weekend_itinerary_modifier(
-    prop_school_time_to_home: f64,
-    prop_school_time_to_comm: f64,
-    delay: f64,
-) -> ItineraryTransitionMatrix {
-    let weekend_matrix = [
+impl PartialEq for SchoolCalendarModifier {
+    fn eq(&self, other: &Self) -> bool {
+        self.start_time.to_bits() == other.start_time.to_bits()
+            && self.prop_school_time_to_home.to_bits() == other.prop_school_time_to_home.to_bits()
+            && self.prop_school_time_to_comm.to_bits() == other.prop_school_time_to_comm.to_bits()
+            && match (self.end_time, other.end_time) {
+                (Some(a), Some(b)) => a.to_bits() == b.to_bits(),
+                (None, None) => true,
+                _ => false,
+            }
+            && self.modifier == other.modifier
+    }
+}
+
+impl Eq for SchoolCalendarModifier {}
+
+pub fn init(context: &mut Context) {
+    let Params {
+        school_calendar, ..
+    } = context.get_params().clone();
+    for modifier in school_calendar {
+        let itinerary_modifier = define_school_calendar_itinerary_modifier(&modifier).unwrap();
+        context.register_itinerary_modifier(Student(true), itinerary_modifier);
+    }
+}
+
+fn define_school_calendar_itinerary_modifier(
+    school_calendar_modifier: &SchoolCalendarModifier,
+) -> Result<ItineraryTransitionMatrix, ModelError> {
+    let params = school_calendar_modifier.clone();
+    let matrix = [
         [0.0, 0.0, 0.0, 0.0],
         [0.0, 0.0, 0.0, 0.0],
-        [prop_school_time_to_home, 0.0, 0.0, prop_school_time_to_comm],
+        [
+            params.prop_school_time_to_home,
+            0.0,
+            0.0,
+            params.prop_school_time_to_comm,
+        ],
         [0.0, 0.0, 0.0, 0.0],
     ];
-    let acceptance: AcceptanceFunction = Rc::new(move |context, _person| {
-        context.get_current_time() % 7.0 >= delay && context.get_current_time() % 7.0 <= delay + 2.0
-    });
-    create_itinerary_transition_matrix(Some(weekend_matrix), None, Some(acceptance))
+
+    match params.modifier {
+        SchoolCalendarModifierType::Weekend => {
+            let start_time = params.start_time;
+            let acceptance: AcceptanceFunction = Rc::new(move |context, _person_id| {
+                context.get_current_time() % 7.0 >= start_time
+                    && context.get_current_time() % 7.0 <= start_time + 2.0
+            });
+            Ok(create_itinerary_transition_matrix(
+                Some(matrix),
+                None,
+                Some(acceptance),
+            ))
+        }
+        _ => {
+            let start_time = params.start_time;
+            let end_time = params.end_time;
+            if let Some(end_time) = end_time {
+                let acceptance: AcceptanceFunction = Rc::new(move |context, _person_id| {
+                    context.get_current_time() >= start_time
+                        && context.get_current_time() <= end_time
+                });
+                Ok(create_itinerary_transition_matrix(
+                    Some(matrix),
+                    None,
+                    Some(acceptance),
+                ))
+            } else {
+                Err(ModelError::ModelError(
+                    "end_time must be specified for non-weekend school calendar modifiers"
+                        .to_string(),
+                ))
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -58,7 +153,7 @@ mod test {
 
     use super::*;
     use crate::Age;
-    use crate::parameters::{GlobalParams, Params, SettingProperties, Weekends};
+    use crate::parameters::{GlobalParams, Params, SettingProperties};
     use crate::pop_reader::parser::parse_fips_school_id;
     use crate::setting_code::SettingCode;
     use crate::settings::SettingCategory;
@@ -68,7 +163,7 @@ mod test {
         SettingCode(parse_fips_school_id(school_id).unwrap().1)
     }
 
-    fn setup() -> Context {
+    fn setup(school_calendar_modifier: Vec<SchoolCalendarModifier>) -> Context {
         let mut context = Context::new();
         let parameters = Params {
             // We need to specify an itinerary split here even though we don't draw people from
@@ -90,11 +185,7 @@ mod test {
                 (SettingCategory::Work, 0.25),
                 (SettingCategory::Community, 0.25),
             ]),
-            weekends: Weekends {
-                delay: Some(3.0),
-                prop_school_time_to_home: Some(0.5),
-                prop_school_time_to_comm: Some(0.5),
-            },
+            school_calendar: school_calendar_modifier.clone(),
             ..Default::default()
         };
         context
@@ -105,9 +196,17 @@ mod test {
         context
     }
 
+
+
     #[test]
     fn test_weekend_conditions() {
-        let mut context = setup();
+        let mut context = setup(vec![SchoolCalendarModifier {
+            modifier: SchoolCalendarModifierType::Weekend,
+            start_time: 3.0,
+            prop_school_time_to_home: 0.5,
+            prop_school_time_to_comm: 0.5,
+            end_time: None,
+        }]);
         let weekend = Rc::new(RefCell::new(0));
         let weekday = Rc::new(RefCell::new(0));
         let school_code = make_school_id(b"16037960200002");
@@ -140,5 +239,110 @@ mod test {
         // weekend ends on day 5, 12, and 19
         assert_eq!(observed_weekend, 9);
         assert_eq!(observed_weekday, 11);
+    }
+
+    #[test]
+    fn test_non_weekend_conditions() {
+        let mut context = setup(vec![SchoolCalendarModifier {
+            modifier: SchoolCalendarModifierType::SummerBreak,
+            start_time: 3.0,
+            prop_school_time_to_home: 0.5,
+            prop_school_time_to_comm: 0.5,
+            end_time: Some(5.0),
+        }]);
+        let summer_break = Rc::new(RefCell::new(0));
+        let school_days = Rc::new(RefCell::new(0));
+        let school_code = make_school_id(b"16037960200002");
+        let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
+        context.set_property(
+            p1,
+            Itinerary {
+                setting_ids: [None, None, Some(school_code), None],
+                itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
+            },
+        );
+        for i in 0..20 {
+            let summer_break_clone: Rc<RefCell<usize>> = Rc::clone(&summer_break);
+            let school_days_clone: Rc<RefCell<usize>> = Rc::clone(&school_days);
+            context.add_plan(i as f64, move |context| {
+                let itinerary = context.get_itinerary(p1);
+                if itinerary == [0.3, 0.0, 0.5, 0.2] {
+                    *school_days_clone.borrow_mut() += 1;
+                } else if itinerary == [0.55, 0.0, 0.0, 0.45] {
+                    *summer_break_clone.borrow_mut() += 1;
+                }
+            });
+        }
+        context.add_plan_with_phase(20.0, ixa::Context::shutdown, ExecutionPhase::Last);
+        context.execute();
+        #[allow(clippy::cast_precision_loss, clippy::cast_lossless)]
+        let observed_summer_break = *summer_break.borrow();
+        let observed_school_days = *school_days.borrow();
+        // summer break starts on day 3 and ends on day 5
+        assert_eq!(observed_summer_break, 3);
+        assert_eq!(observed_school_days, 17);
+    }
+
+    #[test]
+    fn test_school_calendar_modifier_validation() {
+        // Test valid modifier
+        let valid_modifier = SchoolCalendarModifier {
+            modifier: SchoolCalendarModifierType::Weekend,
+            start_time: 1.0,
+            prop_school_time_to_home: 0.5,
+            prop_school_time_to_comm: 0.3,
+            end_time: Some(2.0),
+        };
+        assert!(valid_modifier.validate().is_ok());
+
+        // Test negative start_time
+        let neg_start = SchoolCalendarModifier {
+            modifier: SchoolCalendarModifierType::Weekend,
+            start_time: -1.0,
+            prop_school_time_to_home: 0.5,
+            prop_school_time_to_comm: 0.3,
+            end_time: None,
+        };
+        assert!(neg_start.validate().is_err());
+
+        // Test end_time < start_time
+        let invalid_end = SchoolCalendarModifier {
+            modifier: SchoolCalendarModifierType::SummerBreak,
+            start_time: 5.0,
+            prop_school_time_to_home: 0.5,
+            prop_school_time_to_comm: 0.3,
+            end_time: Some(2.0),
+        };
+        assert!(invalid_end.validate().is_err());
+
+        // Test prop_school_time_to_home > 1.0
+        let high_home = SchoolCalendarModifier {
+            modifier: SchoolCalendarModifierType::HolidayBreak,
+            start_time: 1.0,
+            prop_school_time_to_home: 1.5,
+            prop_school_time_to_comm: 0.3,
+            end_time: None,
+        };
+        assert!(high_home.validate().is_err());
+
+        // Test prop_school_time_to_comm < 0.0
+        let neg_comm = SchoolCalendarModifier {
+            modifier: SchoolCalendarModifierType::Weekend,
+            start_time: 1.0,
+            prop_school_time_to_home: 0.5,
+            prop_school_time_to_comm: -0.1,
+            end_time: None,
+        };
+        assert!(neg_comm.validate().is_err());
+
+        // Test sum of proportions > 1.0
+        let sum_too_high = SchoolCalendarModifier {
+            modifier: SchoolCalendarModifierType::SummerBreak,
+            start_time: 1.0,
+            prop_school_time_to_home: 0.7,
+            prop_school_time_to_comm: 0.5,
+            end_time: None,
+        };
+        assert!(sum_too_high.validate().is_err());
     }
 }
