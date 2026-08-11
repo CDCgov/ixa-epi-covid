@@ -113,7 +113,7 @@ fn define_school_calendar_itinerary_modifier(
             let start_time = params.start_time;
             let acceptance: AcceptanceFunction = Box::new(move |context, _person_id| {
                 context.get_current_time() % 7.0 >= start_time
-                    && context.get_current_time() % 7.0 <= start_time + 2.0
+                    && context.get_current_time() % 7.0 < start_time + 2.0
             });
             Ok(create_itinerary_transition_matrix(
                 Some(matrix),
@@ -127,7 +127,7 @@ fn define_school_calendar_itinerary_modifier(
             if let Some(end_time) = end_time {
                 let acceptance: AcceptanceFunction = Box::new(move |context, _person_id| {
                     context.get_current_time() >= start_time
-                        && context.get_current_time() <= end_time
+                        && context.get_current_time() < end_time
                 });
                 Ok(create_itinerary_transition_matrix(
                     Some(matrix),
@@ -232,9 +232,9 @@ mod test {
         let observed_weekend = *weekend.borrow();
         let observed_weekday = *weekday.borrow();
         // weekend starts on day 3, 10, and 17
-        // weekend ends on day 5, 12, and 19
-        assert_eq!(observed_weekend, 9);
-        assert_eq!(observed_weekday, 11);
+        // weekend ends on day 4, 11, and 18
+        assert_eq!(observed_weekend, 6);
+        assert_eq!(observed_weekday, 14);
     }
 
     #[test]
@@ -274,9 +274,9 @@ mod test {
         #[allow(clippy::cast_precision_loss, clippy::cast_lossless)]
         let observed_summer_break = *summer_break.borrow();
         let observed_school_days = *school_days.borrow();
-        // summer break starts on day 3 and ends on day 5
-        assert_eq!(observed_summer_break, 3);
-        assert_eq!(observed_school_days, 17);
+        // summer break starts on day 3 and ends on day 4
+        assert_eq!(observed_summer_break, 2);
+        assert_eq!(observed_school_days, 18);
     }
 
     #[test]

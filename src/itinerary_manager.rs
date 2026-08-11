@@ -35,25 +35,24 @@ pub trait ItineraryModifierStorage: std::fmt::Debug + Any {
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
-type PersonPropertyItineraryModifier<'a, P> = (
-    P,
+#[derive(Debug)]
+struct PersonPropertyItineraryModifier<P> {
     // Use fully qualified syntax for the associated type because type aliases do not have type checking
-    HashMap<P, Vec<Box<dyn ItineraryModifier>>>,
-);
+    itinerary_modifier_map: HashMap<P, Vec<Box<dyn ItineraryModifier>>>,
+}
 
-impl<P> ItineraryModifierStorage for PersonPropertyItineraryModifier<'static, P>
+impl<P> ItineraryModifierStorage for PersonPropertyItineraryModifier<P>
 where
     P: IndexableProperty<Person>,
 {
-    fn get_itinerary_modifiers<'a>(
-        &'a self,
+    fn get_itinerary_modifiers(
+        &self,
         context: &Context,
         person_id: PersonId,
-    ) -> Option<Vec<&'a dyn ItineraryModifier>> {
-        let (_person_property, modifier_map) = self;
+    ) -> Option<Vec<&dyn ItineraryModifier>> {
         let property_val = context.get_property::<Person, P>(person_id);
 
-        modifier_map
+        self.itinerary_modifier_map
             .get(&property_val)
             .map(|modifiers| modifiers.iter().map(Box::as_ref).collect())
     }
@@ -94,20 +93,22 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
                 .as_any_mut()
                 .downcast_mut::<PersonPropertyItineraryModifier<P>>(
             ) {
-                let (_property, itinerary_modifier_map) = downcast_modifier_map;
-                itinerary_modifier_map
+                let downcast_modifier_map: &mut PersonPropertyItineraryModifier<P> =
+                    downcast_modifier_map;
+                downcast_modifier_map
+                    .itinerary_modifier_map
                     .entry(person_property)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(Box::new(itinerary_modifier));
             }
         } else {
-            let person_property_modifier: PersonPropertyItineraryModifier<P> = (
-                person_property,
-                HashMap::from_iter([(
-                    person_property,
-                    Vec::from([Box::new(itinerary_modifier) as Box<dyn ItineraryModifier>]),
-                )]),
-            );
+            let person_property_modifier: PersonPropertyItineraryModifier<P> =
+                PersonPropertyItineraryModifier {
+                    itinerary_modifier_map: HashMap::from_iter([(
+                        person_property,
+                        Vec::from([Box::new(itinerary_modifier) as Box<dyn ItineraryModifier>]),
+                    )]),
+                };
             // Insert the boxed modifier into the itinerary modifier map
             let _ = self
                 .get_data_mut(ItineraryModifierPlugin)
@@ -130,7 +131,7 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
                 .downcast_mut::<PersonPropertyItineraryModifier<P>>(
             )
         {
-            let (_property, itinerary_modifier_map) = downcast_property_modifier_map;
+            let itinerary_modifier_map = &mut downcast_property_modifier_map.itinerary_modifier_map;
             itinerary_modifier_map.remove(&property_value);
         }
     }
