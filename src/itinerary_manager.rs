@@ -9,28 +9,28 @@ use crate::{
     settings::{Itinerary, SETTING_COUNT},
 };
 
-use dyn_clone::DynClone;
-
-pub trait ItineraryModifierTrait: std::fmt::Debug + DynClone + 'static {
-    fn layer(&mut self, other: Box<dyn ItineraryModifierTrait>) -> Box<dyn ItineraryModifierTrait>;
-    fn apply(&mut self, base_itinerary: &[f64; SETTING_COUNT]) -> [f64; SETTING_COUNT];
+pub trait ItineraryModifier: std::fmt::Debug + 'static {
+    fn layer(&self, other: &dyn ItineraryModifier) -> Box<dyn ItineraryModifier>;
+    fn apply(&self, base_itinerary: &[f64; SETTING_COUNT]) -> [f64; SETTING_COUNT];
     fn as_any(&self) -> &dyn Any;
-    fn accept(&self, context: &Context, person_id: PersonId) -> bool;
+    fn accept(&self, _context: &Context, _person_id: PersonId) -> bool {
+        true
+    }
 }
 
 // This is implemented for testing
-impl PartialEq for dyn ItineraryModifierTrait {
+impl PartialEq for dyn ItineraryModifier {
     fn eq(&self, other: &Self) -> bool {
         self.as_any().type_id() == other.as_any().type_id()
     }
 }
 
-pub trait ItineraryModifierStorageTrait: std::fmt::Debug + Any {
-    fn get_itinerary_modifiers(
-        &self,
+pub trait ItineraryModifierStorage: std::fmt::Debug + Any {
+    fn get_itinerary_modifiers<'a>(
+        &'a self,
         context: &Context,
         person_id: PersonId,
-    ) -> Option<Vec<Box<dyn ItineraryModifierTrait>>>;
+    ) -> Option<Vec<&'a dyn ItineraryModifier>>;
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
@@ -38,23 +38,24 @@ pub trait ItineraryModifierStorageTrait: std::fmt::Debug + Any {
 type PersonPropertyItineraryModifier<'a, P> = (
     P,
     // Use fully qualified syntax for the associated type because type aliases do not have type checking
-    HashMap<P, Vec<Box<dyn ItineraryModifierTrait>>>,
+    HashMap<P, Vec<Box<dyn ItineraryModifier>>>,
 );
 
-impl<P> ItineraryModifierStorageTrait for PersonPropertyItineraryModifier<'static, P>
+impl<P> ItineraryModifierStorage for PersonPropertyItineraryModifier<'static, P>
 where
     P: IndexableProperty<Person>,
 {
-    fn get_itinerary_modifiers(
-        &self,
+    fn get_itinerary_modifiers<'a>(
+        &'a self,
         context: &Context,
         person_id: PersonId,
-    ) -> Option<Vec<Box<dyn ItineraryModifierTrait>>> {
+    ) -> Option<Vec<&'a dyn ItineraryModifier>> {
         let (_person_property, modifier_map) = self;
         let property_val = context.get_property::<Person, P>(person_id);
+
         modifier_map
             .get(&property_val)
-            .map(|v| v.iter().map(|b| dyn_clone::clone_box(b.as_ref())).collect())
+            .map(|modifiers| modifiers.iter().map(Box::as_ref).collect())
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -68,7 +69,7 @@ where
 
 #[derive(Default)]
 struct ItineraryModifierContainer {
-    itinerary_modifier_map: HashMap<TypeId, Box<dyn ItineraryModifierStorageTrait>>,
+    itinerary_modifier_map: HashMap<TypeId, Box<dyn ItineraryModifierStorage>>,
 }
 
 define_data_plugin!(
@@ -79,7 +80,7 @@ define_data_plugin!(
 
 pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
     /// Register a generic itinerary modifier.
-    fn register_itinerary_modifier<P: IndexableProperty<Person>, I: ItineraryModifierTrait>(
+    fn register_itinerary_modifier<P: IndexableProperty<Person>, I: ItineraryModifier>(
         &mut self,
         person_property: P,
         itinerary_modifier: I,
@@ -104,7 +105,7 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
                 person_property,
                 HashMap::from_iter([(
                     person_property,
-                    Vec::from([Box::new(itinerary_modifier) as Box<dyn ItineraryModifierTrait>]),
+                    Vec::from([Box::new(itinerary_modifier) as Box<dyn ItineraryModifier>]),
                 )]),
             );
             // Insert the boxed modifier into the itinerary modifier map
@@ -134,50 +135,57 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
         }
     }
 
-    fn get_itinerary_modifiers(&self, person_id: PersonId) -> Vec<Box<dyn ItineraryModifierTrait>>;
+    fn get_itinerary_modifiers(&self, person_id: PersonId) -> Vec<&dyn ItineraryModifier>;
     fn get_itinerary(&self, person_id: PersonId) -> [f64; SETTING_COUNT];
 }
 impl ContextItineraryModifierExt for Context {
     // This needs to be here to have access to the concrete context type for the get_itinerary trait method
-    fn get_itinerary_modifiers(&self, person_id: PersonId) -> Vec<Box<dyn ItineraryModifierTrait>> {
-        let itinerary_modifier_container = self.get_data(ItineraryModifierPlugin);
-        let mut modifiers: Vec<Box<dyn ItineraryModifierTrait>> = Vec::new();
-        for modifier in itinerary_modifier_container.itinerary_modifier_map.values() {
-            let itinerary_modifier_vec = modifier.get_itinerary_modifiers(self, person_id);
-            if let Some(itinerary_modifier_vec) = itinerary_modifier_vec {
-                modifiers.extend(itinerary_modifier_vec);
-            }
-        }
-        modifiers
+    fn get_itinerary_modifiers(&self, person_id: PersonId) -> Vec<&dyn ItineraryModifier> {
+        let container = self.get_data(ItineraryModifierPlugin);
+
+        container
+            .itinerary_modifier_map
+            .values()
+            .filter_map(|modifier_map| modifier_map.get_itinerary_modifiers(self, person_id))
+            .flatten()
+            .collect()
     }
 
     fn get_itinerary(&self, person_id: PersonId) -> [f64; SETTING_COUNT] {
         let base_itinerary = self
             .get_property::<Person, Itinerary>(person_id)
             .itinerary_ratios;
+
         let modifiers = self.get_itinerary_modifiers(person_id);
-        let mut layered_modifier: Option<Box<dyn ItineraryModifierTrait>> = None;
+
+        let mut first_modifier: Option<&dyn ItineraryModifier> = None;
+        let mut layered_modifier: Option<Box<dyn ItineraryModifier>> = None;
         for modifier in modifiers {
-            layered_modifier = Some(match layered_modifier {
-                Some(mut existing) => {
-                    if modifier.accept(self, person_id) {
-                        existing.layer(modifier)
-                    } else {
-                        existing
-                    }
-                }
-                None => {
-                    if modifier.accept(self, person_id) {
-                        modifier
-                    } else {
-                        continue;
-                    }
-                }
-            });
+            if !modifier.accept(self, person_id) {
+                continue;
+            }
+
+            if let Some(existing) = layered_modifier.take() {
+                // A layered, owned modifier already exists.
+                layered_modifier = Some(existing.layer(modifier));
+            } else if let Some(first) = first_modifier.take() {
+                // This is the second accepted modifier, so create the
+                // first owned layered result.
+                layered_modifier = Some(first.layer(modifier));
+            } else {
+                // Keep the first accepted modifier borrowed.
+                first_modifier = Some(modifier);
+            }
         }
-        if let Some(mut layered_modifier) = layered_modifier {
-            layered_modifier.apply(&base_itinerary)
+
+        if let Some(layered) = layered_modifier {
+            // Two or more accepted modifiers.
+            layered.apply(&base_itinerary)
+        } else if let Some(modifier) = first_modifier {
+            // Exactly one accepted modifier.
+            modifier.apply(&base_itinerary)
         } else {
+            // No accepted modifiers.
             base_itinerary
         }
     }
@@ -187,11 +195,13 @@ impl ContextItineraryModifierExt for Context {
 mod test {
     use super::*;
     use crate::Age;
-    use crate::itinerary_modifiers::{AcceptanceFunction, create_itinerary_transition_matrix};
+    use crate::itinerary_modifiers::{
+        AcceptanceFunction, ItineraryTransitionMatrix, assert_same_matrix,
+        create_itinerary_transition_matrix,
+    };
     use crate::parameters::{GlobalParams, Params, SettingProperties};
     use crate::settings::{Itinerary, SettingCategory};
     use ixa::{ExecutionPhase, HashMap};
-    use std::rc::Rc;
 
     fn setup() -> Context {
         let mut context = Context::new();
@@ -221,74 +231,109 @@ mod test {
         context
     }
 
+    fn cast_modifier(modifiers: Vec<&dyn ItineraryModifier>) -> Vec<&ItineraryTransitionMatrix> {
+        modifiers
+            .into_iter()
+            .map(|modifier| {
+                modifier
+                    .as_any()
+                    .downcast_ref::<ItineraryTransitionMatrix>()
+                    .expect("expected an ItineraryTransitionMatrix")
+            })
+            .collect()
+    }
+
     #[test]
     fn test_itinerary_modifier_registration() {
         let mut context = setup();
-        let weekend_transient_matrix = [
+        let weekend_matrix = [
             [0.0, 0.0, 0.0, 0.0],
             [0.5, 0.0, 0.0, 0.5],
             [0.5, 0.0, 0.0, 0.5],
             [0.0, 0.0, 0.0, 0.0],
         ];
-        let weekend_modifier =
-            create_itinerary_transition_matrix(Some(weekend_transient_matrix), None, None);
 
-        context.register_itinerary_modifier(Age(11), weekend_modifier.clone());
+        let make_weekend_modifier =
+            || create_itinerary_transition_matrix(Some(weekend_matrix), None, None);
+
+        let expected_weekend_modifier = make_weekend_modifier();
+
+        context.register_itinerary_modifier(Age(11), make_weekend_modifier());
+
         let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
         let p2 = context.add_entity(with!(Person, Age(11))).unwrap();
-        let modifiers_p1 = context.get_itinerary_modifiers(p1);
-        let modifiers_p2 = context.get_itinerary_modifiers(p2);
-        assert_eq!(modifiers_p1.len(), 0);
-        assert_eq!(
-            modifiers_p2,
-            vec![Box::new(weekend_modifier.clone()) as Box<dyn ItineraryModifierTrait>]
-        );
 
-        context.register_itinerary_modifier(Age(10), weekend_modifier.clone());
-        assert_eq!(
-            context.get_itinerary_modifiers(p1),
-            vec![Box::new(weekend_modifier.clone()) as Box<dyn ItineraryModifierTrait>]
-        );
-        assert_eq!(
-            context.get_itinerary_modifiers(p2),
-            vec![Box::new(weekend_modifier.clone()) as Box<dyn ItineraryModifierTrait>]
-        );
+        let modifiers_p1 = context.get_itinerary_modifiers(p1);
+        let modifiers_p2: Vec<&dyn ItineraryModifier> = context.get_itinerary_modifiers(p2);
+        let matrices_p2: Vec<&ItineraryTransitionMatrix> = cast_modifier(modifiers_p2.clone());
+
+        assert!(modifiers_p1.is_empty());
+        assert_eq!(matrices_p2.len(), 1);
+        assert!(assert_same_matrix(
+            matrices_p2[0],
+            &expected_weekend_modifier
+        ));
+
+        context.register_itinerary_modifier(Age(10), make_weekend_modifier());
+        let matrices_p1: Vec<&ItineraryTransitionMatrix> =
+            cast_modifier(context.get_itinerary_modifiers(p1));
+        assert_eq!(matrices_p1.len(), 1);
+        assert!(assert_same_matrix(
+            matrices_p1[0],
+            &expected_weekend_modifier
+        ));
+        let matrices_p2_after: Vec<&ItineraryTransitionMatrix> =
+            cast_modifier(context.get_itinerary_modifiers(p2));
+        assert_eq!(matrices_p2_after.len(), 1);
+        assert!(assert_same_matrix(
+            matrices_p2_after[0],
+            &expected_weekend_modifier
+        ));
     }
 
     #[test]
     fn test_register_multiple_itinerary_modifiers() {
         let mut context = setup();
 
-        let weekend_transient_matrix = [
+        let weekend_matrix = [
             [0.0, 0.0, 0.0, 0.0],
             [0.5, 0.0, 0.0, 0.5],
             [0.5, 0.0, 0.0, 0.5],
             [0.0, 0.0, 0.0, 0.0],
         ];
 
-        let weekend_modifier =
-            create_itinerary_transition_matrix(Some(weekend_transient_matrix), None, None);
-        let school_transient_matrix = [
+        let make_weekend_modifier =
+            || create_itinerary_transition_matrix(Some(weekend_matrix), None, None);
+
+        let expected_weekend_modifier = make_weekend_modifier();
+
+        let school_matrix = [
             [0.0, 0.0, 0.0, 0.0],
             [0.75, 0.0, 0.0, 0.25],
             [0.75, 0.0, 0.0, 0.25],
             [0.75, 0.0, 0.0, 0.25],
         ];
 
-        let school_modifier =
-            create_itinerary_transition_matrix(Some(school_transient_matrix), None, None);
-        context.register_itinerary_modifier(Age(11), weekend_modifier.clone());
-        context.register_itinerary_modifier(Age(11), school_modifier.clone());
+        let make_school_modifier =
+            || create_itinerary_transition_matrix(Some(school_matrix), None, None);
+
+        let expected_school_modifier = make_school_modifier();
+
+        context.register_itinerary_modifier(Age(11), make_weekend_modifier());
+        context.register_itinerary_modifier(Age(11), make_school_modifier());
         let p1 = context.add_entity(with!(Person, Age(11))).unwrap();
-        let modifiers = context.get_itinerary_modifiers(p1);
+        let modifiers: Vec<&dyn ItineraryModifier> = context.get_itinerary_modifiers(p1);
         assert_eq!(modifiers.len(), 2);
+
+        let matrices: Vec<&ItineraryTransitionMatrix> = cast_modifier(modifiers);
+        assert_eq!(matrices.len(), 2);
         assert!(
-            modifiers
-                .contains(&(Box::new(school_modifier.clone()) as Box<dyn ItineraryModifierTrait>))
+            assert_same_matrix(matrices[0], &expected_weekend_modifier)
+                || assert_same_matrix(matrices[1], &expected_weekend_modifier)
         );
         assert!(
-            modifiers
-                .contains(&(Box::new(weekend_modifier.clone()) as Box<dyn ItineraryModifierTrait>))
+            assert_same_matrix(matrices[0], &expected_school_modifier)
+                || assert_same_matrix(matrices[1], &expected_school_modifier)
         );
     }
 
@@ -302,24 +347,33 @@ mod test {
             [0.0, 0.0, 0.0, 0.0],
         ];
 
-        let weekend_modifier = create_itinerary_transition_matrix(Some(weekend_matrix), None, None);
-        context.register_itinerary_modifier(Age(10), weekend_modifier.clone());
-        context.register_itinerary_modifier(Age(11), weekend_modifier.clone());
+        let make_weekend_modifier =
+            || create_itinerary_transition_matrix(Some(weekend_matrix), None, None);
+
+        let expected_weekend_modifier = make_weekend_modifier();
+
+        context.register_itinerary_modifier(Age(10), make_weekend_modifier());
+        context.register_itinerary_modifier(Age(11), make_weekend_modifier());
         let p1 = context.add_entity(with!(Person, Age(11))).unwrap();
         let p2 = context.add_entity(with!(Person, Age(10))).unwrap();
-        let modifiers_p1 = context.get_itinerary_modifiers(p1);
-        assert_eq!(modifiers_p1.len(), 1);
-        assert!(
-            modifiers_p1
-                .contains(&(Box::new(weekend_modifier.clone()) as Box<dyn ItineraryModifierTrait>))
-        );
 
-        let modifiers_p2 = context.get_itinerary_modifiers(p2);
+        let modifiers_p1: Vec<&dyn ItineraryModifier> = context.get_itinerary_modifiers(p1);
+        assert_eq!(modifiers_p1.len(), 1);
+
+        let matrices_p1: Vec<&ItineraryTransitionMatrix> = cast_modifier(modifiers_p1);
+        assert!(matrices_p1.iter().any(|m| {
+            assert_same_matrix(m, &expected_weekend_modifier);
+            true
+        }));
+
+        let modifiers_p2: Vec<&dyn ItineraryModifier> = context.get_itinerary_modifiers(p2);
         assert_eq!(modifiers_p2.len(), 1);
-        assert!(
-            modifiers_p2
-                .contains(&(Box::new(weekend_modifier.clone()) as Box<dyn ItineraryModifierTrait>))
-        );
+
+        let matrices_p2: Vec<&ItineraryTransitionMatrix> = cast_modifier(modifiers_p2);
+        assert!(matrices_p2.iter().any(|m| {
+            assert_same_matrix(m, &expected_weekend_modifier);
+            true
+        }));
 
         // This would remove all age based itinerary modifiers that is not ideal.
         context.remove_itinerary_modifier_by_property::<Age>(Age(11));
@@ -328,9 +382,12 @@ mod test {
 
         let modifiers_p2 = context.get_itinerary_modifiers(p2);
         assert_eq!(modifiers_p2.len(), 1);
-        assert!(
-            modifiers_p2.contains(&(Box::new(weekend_modifier) as Box<dyn ItineraryModifierTrait>))
-        );
+
+        let matrices_p2: Vec<&ItineraryTransitionMatrix> = cast_modifier(modifiers_p2);
+        assert!(matrices_p2.iter().any(|m| {
+            assert_same_matrix(m, &expected_weekend_modifier);
+            true
+        }));
     }
 
     #[test]
@@ -355,7 +412,7 @@ mod test {
 
         let weekend_modifier = create_itinerary_transition_matrix(Some(weekend_matrix), None, None);
 
-        let sip_transient_matrix = [
+        let sip_matrix = [
             [0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0],
@@ -368,11 +425,8 @@ mod test {
             [0.0, 0.0, 1.0, 0.0],
             [0.0, 0.0, 0.0, 1.0],
         ];
-        let sip_modifier = create_itinerary_transition_matrix(
-            Some(sip_transient_matrix),
-            Some(sip_location_matrix),
-            None,
-        );
+        let sip_modifier =
+            create_itinerary_transition_matrix(Some(sip_matrix), Some(sip_location_matrix), None);
 
         let p1 = context.add_entity(with!(Person, Age(11))).unwrap();
 
@@ -451,7 +505,7 @@ mod test {
             [0.0, 0.0, 0.0, 0.0],
         ];
         let acceptance: AcceptanceFunction =
-            Rc::new(move |context, _person| context.get_current_time() > 5.0);
+            Box::new(move |context, _person| context.get_current_time() > 5.0);
         let modifier =
             create_itinerary_transition_matrix(Some(modifier_matrix), None, Some(acceptance));
         context.register_itinerary_modifier(Age(11), modifier);
@@ -480,7 +534,7 @@ mod test {
             [0.0, 0.0, 0.0, 0.0],
         ];
         let acceptance: AcceptanceFunction =
-            Rc::new(move |context, _person| context.get_current_time() > 5.0);
+            Box::new(move |context, _person| context.get_current_time() > 5.0);
         let modifier_one =
             create_itinerary_transition_matrix(Some(modifier_one_matrix), None, Some(acceptance));
         context.register_itinerary_modifier(Age(11), modifier_one);
@@ -491,7 +545,7 @@ mod test {
             [0.0, 0.0, 0.0, 1.0],
             [0.0, 0.0, 0.0, 0.0],
         ];
-        let acceptance_two: AcceptanceFunction = Rc::new(move |context, _person| {
+        let acceptance_two: AcceptanceFunction = Box::new(move |context, _person| {
             context.get_current_time() < 10.0 && context.get_current_time() > 7.0
         });
         let modifier_two = create_itinerary_transition_matrix(

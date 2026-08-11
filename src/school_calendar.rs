@@ -1,5 +1,3 @@
-use std::{hash::Hash, rc::Rc};
-
 use crate::{
     ContextParametersExt, Params,
     error::ModelError,
@@ -113,7 +111,7 @@ fn define_school_calendar_itinerary_modifier(
     match params.modifier {
         SchoolCalendarModifierType::Weekend => {
             let start_time = params.start_time;
-            let acceptance: AcceptanceFunction = Rc::new(move |context, _person_id| {
+            let acceptance: AcceptanceFunction = Box::new(move |context, _person_id| {
                 context.get_current_time() % 7.0 >= start_time
                     && context.get_current_time() % 7.0 <= start_time + 2.0
             });
@@ -127,7 +125,7 @@ fn define_school_calendar_itinerary_modifier(
             let start_time = params.start_time;
             let end_time = params.end_time;
             if let Some(end_time) = end_time {
-                let acceptance: AcceptanceFunction = Rc::new(move |context, _person_id| {
+                let acceptance: AcceptanceFunction = Box::new(move |context, _person_id| {
                     context.get_current_time() >= start_time
                         && context.get_current_time() <= end_time
                 });
@@ -195,8 +193,6 @@ mod test {
         crate::school_calendar::init(&mut context);
         context
     }
-
-
 
     #[test]
     fn test_weekend_conditions() {
