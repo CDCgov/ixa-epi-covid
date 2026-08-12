@@ -216,6 +216,19 @@ impl FIPSCode {
         ((self.0.get() >> CATEGORY_OFFSET) as SettingCategoryCode) & FOUR_BIT_MASK
     }
 
+    /// Returns a new [`FIPSCode`] that is the fips of state, county, and census tract.
+    #[inline(always)]
+    pub fn community_code(&self) -> Result<Self, FIPSError> {
+        Self::new(
+            self.state_code(),
+            self.county_code(),
+            self.census_tract_code(),
+            0,
+            0,
+            0,
+        )
+    }
+
     /// Returns the monotonically increasing ID number as an [`IdCode`]
     #[inline(always)]
     #[must_use]
@@ -396,6 +409,13 @@ impl Debug for FIPSCode {
         write!(f, "-{:05}", self.id())?;
         write!(f, "-{:02x}", self.data())?;
         Ok(())
+    }
+}
+
+impl Default for FIPSCode {
+    /// Returns a default FIPSCode with state code 1 (the minimum valid state) and all other fields set to 0.
+    fn default() -> Self {
+        Self::with_state_code(1).unwrap()
     }
 }
 

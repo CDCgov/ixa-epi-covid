@@ -5,7 +5,7 @@ use std::{fmt::Debug, path::PathBuf};
 use crate::error::ModelError;
 use crate::infection_importation::ImportCasesFromFile;
 use crate::reports::ReportParams;
-use crate::school_closures::school_closure::SchoolClosuresFromFile;
+use crate::school_closure::SchoolClosuresFromFile;
 use crate::settings::SettingCategory;
 use crate::symptom_status_manager::{SymptomAgeGroup, SymptomDelayDistLogNormParams};
 
