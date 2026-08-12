@@ -120,7 +120,7 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
     fn remove_itinerary_modifier_by_property<P: IndexableProperty<Person>>(
         &mut self,
         property_value: P,
-    ) {
+    ) -> Option<Vec<Box<dyn ItineraryModifier>>> {
         let modifier_map = self
             .get_data_mut(ItineraryModifierPlugin)
             .itinerary_modifier_map
@@ -132,8 +132,9 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
             )
         {
             let itinerary_modifier_map = &mut downcast_property_modifier_map.itinerary_modifier_map;
-            itinerary_modifier_map.remove(&property_value);
+            return itinerary_modifier_map.remove(&property_value);
         }
+        None
     }
 
     fn get_itinerary_modifiers(&self, person_id: PersonId) -> Vec<&dyn ItineraryModifier>;
@@ -377,7 +378,8 @@ mod test {
         }));
 
         // This would remove all age based itinerary modifiers that is not ideal.
-        context.remove_itinerary_modifier_by_property::<Age>(Age(11));
+        let removed = context.remove_itinerary_modifier_by_property::<Age>(Age(11));
+        assert!(removed.is_some());
         let modifiers_p1 = context.get_itinerary_modifiers(p1);
         assert_eq!(modifiers_p1.len(), 0);
 
