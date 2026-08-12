@@ -88,7 +88,8 @@ def preprocess_school_closures(
     supported = {"school district", "county", "state"}
     unsupported = (
         closures.filter(
-            ~pl.col("geography").is_in(supported) | pl.col("geography").is_null()
+            ~pl.col("geography").is_in(supported)
+            | pl.col("geography").is_null()
         )
         .select("geography")
         .unique()
@@ -113,9 +114,9 @@ def preprocess_school_closures(
         "start_time",
         "end_time",
     )
-    county_rows = closures.filter(pl.col("geography") == "county").with_columns(
-        (pl.col("state") + pl.col("county")).alias("_county_key")
-    )
+    county_rows = closures.filter(
+        pl.col("geography") == "county"
+    ).with_columns((pl.col("state") + pl.col("county")).alias("_county_key"))
     unmatched_counties = (
         county_rows.join(
             mapping, left_on="_county_key", right_on="STCOUNTY", how="anti"
@@ -132,21 +133,19 @@ def preprocess_school_closures(
             stacklevel=2,
         )
 
-    expanded_county_rows = (
-        county_rows.join(
-            mapping,
-            left_on="_county_key",
-            right_on="STCOUNTY",
-            how="inner",
-        ).select(
-            "_row_id",
-            pl.lit("school district").alias("geography"),
-            "state",
-            "county",
-            pl.col("LEAID").alias("school_district"),
-            "start_time",
-            "end_time",
-        )
+    expanded_county_rows = county_rows.join(
+        mapping,
+        left_on="_county_key",
+        right_on="STCOUNTY",
+        how="inner",
+    ).select(
+        "_row_id",
+        pl.lit("school district").alias("geography"),
+        "state",
+        "county",
+        pl.col("LEAID").alias("school_district"),
+        "start_time",
+        "end_time",
     )
     state_rows = closures.filter(pl.col("geography") == "state").select(
         "_row_id",
@@ -158,7 +157,9 @@ def preprocess_school_closures(
         "end_time",
     )
     return (
-        pl.concat([district_rows, expanded_county_rows, state_rows], how="vertical")
+        pl.concat(
+            [district_rows, expanded_county_rows, state_rows], how="vertical"
+        )
         .sort("_row_id")
         .select(CLOSURE_COLUMNS)
         .cast(CLOSURE_SCHEMA)
@@ -167,7 +168,10 @@ def preprocess_school_closures(
 
 def normalized_code(column: str, width: int) -> pl.Expr:
     cleaned = (
-        pl.col(column).cast(pl.String).str.strip_chars().str.replace(r"\.0+$", "")
+        pl.col(column)
+        .cast(pl.String)
+        .str.strip_chars()
+        .str.replace(r"\.0+$", "")
     )
     return (
         pl.when(cleaned.str.contains(r"^\d+$").fill_null(False))
@@ -180,7 +184,13 @@ def validate_code_column(
     frame: pl.DataFrame, column: str, width: int, source_name: str
 ) -> None:
     valid = pl.col(column).str.contains(rf"^\d{{{width}}}$").fill_null(False)
-    invalid = frame.filter(~valid).select(column).head(5).get_column(column).to_list()
+    invalid = (
+        frame.filter(~valid)
+        .select(column)
+        .head(5)
+        .get_column(column)
+        .to_list()
+    )
     if invalid:
         values = ", ".join(repr(value) for value in invalid)
         raise ValueError(
@@ -195,7 +205,9 @@ def load_relationships(mapping_path: Path) -> pl.DataFrame:
         normalized_code(LEA_FIELD, 7).alias("school_district"),
         normalized_code(TRACT_FIELD, 11).alias(TRACT_COLUMN),
     )
-    validate_code_column(relationships, "school_district", 7, str(mapping_path))
+    validate_code_column(
+        relationships, "school_district", 7, str(mapping_path)
+    )
     validate_code_column(relationships, TRACT_COLUMN, 11, str(mapping_path))
     return relationships.unique()
 
@@ -210,6 +222,7 @@ def school_district_mask() -> pl.Expr:
     )
     return normalized.is_in(["school district", "schooldistrict", "lea"])
 
+
 def expand_frame(
     input_frame: pl.DataFrame, relationships: pl.DataFrame
 ) -> tuple[pl.DataFrame, int]:
@@ -218,7 +231,11 @@ def expand_frame(
     )
     if TRACT_COLUMN in input_frame.columns:
         input_frame = input_frame.drop(TRACT_COLUMN)
-    output_columns = [column for column in input_frame.columns if column not in [ROW_COLUMN, COUNTY_COLUMN]]
+    output_columns = [
+        column
+        for column in input_frame.columns
+        if column not in [ROW_COLUMN, COUNTY_COLUMN]
+    ]
     output_columns.append(TRACT_COLUMN)
 
     district_rows = input_frame.filter(school_district_mask()).with_columns(
@@ -229,7 +246,9 @@ def expand_frame(
         pl.lit(None, dtype=pl.String).alias(TRACT_COLUMN)
     )
     mapped_leas = relationships.select("school_district").unique()
-    missing_rows = district_rows.join(mapped_leas, on="school_district", how="anti")
+    missing_rows = district_rows.join(
+        mapped_leas, on="school_district", how="anti"
+    )
     missing_leas = (
         missing_rows.get_column("school_district").unique().sort().to_list()
         if missing_rows.height
@@ -237,19 +256,18 @@ def expand_frame(
     )
     if missing_leas:
         raise ValueError(
-            "LEA IDs not present in the NCES mapping: " + ", ".join(missing_leas)
+            "LEA IDs not present in the NCES mapping: "
+            + ", ".join(missing_leas)
         )
 
-    expanded = (
-        district_rows.join(
-            relationships,
-            on="school_district",
-            how="inner",
-        ).with_columns(
-            pl.lit("census_tract").alias("geography"),
-            pl.col(TRACT_COLUMN).str.slice(0, 2).alias("state"),
-            pl.col(TRACT_COLUMN).str.slice(2, 3).alias("county"),
-        )
+    expanded = district_rows.join(
+        relationships,
+        on="school_district",
+        how="inner",
+    ).with_columns(
+        pl.lit("census_tract").alias("geography"),
+        pl.col(TRACT_COLUMN).str.slice(0, 2).alias("state"),
+        pl.col(TRACT_COLUMN).str.slice(2, 3).alias("county"),
     )
     output = (
         pl.concat([expanded, other_rows], how="diagonal_relaxed")

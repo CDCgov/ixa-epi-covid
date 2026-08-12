@@ -189,10 +189,6 @@ fn create_school_closure_from_record(
             Geography::CensusTract(census_tract)
         }
     };
-    println!(
-        "Setting up school closure triggers for {:?} from {} to {}",
-        geography, school_closure_record.start_time, school_closure_record.end_time
-    );
     context.setup_school_closure_triggers(
         school_closure_record.start_time,
         school_closure_record.end_time,
@@ -213,7 +209,6 @@ fn read_school_closures_file(
 
     while reader.read_byte_record(&mut raw_record)? {
         let record: SchoolClosureRecord = raw_record.deserialize(Some(&headers))?;
-        println!("Read school closure record: {:?}", record);
         create_school_closure_from_record(context, record)?;
     }
     Ok(())
