@@ -2,7 +2,7 @@
     "epimodel.GlobalParams": {
         "seed": 1234,
         "max_time": 100.0,
-        "synth_population_file": "input/synth_pop_people_WY_10_000.csv",
+        "synth_population_file": "input/people_test.csv",
         "initial_prevalence": 0.01,
         "imported_cases_timeseries": {
             "include": true,
@@ -60,7 +60,7 @@
             "prop_school_time_to_comm": 0.5
         },
         "school_closures": {
-            "include": false,
+            "include": true,
             "filename": "input/school_closure_test_expanded.csv"
         },
         "prevalence_report": {

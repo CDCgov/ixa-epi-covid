@@ -1,0 +1,8 @@
+geography,state,start_time,end_time,census_tract
+census_tract,56,5.0,50.0,56007967700
+state,56,10.0,100.0,
+census_tract,56,5.0,50.0,56007967800
+census_tract,56,1.0,20.0,56007968000
+census_tract,56,1.0,20.0,56007967600
+census_tract,56,1.0,20.0,56007968100
+census_tract,56,5.0,50.0,56037971600
