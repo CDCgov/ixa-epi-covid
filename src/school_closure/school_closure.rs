@@ -1,17 +1,12 @@
 use std::{path::PathBuf, rc::Rc};
 
 use crate::{
-    ContextParametersExt, Params,
-    error::ModelError,
-    geography::{Geography, GeographyType},
-    itinerary_modifiers::{
+    ContextParametersExt, Params, error::ModelError, geography::{Geography, GeographyType}, itinerary_modifiers::{
         AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
-    },
-    pop_reader::{FIPSCode, StateCode},
-    settings::{ContextSettingExt, Itinerary, Person, SettingCategory},
+    }, pop_reader::{FIPSCode, StateCode}, school_closure::school_district::process_school_closure_records, settings::{ContextSettingExt, Itinerary, Person, SettingCategory},
 };
 use ixa::{
-    ExecutionPhase, IxaEvent, csv, impl_derived_property,
+    ExecutionPhase, IxaEvent, impl_derived_property,
     prelude::*,
     triggers::{ContextTriggersExt, TimeTrigger, TriggerCriterion},
 };
@@ -36,19 +31,19 @@ impl_derived_property!(SchoolCensusTract, Person, [Itinerary], [], |itinerary| {
     )
 });
 
+
+
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
-pub struct SchoolClosureRecord {
-    pub geography: GeographyType,
-    pub state: Option<StateCode>,
-    pub census_tract: Option<FIPSCode>,
-    pub start_time: f64,
-    pub end_time: f64,
+pub struct SchoolClosureParameters {
+    pub geography: Geography,
+    pub start_condition: f64,
+    pub end_conditions: f64,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct SchoolClosuresFromFile {
-    pub include: bool,
-    pub filename: Option<PathBuf>,
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+pub struct SchoolClosureRecords {
+    pub records: Vec<SchoolClosureParameters>,
+    pub district_mapping: Option<PathBuf>,
 }
 
 #[derive(IxaEvent)]
@@ -165,73 +160,9 @@ pub trait SchoolClosureContextExt:
 }
 impl SchoolClosureContextExt for Context {}
 
-fn create_school_closure_from_record(
-    context: &mut Context,
-    school_closure_record: SchoolClosureRecord,
-) -> Result<(), ModelError> {
-    let geography = match school_closure_record.geography {
-        GeographyType::State => {
-            if let Some(state) = school_closure_record.state {
-                Geography::State(state)
-            } else {
-                return Err(ModelError::ModelError(
-                    "State code is required for state-level school closure.".to_string(),
-                ));
-            }
-        }
-        GeographyType::CensusTract => {
-            let census_tract = school_closure_record.census_tract.ok_or_else(|| {
-                ModelError::ModelError(
-                    "Census tract code is required for census tract-level school closure."
-                        .to_string(),
-                )
-            })?;
-            Geography::CensusTract(census_tract)
-        }
-    };
-    context.setup_school_closure_triggers(
-        school_closure_record.start_time,
-        school_closure_record.end_time,
-        geography,
-    );
-    Ok(())
-}
-
-fn read_school_closures_file(
-    context: &mut Context,
-    school_closure_file: PathBuf,
-) -> Result<(), ModelError> {
-    let mut reader = csv::ReaderBuilder::new()
-        .trim(csv::Trim::All)
-        .from_path(school_closure_file)?;
-    let mut raw_record = csv::ByteRecord::new();
-    let headers = reader.byte_headers()?.clone();
-
-    while reader.read_byte_record(&mut raw_record)? {
-        let record: SchoolClosureRecord = raw_record.deserialize(Some(&headers))?;
-        create_school_closure_from_record(context, record)?;
-    }
-    Ok(())
-}
-
-fn load_school_closures(context: &mut Context) -> Result<(), ModelError> {
-    let Params {
-        school_closures, ..
-    } = context.get_params();
-    if school_closures.include {
-        if let Some(filename) = &school_closures.filename {
-            read_school_closures_file(context, filename.clone())?;
-        } else {
-            return Err(ModelError::ModelError(
-                "School closures are turned on but no filename was provided.".to_string(),
-            ));
-        }
-    }
-    Ok(())
-}
-
 pub fn init(context: &mut Context) -> Result<(), ModelError> {
-    load_school_closures(context)?;
+    let Params { school_closures, .. } = context.get_params().clone();
+    let processed_school_closures = process_school_closure_records(school_closures)?;
     context.setup_school_closure_itinerary_modification();
     Ok(())
 }

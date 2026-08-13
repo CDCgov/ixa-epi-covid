@@ -39,7 +39,7 @@ pub fn initialize_model(
     info!("Infection importation initialized");
     school_calendar::init(context);
     info!("School calendar initialized");
-    school_closure::init(context)?;
+    school_closure::school_closure::init(context)?;
     info!("School closure initialized");
     reports::init(context)?;
     info!("Reports initialized");

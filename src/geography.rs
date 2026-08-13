@@ -2,19 +2,17 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use strum::{EnumDiscriminants, IntoStaticStr};
 
-use crate::pop_reader::{FIPSCode, StateCode};
+use crate::{pop_reader::{FIPSCode, StateCode}, school_closure::school_district::LEACode};
 
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize, Eq, Hash, EnumDiscriminants)]
 #[strum_discriminants(name(GeographyType))]
 #[strum_discriminants(derive(PartialOrd, Ord, Hash, Deserialize, Serialize))]
 #[strum_discriminants(derive(IntoStaticStr), repr(u8))]
+#[serde(tag = "geography_type", content = "code")]
 pub enum Geography {
-    #[serde(
-        rename = "censustract",
-        alias = "census tract",
-        alias = "census_tract",
-        alias = "CENSUS_TRACT"
-    )]
+    #[strum_discriminants(serde(rename = "schooldistrict", alias = "school district", alias = "school_district", alias = "SCHOOL_DISTRICT"))]
+    SchoolDistrict(LEACode),
+    
     #[strum_discriminants(serde(
         rename = "censustract",
         alias = "census tract",
@@ -23,7 +21,9 @@ pub enum Geography {
     ))]
     CensusTract(FIPSCode),
 
-    #[serde(rename = "state", alias = "State", alias = "STATE")]
+    #[strum_discriminants(serde(rename = "county", alias = "County", alias = "COUNTY"))]
+    County(FIPSCode),
+
     #[strum_discriminants(serde(rename = "state", alias = "State", alias = "STATE"))]
     State(StateCode),
 }
