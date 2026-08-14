@@ -5,6 +5,7 @@ use std::{fmt::Debug, path::PathBuf};
 use crate::error::ModelError;
 use crate::infection_importation::ImportCasesFromFile;
 use crate::reports::ReportParams;
+use crate::school_calendar::{SchoolCalendarModifier, SchoolCalendarModifierType};
 use crate::settings::SettingCategory;
 use crate::symptom_status_manager::{SymptomAgeGroup, SymptomDelayDistLogNormParams};
 
@@ -68,6 +69,8 @@ pub struct Params {
     pub settings_properties: HashMap<SettingCategory, SettingProperties>,
     /// ratios used to initialize individuals itineraries by setting type.
     pub itinerary_ratios: HashMap<SettingCategory, f64>,
+    /// itinerary modifier for weekends
+    pub school_calendar: Vec<SchoolCalendarModifier>,
     /// Prevalence report with a period and name required
     pub prevalence_report: ReportParams,
     /// Incidence report with a period and name required
@@ -277,6 +280,34 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error 
         )));
     }
 
+    let mut unique_school_calendar_modifiers: Vec<SchoolCalendarModifier> = Vec::new();
+    for school_calendar_modifier in &parameters.school_calendar {
+        let modifier_params = school_calendar_modifier.clone();
+        modifier_params.validate()?;
+        for unique_modifier in &unique_school_calendar_modifiers {
+            if school_calendar_modifier == unique_modifier {
+                return Err(Box::new(ModelError::ModelError(
+                    "Duplicate school calendar modifiers are not allowed.".to_string(),
+                )));
+            }
+            if school_calendar_modifier.modifier == SchoolCalendarModifierType::Weekend
+                && unique_modifier.modifier == SchoolCalendarModifierType::Weekend
+            {
+                return Err(Box::new(ModelError::ModelError(
+                    "Only one weekend modifier is allowed.".to_string(),
+                )));
+            }
+            if school_calendar_modifier.modifier != SchoolCalendarModifierType::Weekend
+                && modifier_params.deactivates_at.is_none()
+            {
+                return Err(Box::new(ModelError::ModelError(
+                    "deactivates_at must be specified for non-weekend school calendar modifiers"
+                        .to_string(),
+                )));
+            }
+        }
+        unique_school_calendar_modifiers.push(school_calendar_modifier.clone());
+    }
     Ok(())
 }
 
@@ -356,6 +387,7 @@ impl Default for Params {
             },
             settings_properties: HashMap::new(),
             itinerary_ratios: HashMap::new(),
+            school_calendar: Vec::new(),
             prevalence_report: ReportParams {
                 write: false,
                 filename: None,

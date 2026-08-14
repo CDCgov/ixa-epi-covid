@@ -1,50 +1,75 @@
-use serde::Serialize;
+use ixa::Context;
+use serde::{Deserialize, Serialize};
 use std::any::Any;
 
-use crate::{itinerary_manager::ItineraryModifierTrait, settings::SETTING_COUNT};
+use crate::{
+    itinerary_manager::ItineraryModifier,
+    settings::{PersonId, SETTING_COUNT},
+};
 
 const TRANSIENT_STATE_COUNT: usize = SETTING_COUNT * 2;
 
-#[derive(Debug, PartialEq, Clone, Serialize, Copy)]
+pub type AcceptanceFunction = Box<dyn Fn(&Context, PersonId) -> bool>;
+
+#[derive(Serialize, Deserialize)]
 pub struct ItineraryTransitionMatrix {
     activity_matrix: [[f64; SETTING_COUNT]; SETTING_COUNT],
     location_matrix: [[f64; SETTING_COUNT]; SETTING_COUNT],
-    absorption_probabilities: Option<[[f64; SETTING_COUNT]; TRANSIENT_STATE_COUNT]>,
+    #[serde(skip, default)]
+    acceptance_function: Option<AcceptanceFunction>,
 }
 
-impl ItineraryModifierTrait for ItineraryTransitionMatrix {
+impl std::fmt::Debug for ItineraryTransitionMatrix {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ItineraryTransitionMatrix")
+            .field("activity_matrix", &self.activity_matrix)
+            .field("location_matrix", &self.location_matrix)
+            .field(
+                "has_acceptance_function",
+                &self.acceptance_function.is_some(),
+            )
+            .finish()
+    }
+}
+
+impl ItineraryModifier for ItineraryTransitionMatrix {
     fn as_any(&self) -> &dyn Any {
         self
     }
-    fn layer(&mut self, other: Box<dyn ItineraryModifierTrait>) -> Box<dyn ItineraryModifierTrait> {
-        if let Some(other_modifier) = other.as_any().downcast_ref::<ItineraryTransitionMatrix>() {
-            Box::new((*self).layer(other_modifier))
-        } else {
-            panic!("Incompatible modifier types for layering");
-        }
+    fn layer(&self, other: &dyn ItineraryModifier) -> Box<dyn ItineraryModifier> {
+        let other = other
+            .as_any()
+            .downcast_ref::<ItineraryTransitionMatrix>()
+            .expect("incompatible modifier types for layering");
+
+        Box::new(ItineraryTransitionMatrix::layer(self, other))
     }
-    fn apply(&mut self, base_itinerary: &[f64; SETTING_COUNT]) -> [f64; SETTING_COUNT] {
-        self.apply(base_itinerary)
+    fn apply(&self, base_itinerary: &[f64; SETTING_COUNT]) -> [f64; SETTING_COUNT] {
+        ItineraryTransitionMatrix::apply(self, base_itinerary)
+    }
+    fn accept(&self, context: &Context, person_id: PersonId) -> bool {
+        self.acceptance_function
+            .as_ref()
+            .is_none_or(|acceptance| acceptance(context, person_id))
     }
 }
 
 #[allow(dead_code)]
 #[allow(clippy::needless_range_loop)]
 impl ItineraryTransitionMatrix {
-    pub fn normalize(&mut self) {
-        let normalize_matrix = |matrix: &mut [[f64; SETTING_COUNT]; SETTING_COUNT]| {
-            for i in 0..SETTING_COUNT {
-                let row_sum: f64 = matrix[i].iter().sum();
-                if row_sum > 1.0 {
-                    for j in 0..SETTING_COUNT {
-                        matrix[i][j] /= row_sum;
-                    }
+    pub fn normalize(
+        matrix: [[f64; SETTING_COUNT]; SETTING_COUNT],
+    ) -> [[f64; SETTING_COUNT]; SETTING_COUNT] {
+        let mut result = matrix;
+        for i in 0..SETTING_COUNT {
+            let row_sum: f64 = result[i].iter().sum();
+            if row_sum > 1.0 {
+                for j in 0..SETTING_COUNT {
+                    result[i][j] /= row_sum;
                 }
             }
-        };
-
-        normalize_matrix(&mut self.activity_matrix);
-        normalize_matrix(&mut self.location_matrix);
+        }
+        result
     }
 
     pub fn build_transient_and_absorbing_matrix(
@@ -53,19 +78,17 @@ impl ItineraryTransitionMatrix {
         [[f64; TRANSIENT_STATE_COUNT]; TRANSIENT_STATE_COUNT],
         [[f64; TRANSIENT_STATE_COUNT]; SETTING_COUNT],
     ) {
+        let activity_matrix = ItineraryTransitionMatrix::normalize(self.activity_matrix);
+        let location_matrix = ItineraryTransitionMatrix::normalize(self.location_matrix);
         let mut transient_matrix = [[0.0; TRANSIENT_STATE_COUNT]; TRANSIENT_STATE_COUNT];
         let mut absorbing_matrix = [[0.0; TRANSIENT_STATE_COUNT]; SETTING_COUNT];
-        let activity_row_sums: Vec<f64> = self
-            .activity_matrix
-            .iter()
-            .map(|row| row.iter().sum())
-            .collect();
+        let activity_row_sums: Vec<f64> =
+            activity_matrix.iter().map(|row| row.iter().sum()).collect();
         for i in 0..SETTING_COUNT {
             for j in 0..SETTING_COUNT {
-                transient_matrix[i][j] = self.activity_matrix[i][j];
+                transient_matrix[i][j] = activity_matrix[i][j];
                 if i != j {
-                    transient_matrix[i + SETTING_COUNT][j + SETTING_COUNT] =
-                        self.location_matrix[i][j];
+                    transient_matrix[i + SETTING_COUNT][j + SETTING_COUNT] = location_matrix[i][j];
                 }
             }
             transient_matrix[i][i + SETTING_COUNT] = 1.0 - activity_row_sums[i];
@@ -97,14 +120,16 @@ impl ItineraryTransitionMatrix {
             }
         }
 
+        // WARNING: You need to evaluated the acceptance function before they are layered.
+        // If both modifiers have acceptance functions, the layered modifier will not have an acceptance function.
         ItineraryTransitionMatrix {
             activity_matrix: layered_activity_matrix,
             location_matrix: layered_location_matrix,
-            absorption_probabilities: None,
+            acceptance_function: None,
         }
     }
 
-    fn calculate_absorption_probabilities(&mut self) {
+    fn calculate_absorption_probabilities(&self) -> [[f64; SETTING_COUNT]; TRANSIENT_STATE_COUNT] {
         // Aborbing probabilities are calculated using the
         // formula N * R, where N is the fundamental matrix (I - Q)^-1, I is the identity matrix,
         // Q is the transient matrix, and R is the absorbing matrix.
@@ -127,52 +152,7 @@ impl ItineraryTransitionMatrix {
 
         // Invert (I - Q) to get the fundamental matrix N
         // Using Gaussian elimination with partial pivoting
-        let n = i_minus_q;
-
-        // Create augmented identity matrix for inversion
-        let mut aug = [[0.0; 2 * TRANSIENT_STATE_COUNT]; TRANSIENT_STATE_COUNT];
-        for i in 0..TRANSIENT_STATE_COUNT {
-            for j in 0..TRANSIENT_STATE_COUNT {
-                aug[i][j] = n[i][j];
-                aug[i][j + TRANSIENT_STATE_COUNT] = if i == j { 1.0 } else { 0.0 };
-            }
-        }
-
-        // Forward elimination with partial pivoting
-        for col in 0..TRANSIENT_STATE_COUNT {
-            // Find pivot
-            let mut pivot_row = col;
-            let mut max_val = aug[col][col].abs();
-            for row in col + 1..TRANSIENT_STATE_COUNT {
-                if aug[row][col].abs() > max_val {
-                    max_val = aug[row][col].abs();
-                    pivot_row = row;
-                }
-            }
-
-            // Swap rows
-            if pivot_row != col {
-                aug.swap(col, pivot_row);
-            }
-
-            // Scale pivot row
-            let pivot = aug[col][col];
-            if pivot.abs() > f64::EPSILON {
-                for j in 0..2 * TRANSIENT_STATE_COUNT {
-                    aug[col][j] /= pivot;
-                }
-
-                // Eliminate column
-                for row in 0..TRANSIENT_STATE_COUNT {
-                    if row != col {
-                        let factor = aug[row][col];
-                        for j in 0..2 * TRANSIENT_STATE_COUNT {
-                            aug[row][j] -= factor * aug[col][j];
-                        }
-                    }
-                }
-            }
-        }
+        let n = invert(i_minus_q).expect("Matrix inversion failed");
 
         // Extract inverted matrix and calculate absorption probabilities
         // N * R where N is the fundamental matrix (I-Q)^-1 and R is the absorbing matrix
@@ -180,21 +160,16 @@ impl ItineraryTransitionMatrix {
         for i in 0..TRANSIENT_STATE_COUNT {
             for j in 0..SETTING_COUNT {
                 for k in 0..TRANSIENT_STATE_COUNT {
-                    absorption_probs[i][j] +=
-                        aug[i][k + TRANSIENT_STATE_COUNT] * absorbing_matrix[j][k];
+                    absorption_probs[i][j] += n[i][k] * absorbing_matrix[j][k];
                 }
             }
         }
 
-        self.absorption_probabilities = Some(absorption_probs);
+        absorption_probs
     }
 
-    pub fn apply(&mut self, current_itinerary: &[f64; SETTING_COUNT]) -> [f64; SETTING_COUNT] {
-        self.normalize();
-        if self.absorption_probabilities.is_none() {
-            self.calculate_absorption_probabilities();
-        }
-        let absorption_probs = self.absorption_probabilities.unwrap();
+    pub fn apply(&self, current_itinerary: &[f64; SETTING_COUNT]) -> [f64; SETTING_COUNT] {
+        let absorption_probs = self.calculate_absorption_probabilities();
         let mut new_itinerary = [0.0; SETTING_COUNT];
         for j in 0..SETTING_COUNT {
             for i in 0..SETTING_COUNT {
@@ -205,15 +180,73 @@ impl ItineraryTransitionMatrix {
     }
 }
 
-pub fn define_itinerary_modifier(
+pub fn create_itinerary_transition_matrix(
     activity_matrix: Option<[[f64; SETTING_COUNT]; SETTING_COUNT]>,
     location_matrix: Option<[[f64; SETTING_COUNT]; SETTING_COUNT]>,
+    acceptance_function: Option<AcceptanceFunction>,
 ) -> ItineraryTransitionMatrix {
     ItineraryTransitionMatrix {
         activity_matrix: activity_matrix.unwrap_or([[0.0; SETTING_COUNT]; SETTING_COUNT]),
         location_matrix: location_matrix.unwrap_or([[0.0; SETTING_COUNT]; SETTING_COUNT]),
-        absorption_probabilities: None,
+        acceptance_function,
     }
+}
+
+fn invert<const N: usize>(mut matrix: [[f64; N]; N]) -> Option<[[f64; N]; N]> {
+    let mut inverse = [[0.0; N]; N];
+
+    for (i, row) in inverse.iter_mut().enumerate() {
+        row[i] = 1.0;
+    }
+
+    for col in 0..N {
+        let pivot_row = (col..N)
+            .max_by(|&left, &right| matrix[left][col].abs().total_cmp(&matrix[right][col].abs()))
+            .expect("pivot range is nonempty");
+
+        if matrix[pivot_row][col].abs() <= f64::EPSILON {
+            return None;
+        }
+
+        matrix.swap(col, pivot_row);
+        inverse.swap(col, pivot_row);
+
+        let pivot = matrix[col][col];
+        for j in 0..N {
+            matrix[col][j] /= pivot;
+            inverse[col][j] /= pivot;
+        }
+
+        for row in 0..N {
+            if row == col {
+                continue;
+            }
+
+            let factor = matrix[row][col];
+            for j in 0..N {
+                matrix[row][j] -= factor * matrix[col][j];
+                inverse[row][j] -= factor * inverse[col][j];
+            }
+        }
+    }
+
+    Some(inverse)
+}
+
+pub fn assert_same_matrix(
+    actual: &ItineraryTransitionMatrix,
+    expected: &ItineraryTransitionMatrix,
+) -> bool {
+    if actual.activity_matrix != expected.activity_matrix {
+        return false;
+    }
+    if actual.location_matrix != expected.location_matrix {
+        return false;
+    }
+    if actual.acceptance_function.is_some() != expected.acceptance_function.is_some() {
+        return false;
+    }
+    true
 }
 
 #[cfg(test)]
@@ -222,7 +255,7 @@ mod tests {
 
     #[test]
     fn test_define_itinerary_modifier_with_none() {
-        let modifier = define_itinerary_modifier(None, None);
+        let modifier = create_itinerary_transition_matrix(None, None, None);
         assert_eq!(
             modifier.activity_matrix,
             [[0.0; SETTING_COUNT]; SETTING_COUNT]
@@ -231,7 +264,6 @@ mod tests {
             modifier.location_matrix,
             [[0.0; SETTING_COUNT]; SETTING_COUNT]
         );
-        assert_eq!(modifier.absorption_probabilities, None);
     }
 
     #[test]
@@ -241,14 +273,14 @@ mod tests {
         activity[0][0] = 0.5;
         location[0][1] = 0.3;
 
-        let modifier = define_itinerary_modifier(Some(activity), Some(location));
+        let modifier = create_itinerary_transition_matrix(Some(activity), Some(location), None);
         assert_eq!(modifier.activity_matrix[0][0], 0.5);
         assert_eq!(modifier.location_matrix[0][1], 0.3);
     }
 
     #[test]
     fn test_normalize_matrix() {
-        let mut matrix = ItineraryTransitionMatrix {
+        let matrix = ItineraryTransitionMatrix {
             activity_matrix: {
                 let mut m = [[0.0; SETTING_COUNT]; SETTING_COUNT];
                 m[0][0] = 0.4;
@@ -256,17 +288,17 @@ mod tests {
                 m
             },
             location_matrix: [[0.0; SETTING_COUNT]; SETTING_COUNT],
-            absorption_probabilities: None,
+            acceptance_function: None,
         };
 
-        matrix.normalize();
-        let sum: f64 = matrix.activity_matrix[0].iter().sum();
+        let matrix = ItineraryTransitionMatrix::normalize(matrix.activity_matrix);
+        let sum: f64 = matrix[0].iter().sum();
         assert!(sum <= 1.0);
     }
 
     #[test]
     fn test_normalize_matrix_unnormalized() {
-        let mut matrix = ItineraryTransitionMatrix {
+        let matrix = ItineraryTransitionMatrix {
             activity_matrix: {
                 let mut m = [[0.0; SETTING_COUNT]; SETTING_COUNT];
                 m[0][0] = 0.6;
@@ -274,11 +306,11 @@ mod tests {
                 m
             },
             location_matrix: [[0.0; SETTING_COUNT]; SETTING_COUNT],
-            absorption_probabilities: None,
+            acceptance_function: None,
         };
 
-        matrix.normalize();
-        let sum: f64 = matrix.activity_matrix[0].iter().sum();
+        let matrix = ItineraryTransitionMatrix::normalize(matrix.activity_matrix);
+        let sum: f64 = matrix[0].iter().sum();
         assert!((sum - 1.0).abs() < 1e-10);
     }
 
@@ -291,7 +323,7 @@ mod tests {
                 m
             },
             location_matrix: [[0.0; SETTING_COUNT]; SETTING_COUNT],
-            absorption_probabilities: None,
+            acceptance_function: None,
         };
 
         let matrix2 = ItineraryTransitionMatrix {
@@ -301,12 +333,11 @@ mod tests {
                 m
             },
             location_matrix: [[0.0; SETTING_COUNT]; SETTING_COUNT],
-            absorption_probabilities: None,
+            acceptance_function: None,
         };
 
         let layered = matrix1.layer(&matrix2);
         assert_eq!(layered.activity_matrix[0][0], 0.5);
-        assert_eq!(layered.absorption_probabilities, None);
     }
 
     #[test]
@@ -318,7 +349,7 @@ mod tests {
                 m
             },
             location_matrix: [[0.0; SETTING_COUNT]; SETTING_COUNT],
-            absorption_probabilities: None,
+            acceptance_function: None,
         };
 
         let (transient, absorbing) = matrix.build_transient_and_absorbing_matrix();
