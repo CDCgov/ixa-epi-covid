@@ -27,24 +27,24 @@ pub enum SchoolCalendarModifierType {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SchoolCalendarModifier {
     pub modifier: SchoolCalendarModifierType,
-    pub start_time: f64,
+    pub activates_at: f64,
     pub prop_school_time_to_home: f64,
     pub prop_school_time_to_comm: f64,
-    pub end_time: Option<f64>,
+    pub deactivates_at: Option<f64>,
 }
 
 impl SchoolCalendarModifier {
     pub fn validate(&self) -> Result<(), ModelError> {
-        if self.start_time < 0.0 {
+        if self.activates_at < 0.0 {
             return Err(ModelError::ModelError(
-                "start_time must be >= 0.0".to_string(),
+                "activates_at must be >= 0.0".to_string(),
             ));
         }
-        if let Some(end_time) = self.end_time
-            && end_time < self.start_time
+        if let Some(deactivates_at) = self.deactivates_at
+            && deactivates_at < self.activates_at
         {
             return Err(ModelError::ModelError(
-                "end_time must be >= start_time".to_string(),
+                "deactivates_at must be >= activates_at".to_string(),
             ));
         }
         if self.prop_school_time_to_home < 0.0 || self.prop_school_time_to_home > 1.0 {
@@ -68,10 +68,10 @@ impl SchoolCalendarModifier {
 
 impl PartialEq for SchoolCalendarModifier {
     fn eq(&self, other: &Self) -> bool {
-        self.start_time.to_bits() == other.start_time.to_bits()
+        self.activates_at.to_bits() == other.activates_at.to_bits()
             && self.prop_school_time_to_home.to_bits() == other.prop_school_time_to_home.to_bits()
             && self.prop_school_time_to_comm.to_bits() == other.prop_school_time_to_comm.to_bits()
-            && match (self.end_time, other.end_time) {
+            && match (self.deactivates_at, other.deactivates_at) {
                 (Some(a), Some(b)) => a.to_bits() == b.to_bits(),
                 (None, None) => true,
                 _ => false,
@@ -110,10 +110,10 @@ fn define_school_calendar_itinerary_modifier(
 
     match params.modifier {
         SchoolCalendarModifierType::Weekend => {
-            let start_time = params.start_time;
+            let activates_at = params.activates_at;
             let acceptance: AcceptanceFunction = Box::new(move |context, _person_id| {
-                context.get_current_time() % 7.0 >= start_time
-                    && context.get_current_time() % 7.0 < start_time + 2.0
+                context.get_current_time() % 7.0 >= activates_at
+                    && context.get_current_time() % 7.0 < activates_at + 2.0
             });
             Ok(create_itinerary_transition_matrix(
                 Some(matrix),
@@ -122,12 +122,12 @@ fn define_school_calendar_itinerary_modifier(
             ))
         }
         _ => {
-            let start_time = params.start_time;
-            let end_time = params.end_time;
-            if let Some(end_time) = end_time {
+            let activates_at = params.activates_at;
+            let deactivates_at = params.deactivates_at;
+            if let Some(deactivates_at) = deactivates_at {
                 let acceptance: AcceptanceFunction = Box::new(move |context, _person_id| {
-                    context.get_current_time() >= start_time
-                        && context.get_current_time() < end_time
+                    context.get_current_time() % 365.0 >= activates_at
+                        && context.get_current_time() % 365.0 < deactivates_at
                 });
                 Ok(create_itinerary_transition_matrix(
                     Some(matrix),
@@ -136,7 +136,7 @@ fn define_school_calendar_itinerary_modifier(
                 ))
             } else {
                 Err(ModelError::ModelError(
-                    "end_time must be specified for non-weekend school calendar modifiers"
+                    "deactivates_at must be specified for non-weekend school calendar modifiers"
                         .to_string(),
                 ))
             }
@@ -198,10 +198,10 @@ mod test {
     fn test_weekend_conditions() {
         let mut context = setup(vec![SchoolCalendarModifier {
             modifier: SchoolCalendarModifierType::Weekend,
-            start_time: 3.0,
+            activates_at: 3.0,
             prop_school_time_to_home: 0.5,
             prop_school_time_to_comm: 0.5,
-            end_time: None,
+            deactivates_at: None,
         }]);
         let weekend = Rc::new(RefCell::new(0));
         let weekday = Rc::new(RefCell::new(0));
@@ -241,10 +241,10 @@ mod test {
     fn test_non_weekend_conditions() {
         let mut context = setup(vec![SchoolCalendarModifier {
             modifier: SchoolCalendarModifierType::SummerBreak,
-            start_time: 3.0,
+            activates_at: 3.0,
             prop_school_time_to_home: 0.5,
             prop_school_time_to_comm: 0.5,
-            end_time: Some(5.0),
+            deactivates_at: Some(5.0),
         }]);
         let summer_break = Rc::new(RefCell::new(0));
         let school_days = Rc::new(RefCell::new(0));
@@ -284,60 +284,60 @@ mod test {
         // Test valid modifier
         let valid_modifier = SchoolCalendarModifier {
             modifier: SchoolCalendarModifierType::Weekend,
-            start_time: 1.0,
+            activates_at: 1.0,
             prop_school_time_to_home: 0.5,
             prop_school_time_to_comm: 0.3,
-            end_time: Some(2.0),
+            deactivates_at: Some(2.0),
         };
         assert!(valid_modifier.validate().is_ok());
 
-        // Test negative start_time
+        // Test negative activates_at
         let neg_start = SchoolCalendarModifier {
             modifier: SchoolCalendarModifierType::Weekend,
-            start_time: -1.0,
+            activates_at: -1.0,
             prop_school_time_to_home: 0.5,
             prop_school_time_to_comm: 0.3,
-            end_time: None,
+            deactivates_at: None,
         };
         assert!(neg_start.validate().is_err());
 
-        // Test end_time < start_time
+        // Test deactivates_at < activates_at
         let invalid_end = SchoolCalendarModifier {
             modifier: SchoolCalendarModifierType::SummerBreak,
-            start_time: 5.0,
+            activates_at: 5.0,
             prop_school_time_to_home: 0.5,
             prop_school_time_to_comm: 0.3,
-            end_time: Some(2.0),
+            deactivates_at: Some(2.0),
         };
         assert!(invalid_end.validate().is_err());
 
         // Test prop_school_time_to_home > 1.0
         let high_home = SchoolCalendarModifier {
             modifier: SchoolCalendarModifierType::HolidayBreak,
-            start_time: 1.0,
+            activates_at: 1.0,
             prop_school_time_to_home: 1.5,
             prop_school_time_to_comm: 0.3,
-            end_time: None,
+            deactivates_at: None,
         };
         assert!(high_home.validate().is_err());
 
         // Test prop_school_time_to_comm < 0.0
         let neg_comm = SchoolCalendarModifier {
             modifier: SchoolCalendarModifierType::Weekend,
-            start_time: 1.0,
+            activates_at: 1.0,
             prop_school_time_to_home: 0.5,
             prop_school_time_to_comm: -0.1,
-            end_time: None,
+            deactivates_at: None,
         };
         assert!(neg_comm.validate().is_err());
 
         // Test sum of proportions > 1.0
         let sum_too_high = SchoolCalendarModifier {
             modifier: SchoolCalendarModifierType::SummerBreak,
-            start_time: 1.0,
+            activates_at: 1.0,
             prop_school_time_to_home: 0.7,
             prop_school_time_to_comm: 0.5,
-            end_time: None,
+            deactivates_at: None,
         };
         assert!(sum_too_high.validate().is_err());
     }

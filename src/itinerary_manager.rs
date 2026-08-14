@@ -25,12 +25,12 @@ impl PartialEq for dyn ItineraryModifier {
     }
 }
 
-pub trait ItineraryModifierStorage: std::fmt::Debug + Any {
+pub trait PersonPropertyItineraryModifierStorage: std::fmt::Debug + Any {
     fn get_itinerary_modifiers<'a>(
         &'a self,
         context: &Context,
         person_id: PersonId,
-    ) -> Option<Vec<&'a dyn ItineraryModifier>>;
+    ) -> Vec<&'a dyn ItineraryModifier>;
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
@@ -41,7 +41,7 @@ struct PersonPropertyItineraryModifier<P> {
     itinerary_modifier_map: HashMap<P, Vec<Box<dyn ItineraryModifier>>>,
 }
 
-impl<P> ItineraryModifierStorage for PersonPropertyItineraryModifier<P>
+impl<P> PersonPropertyItineraryModifierStorage for PersonPropertyItineraryModifier<P>
 where
     P: IndexableProperty<Person>,
 {
@@ -49,12 +49,14 @@ where
         &self,
         context: &Context,
         person_id: PersonId,
-    ) -> Option<Vec<&dyn ItineraryModifier>> {
+    ) -> Vec<&dyn ItineraryModifier> {
         let property_val = context.get_property::<Person, P>(person_id);
 
         self.itinerary_modifier_map
             .get(&property_val)
-            .map(|modifiers| modifiers.iter().map(Box::as_ref).collect())
+            .iter()
+            .flat_map(|modifiers| modifiers.iter().map(Box::as_ref))
+            .collect()
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -68,7 +70,7 @@ where
 
 #[derive(Default)]
 struct ItineraryModifierContainer {
-    itinerary_modifier_map: HashMap<TypeId, Box<dyn ItineraryModifierStorage>>,
+    itinerary_modifier_map: HashMap<TypeId, Box<dyn PersonPropertyItineraryModifierStorage>>,
 }
 
 define_data_plugin!(
@@ -84,37 +86,26 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
         person_property: P,
         itinerary_modifier: I,
     ) {
-        if let Some(modifier_map) = self
+        let storage = self
             .get_data_mut(ItineraryModifierPlugin)
             .itinerary_modifier_map
-            .get_mut(&TypeId::of::<P>())
-        {
-            if let Some(downcast_modifier_map) = modifier_map
-                .as_any_mut()
-                .downcast_mut::<PersonPropertyItineraryModifier<P>>(
-            ) {
-                let downcast_modifier_map: &mut PersonPropertyItineraryModifier<P> =
-                    downcast_modifier_map;
-                downcast_modifier_map
-                    .itinerary_modifier_map
-                    .entry(person_property)
-                    .or_default()
-                    .push(Box::new(itinerary_modifier));
-            }
-        } else {
-            let person_property_modifier: PersonPropertyItineraryModifier<P> =
-                PersonPropertyItineraryModifier {
-                    itinerary_modifier_map: HashMap::from_iter([(
-                        person_property,
-                        Vec::from([Box::new(itinerary_modifier) as Box<dyn ItineraryModifier>]),
-                    )]),
-                };
-            // Insert the boxed modifier into the itinerary modifier map
-            let _ = self
-                .get_data_mut(ItineraryModifierPlugin)
-                .itinerary_modifier_map
-                .insert(TypeId::of::<P>(), Box::new(person_property_modifier));
-        }
+            .entry(TypeId::of::<P>())
+            .or_insert_with(|| {
+                Box::new(PersonPropertyItineraryModifier::<P> {
+                    itinerary_modifier_map: HashMap::new(),
+                })
+            });
+
+        let modifier_map = storage
+            .as_any_mut()
+            .downcast_mut::<PersonPropertyItineraryModifier<P>>()
+            .expect("itinerary modifier storage has the wrong type");
+
+        modifier_map
+            .itinerary_modifier_map
+            .entry(person_property)
+            .or_default()
+            .push(Box::new(itinerary_modifier));
     }
 
     fn remove_itinerary_modifier_by_property<P: IndexableProperty<Person>>(
@@ -125,19 +116,19 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
             .get_data_mut(ItineraryModifierPlugin)
             .itinerary_modifier_map
             .get_mut(&TypeId::of::<P>());
-        if let Some(property_modifier_map) = modifier_map
-            && let Some(downcast_property_modifier_map) = property_modifier_map
+        if let Some(property_modifier_map) = modifier_map {
+            let downcast = property_modifier_map
                 .as_any_mut()
-                .downcast_mut::<PersonPropertyItineraryModifier<P>>(
-            )
-        {
-            let itinerary_modifier_map = &mut downcast_property_modifier_map.itinerary_modifier_map;
-            return itinerary_modifier_map.remove(&property_value);
+                .downcast_mut::<PersonPropertyItineraryModifier<P>>()
+                .expect("modifier map entry had unexpected type for its TypeId key");
+            return downcast.itinerary_modifier_map.remove(&property_value);
         }
         None
     }
 
+    #[must_use]
     fn get_itinerary_modifiers(&self, person_id: PersonId) -> Vec<&dyn ItineraryModifier>;
+    #[must_use]
     fn get_itinerary(&self, person_id: PersonId) -> [f64; SETTING_COUNT];
 }
 impl ContextItineraryModifierExt for Context {
@@ -148,8 +139,7 @@ impl ContextItineraryModifierExt for Context {
         container
             .itinerary_modifier_map
             .values()
-            .filter_map(|modifier_map| modifier_map.get_itinerary_modifiers(self, person_id))
-            .flatten()
+            .flat_map(|modifier_map| modifier_map.get_itinerary_modifiers(self, person_id))
             .collect()
     }
 
@@ -158,38 +148,24 @@ impl ContextItineraryModifierExt for Context {
             .get_property::<Person, Itinerary>(person_id)
             .itinerary_ratios;
 
-        let modifiers = self.get_itinerary_modifiers(person_id);
+        let mut modifiers = self
+            .get_itinerary_modifiers(person_id)
+            .into_iter()
+            .filter(|modifier| modifier.accept(self, person_id));
 
-        let mut first_modifier: Option<&dyn ItineraryModifier> = None;
-        let mut layered_modifier: Option<Box<dyn ItineraryModifier>> = None;
-        for modifier in modifiers {
-            if !modifier.accept(self, person_id) {
-                continue;
-            }
+        let Some(first) = modifiers.next() else {
+            return base_itinerary;
+        };
 
-            if let Some(existing) = layered_modifier.take() {
-                // A layered, owned modifier already exists.
-                layered_modifier = Some(existing.layer(modifier));
-            } else if let Some(first) = first_modifier.take() {
-                // This is the second accepted modifier, so create the
-                // first owned layered result.
-                layered_modifier = Some(first.layer(modifier));
-            } else {
-                // Keep the first accepted modifier borrowed.
-                first_modifier = Some(modifier);
-            }
-        }
+        let Some(second) = modifiers.next() else {
+            return first.apply(&base_itinerary);
+        };
 
-        if let Some(layered) = layered_modifier {
-            // Two or more accepted modifiers.
-            layered.apply(&base_itinerary)
-        } else if let Some(modifier) = first_modifier {
-            // Exactly one accepted modifier.
-            modifier.apply(&base_itinerary)
-        } else {
-            // No accepted modifiers.
-            base_itinerary
-        }
+        modifiers
+            .fold(first.layer(second), |layered, modifier| {
+                layered.layer(modifier)
+            })
+            .apply(&base_itinerary)
     }
 }
 

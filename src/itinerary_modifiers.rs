@@ -152,52 +152,7 @@ impl ItineraryTransitionMatrix {
 
         // Invert (I - Q) to get the fundamental matrix N
         // Using Gaussian elimination with partial pivoting
-        let n = i_minus_q;
-
-        // Create augmented identity matrix for inversion
-        let mut aug = [[0.0; 2 * TRANSIENT_STATE_COUNT]; TRANSIENT_STATE_COUNT];
-        for i in 0..TRANSIENT_STATE_COUNT {
-            for j in 0..TRANSIENT_STATE_COUNT {
-                aug[i][j] = n[i][j];
-                aug[i][j + TRANSIENT_STATE_COUNT] = if i == j { 1.0 } else { 0.0 };
-            }
-        }
-
-        // Forward elimination with partial pivoting
-        for col in 0..TRANSIENT_STATE_COUNT {
-            // Find pivot
-            let mut pivot_row = col;
-            let mut max_val = aug[col][col].abs();
-            for row in col + 1..TRANSIENT_STATE_COUNT {
-                if aug[row][col].abs() > max_val {
-                    max_val = aug[row][col].abs();
-                    pivot_row = row;
-                }
-            }
-
-            // Swap rows
-            if pivot_row != col {
-                aug.swap(col, pivot_row);
-            }
-
-            // Scale pivot row
-            let pivot = aug[col][col];
-            if pivot.abs() > f64::EPSILON {
-                for j in 0..2 * TRANSIENT_STATE_COUNT {
-                    aug[col][j] /= pivot;
-                }
-
-                // Eliminate column
-                for row in 0..TRANSIENT_STATE_COUNT {
-                    if row != col {
-                        let factor = aug[row][col];
-                        for j in 0..2 * TRANSIENT_STATE_COUNT {
-                            aug[row][j] -= factor * aug[col][j];
-                        }
-                    }
-                }
-            }
-        }
+        let n = invert(i_minus_q).expect("Matrix inversion failed");
 
         // Extract inverted matrix and calculate absorption probabilities
         // N * R where N is the fundamental matrix (I-Q)^-1 and R is the absorbing matrix
@@ -205,8 +160,7 @@ impl ItineraryTransitionMatrix {
         for i in 0..TRANSIENT_STATE_COUNT {
             for j in 0..SETTING_COUNT {
                 for k in 0..TRANSIENT_STATE_COUNT {
-                    absorption_probs[i][j] +=
-                        aug[i][k + TRANSIENT_STATE_COUNT] * absorbing_matrix[j][k];
+                    absorption_probs[i][j] += n[i][k] * absorbing_matrix[j][k];
                 }
             }
         }
@@ -236,6 +190,47 @@ pub fn create_itinerary_transition_matrix(
         location_matrix: location_matrix.unwrap_or([[0.0; SETTING_COUNT]; SETTING_COUNT]),
         acceptance_function,
     }
+}
+
+fn invert<const N: usize>(mut matrix: [[f64; N]; N]) -> Option<[[f64; N]; N]> {
+    let mut inverse = [[0.0; N]; N];
+
+    for (i, row) in inverse.iter_mut().enumerate() {
+        row[i] = 1.0;
+    }
+
+    for col in 0..N {
+        let pivot_row = (col..N)
+            .max_by(|&left, &right| matrix[left][col].abs().total_cmp(&matrix[right][col].abs()))
+            .expect("pivot range is nonempty");
+
+        if matrix[pivot_row][col].abs() <= f64::EPSILON {
+            return None;
+        }
+
+        matrix.swap(col, pivot_row);
+        inverse.swap(col, pivot_row);
+
+        let pivot = matrix[col][col];
+        for j in 0..N {
+            matrix[col][j] /= pivot;
+            inverse[col][j] /= pivot;
+        }
+
+        for row in 0..N {
+            if row == col {
+                continue;
+            }
+
+            let factor = matrix[row][col];
+            for j in 0..N {
+                matrix[row][j] -= factor * matrix[col][j];
+                inverse[row][j] -= factor * inverse[col][j];
+            }
+        }
+    }
+
+    Some(inverse)
 }
 
 pub fn assert_same_matrix(

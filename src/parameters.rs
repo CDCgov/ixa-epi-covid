@@ -298,10 +298,10 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error 
                 )));
             }
             if school_calendar_modifier.modifier != SchoolCalendarModifierType::Weekend
-                && modifier_params.end_time.is_none()
+                && modifier_params.deactivates_at.is_none()
             {
                 return Err(Box::new(ModelError::ModelError(
-                    "end_time must be specified for non-weekend school calendar modifiers"
+                    "deactivates_at must be specified for non-weekend school calendar modifiers"
                         .to_string(),
                 )));
             }
