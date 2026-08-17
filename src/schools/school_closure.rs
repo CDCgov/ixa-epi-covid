@@ -118,13 +118,11 @@ pub trait SchoolClosureContextExt:
                 self.register_itinerary_modifier(SchoolState(Some(state)), itinerary_modifier);
             }
 
-            Geography::County(fips_code) => {
-                let ascii: Vec<u8> = fips_code.0.iter().map(|digit| b'0' + digit).collect();
-                let converted_fips_code = parse_fips_state_county_id(&ascii).unwrap().1;
-                self.register_itinerary_modifier(
-                    SchoolCounty(Some(converted_fips_code)),
-                    itinerary_modifier,
-                );
+            Geography::County(state_county_fips_code) => {
+                let parsed = parse_fips_state_county_id(&state_county_fips_code.as_ascii())
+                    .unwrap()
+                    .1;
+                self.register_itinerary_modifier(SchoolCounty(Some(parsed)), itinerary_modifier);
             }
 
             Geography::CensusTract(fips_code) => {
@@ -150,9 +148,8 @@ pub trait SchoolClosureContextExt:
                 self.remove_itinerary_modifier_by_property(SchoolState(Some(state)));
             }
             Geography::County(fips_code) => {
-                let ascii: Vec<u8> = fips_code.0.iter().map(|digit| b'0' + digit).collect();
-                let converted_fips_code = parse_fips_state_county_id(&ascii).unwrap().1;
-                self.remove_itinerary_modifier_by_property(SchoolCounty(Some(converted_fips_code)));
+                let parsed = parse_fips_state_county_id(&fips_code.as_ascii()).unwrap().1;
+                self.remove_itinerary_modifier_by_property(SchoolCounty(Some(parsed)));
             }
             Geography::CensusTract(fips_code) => {
                 self.remove_itinerary_modifier_by_property(SchoolCensusTract(Some(fips_code)));

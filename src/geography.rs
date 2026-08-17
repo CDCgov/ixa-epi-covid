@@ -52,6 +52,12 @@ impl<'de> Deserialize<'de> for FIPSStateCountyCode {
     }
 }
 
+impl FIPSStateCountyCode {
+    pub fn as_ascii(&self) -> Vec<u8> {
+        self.0.iter().map(|digit| b'0' + digit).collect()
+    }
+}
+
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize, Eq, Hash, EnumDiscriminants)]
 #[strum_discriminants(name(GeographyType))]
 #[strum_discriminants(derive(PartialOrd, Ord, Hash, Deserialize, Serialize))]
@@ -107,8 +113,7 @@ impl Geography {
             (Geography::CensusTract(fips1), Geography::CensusTract(fips2)) => Ok(fips1 == fips2),
             (Geography::CensusTract(fips1), Geography::County(fips2))
             | (Geography::County(fips2), Geography::CensusTract(fips1)) => {
-                let ascii: Vec<u8> = fips2.0.iter().map(|digit| b'0' + digit).collect();
-                let fips_county = parse_fips_state_county_id(&ascii).unwrap().1;
+                let fips_county = parse_fips_state_county_id(&fips2.as_ascii()).unwrap().1;
                 Ok(fips1.state_code() == fips_county.state_code()
                     && fips1.county_code() == fips_county.county_code())
             }
@@ -120,8 +125,7 @@ impl Geography {
             (Geography::County(fips1), Geography::County(fips2)) => Ok(fips1 == fips2),
             (Geography::County(fips1), Geography::State(state2))
             | (Geography::State(state2), Geography::County(fips1)) => {
-                let ascii: Vec<u8> = fips1.0.iter().map(|digit| b'0' + digit).collect();
-                let fips_county = parse_fips_state_county_id(&ascii).unwrap().1;
+                let fips_county = parse_fips_state_county_id(&fips1.as_ascii()).unwrap().1;
                 Ok(fips_county.state_code() == *state2)
             }
 
