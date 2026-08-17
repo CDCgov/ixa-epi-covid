@@ -180,7 +180,6 @@ mod test {
     use crate::parameters::{GlobalParams, Params, SettingProperties};
     use crate::settings::{Itinerary, SettingCategory};
     use ixa::{ExecutionPhase, HashMap};
-    use std::rc::Rc;
 
     fn setup() -> Context {
         let mut context = Context::new();

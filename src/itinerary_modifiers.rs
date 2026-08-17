@@ -1,6 +1,6 @@
 use ixa::Context;
 use serde::{Deserialize, Serialize};
-use std::{any::Any, rc::Rc};
+use std::any::Any;
 
 use crate::{
     itinerary_manager::ItineraryModifier,

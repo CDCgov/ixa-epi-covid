@@ -1,4 +1,4 @@
-use std::{path::PathBuf, rc::Rc};
+use std::path::PathBuf;
 
 use crate::{
     ContextParametersExt, Params,
@@ -263,7 +263,7 @@ fn define_virtual_school_closure_itinerary_modifier(
         [0.0, 0.0, 0.0, 0.0],
     ];
     let acceptance_function: Option<AcceptanceFunction> =
-        Some(Rc::new(move |context, _person| match geography {
+        Some(Box::new(move |context, _person| match geography {
             Geography::State(_) => context.is_state_school_closure_active(),
             Geography::County(_) => !context.is_state_school_closure_active(),
             Geography::CensusTract(_) => {
@@ -277,7 +277,7 @@ fn define_virtual_school_closure_itinerary_modifier(
 
 #[cfg(test)]
 mod test {
-    use std::cell::RefCell;
+    use std::{cell::RefCell, rc::Rc};
 
     use ixa::HashMap;
 

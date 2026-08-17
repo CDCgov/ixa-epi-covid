@@ -6,6 +6,7 @@ use crate::error::ModelError;
 use crate::infection_importation::ImportCasesFromFile;
 use crate::reports::ReportParams;
 use crate::school_calendar::{SchoolCalendarModifier, SchoolCalendarModifierType};
+use crate::schools::school_closure::SchoolClosureRecords;
 use crate::settings::SettingCategory;
 use crate::symptom_status_manager::{SymptomAgeGroup, SymptomDelayDistLogNormParams};
 
@@ -78,6 +79,8 @@ pub struct Params {
     pub itinerary_ratios: HashMap<SettingCategory, f64>,
     /// itinerary modifier for weekends
     pub school_calendar: Vec<SchoolCalendarModifier>,
+    /// school closure parameters
+    pub school_closures: SchoolClosureRecords,
     /// Prevalence report with a period and name required
     pub prevalence_report: ReportParams,
     /// Incidence report with a period and name required
@@ -286,7 +289,7 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error 
             "At least one itinerary ratio must be greater than zero.".to_string(),
         )));
     }
-    
+
     let mut unique_school_calendar_modifiers: Vec<SchoolCalendarModifier> = Vec::new();
     for school_calendar_modifier in &parameters.school_calendar {
         let modifier_params = school_calendar_modifier.clone();
@@ -395,6 +398,10 @@ impl Default for Params {
             settings_properties: HashMap::new(),
             itinerary_ratios: HashMap::new(),
             school_calendar: Vec::new(),
+            school_closures: SchoolClosureRecords {
+                records: Vec::new(),
+                district_mapping: None,
+            },
             prevalence_report: ReportParams {
                 write: false,
                 filename: None,
