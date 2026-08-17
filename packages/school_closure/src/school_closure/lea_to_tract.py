@@ -1,26 +1,34 @@
 import argparse
 import json
-import sys
 from pathlib import Path
+
 import polars as pl
 
 DEFAULT_LEA_COLUMN = "LEAID"
 DEFAULT_TRACT_COLUMN = "TRACT"
 
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("input_csv", type=Path, help="Path to the input CSV file")
+    parser.add_argument(
+        "input_csv", type=Path, help="Path to the input CSV file"
+    )
     parser.add_argument(
         "output_json",
         type=Path,
     )
-    parser.add_argument("--state", type=str, default=None, help="State code to filter tracts")
-    
+    parser.add_argument(
+        "--state", type=str, default=None, help="State code to filter tracts"
+    )
+
     return parser.parse_args()
 
 
 def build_mapping(
-    input_csv: Path, lea_column: str, tract_column: str, state: str | None = None
+    input_csv: Path,
+    lea_column: str,
+    tract_column: str,
+    state: str | None = None,
 ) -> dict[str, list[str]]:
     """Return the LEA-to-tract mapping, skipped-row count, and duplicate count."""
     # Force both identifier columns to strings so Polars preserves leading zeroes.
@@ -57,7 +65,9 @@ def build_mapping(
     )
 
     # Only the final conversion to JSON-compatible Python objects leaves Polars.
-    mapping = dict(zip(grouped[lea_column].to_list(), grouped["tracts"].to_list()))
+    mapping = dict(
+        zip(grouped[lea_column].to_list(), grouped["tracts"].to_list())
+    )
     return mapping
 
 
@@ -74,6 +84,7 @@ def main() -> int:
     with output_json.open("w", encoding="utf-8", newline="\n") as json_file:
         json.dump(mapping, json_file, ensure_ascii=False, indent=2)
         json_file.write("\n")
+
 
 if __name__ == "__main__":
     main()

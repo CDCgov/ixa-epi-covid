@@ -213,6 +213,28 @@ pub fn parse_fips_community_id(input: &[u8]) -> FIPSParseResult<FIPSCode> {
     }
 }
 
+/// Parses the input as a FIPS code for a community id. Returns `(rest, FIPSCode)`,
+/// where `rest` is the remaining input after the FIPS code.
+pub fn parse_fips_state_county_id(input: &[u8]) -> FIPSParseResult<FIPSCode> {
+    let (rest, state): (&[u8], StateCode) = parse_state_code(input)?;
+    let (rest, county): (&[u8], CountyCode) = parse_county_code(rest)?;
+
+    let fips_code = FIPSCode::new(
+        state,
+        county,
+        0,
+        PopulationReaderSettingCategory::Unspecified.encode(),
+        0,
+        0,
+    );
+    match fips_code {
+        Ok(fips_code) => Ok((rest, fips_code)),
+        Err(_) => {
+            panic!("FIPS code is invalid. This is a bug in the population ID parser.");
+        }
+    }
+}
+
 /// Parses the first three digits of `input` as a county code. Enforces the requirement that the
 /// value is representable using 10 bits (which is tautologically always true).
 fn parse_county_code(input: &[u8]) -> FIPSParseResult<CountyCode> {

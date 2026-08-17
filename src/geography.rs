@@ -1,8 +1,56 @@
-use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
+use serde::{
+    Deserialize, Deserializer, Serialize,
+    de::{self, Visitor},
+};
+use std::{cmp::Ordering, fmt};
 use strum::{EnumDiscriminants, IntoStaticStr};
 
-use crate::{pop_reader::{FIPSCode, StateCode}, school_closure::school_district::LEACode};
+use crate::{
+    error::ModelError,
+    pop_reader::{FIPSCode, StateCode, parser::parse_fips_state_county_id},
+    schools::school_district::LEACode,
+};
+
+#[derive(Copy, Clone, PartialEq, Debug, Serialize, Eq, Hash)]
+pub struct FIPSStateCountyCode(pub [u8; 5]);
+
+impl<'de> Deserialize<'de> for FIPSStateCountyCode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct FIPSStateCountyCodeVisitor;
+
+        impl<'de> Visitor<'de> for FIPSStateCountyCodeVisitor {
+            type Value = FIPSStateCountyCode;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a 5-digit number")
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if !(10_000..=99_999).contains(&value) {
+                    return Err(E::custom("expected a 5-digit number"));
+                }
+
+                let mut digits = [0u8; 5];
+                let mut value = value;
+
+                for index in (0..5).rev() {
+                    digits[index] = (value % 10) as u8;
+                    value /= 10;
+                }
+
+                Ok(FIPSStateCountyCode(digits))
+            }
+        }
+
+        deserializer.deserialize_u64(FIPSStateCountyCodeVisitor)
+    }
+}
 
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize, Eq, Hash, EnumDiscriminants)]
 #[strum_discriminants(name(GeographyType))]
@@ -10,9 +58,14 @@ use crate::{pop_reader::{FIPSCode, StateCode}, school_closure::school_district::
 #[strum_discriminants(derive(IntoStaticStr), repr(u8))]
 #[serde(tag = "geography_type", content = "code")]
 pub enum Geography {
-    #[strum_discriminants(serde(rename = "schooldistrict", alias = "school district", alias = "school_district", alias = "SCHOOL_DISTRICT"))]
+    #[strum_discriminants(serde(
+        rename = "schooldistrict",
+        alias = "school district",
+        alias = "school_district",
+        alias = "SCHOOL_DISTRICT"
+    ))]
     SchoolDistrict(LEACode),
-    
+
     #[strum_discriminants(serde(
         rename = "censustract",
         alias = "census tract",
@@ -22,7 +75,7 @@ pub enum Geography {
     CensusTract(FIPSCode),
 
     #[strum_discriminants(serde(rename = "county", alias = "County", alias = "COUNTY"))]
-    County(FIPSCode),
+    County(FIPSStateCountyCode),
 
     #[strum_discriminants(serde(rename = "state", alias = "State", alias = "STATE"))]
     State(StateCode),
@@ -47,6 +100,38 @@ impl Geography {
 
     fn geography_type_u8(&self) -> u8 {
         self.geography_type() as u8
+    }
+
+    pub fn overlaps(&self, other: &Self) -> Result<bool, ModelError> {
+        match (self, other) {
+            (Geography::CensusTract(fips1), Geography::CensusTract(fips2)) => Ok(fips1 == fips2),
+            (Geography::CensusTract(fips1), Geography::County(fips2))
+            | (Geography::County(fips2), Geography::CensusTract(fips1)) => {
+                let ascii: Vec<u8> = fips2.0.iter().map(|digit| b'0' + digit).collect();
+                let fips_county = parse_fips_state_county_id(&ascii).unwrap().1;
+                Ok(fips1.state_code() == fips_county.state_code()
+                    && fips1.county_code() == fips_county.county_code())
+            }
+            (Geography::CensusTract(fips1), Geography::State(state2))
+            | (Geography::State(state2), Geography::CensusTract(fips1)) => {
+                Ok(fips1.state_code() == *state2)
+            }
+
+            (Geography::County(fips1), Geography::County(fips2)) => Ok(fips1 == fips2),
+            (Geography::County(fips1), Geography::State(state2))
+            | (Geography::State(state2), Geography::County(fips1)) => {
+                let ascii: Vec<u8> = fips1.0.iter().map(|digit| b'0' + digit).collect();
+                let fips_county = parse_fips_state_county_id(&ascii).unwrap().1;
+                Ok(fips_county.state_code() == *state2)
+            }
+
+            (Geography::State(state1), Geography::State(state2)) => Ok(state1 == state2),
+
+            // For SchoolDistrict, we don't have a mapping to FIPS codes, so we can't determine overlaps with other geographies.
+            _ => Err(ModelError::ModelError(
+                "Cannot determine overlaps for SchoolDistrict geography".to_string(),
+            )),
+        }
     }
 }
 
