@@ -63,7 +63,7 @@
             }
         ],
         "school_closures": {
-            "district_mapping": "input/test_json.json",
+            "district_mapping": "input/district_tract_mapping.json",
             "records": [
                 {
                     "geography": {"geography_type": "State", "code": 56},
