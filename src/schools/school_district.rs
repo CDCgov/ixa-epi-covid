@@ -4,7 +4,7 @@ use crate::{
     error::ModelError,
     geography::Geography,
     pop_reader::parser::parse_fips_community_id,
-    schools::school_closure::{SchoolClosureParameters, SchoolClosureRecords},
+    schools::school_closure::{SchoolClosureModifier, SchoolClosureParameters},
 };
 use ixa::{HashMap, HashMapExt};
 use serde::{
@@ -73,11 +73,11 @@ impl LEACode {
 }
 
 pub fn process_school_closure_records(
-    school_closures: SchoolClosureRecords,
+    school_closures: SchoolClosureModifier,
 ) -> Result<Vec<SchoolClosureParameters>, ModelError> {
     let mut processed_records: Vec<SchoolClosureParameters> = Vec::new();
     let mapping = read_mapping(school_closures.district_mapping)?;
-    for record in school_closures.records {
+    for record in school_closures.closures {
         match record.geography {
             Geography::SchoolDistrict(code) => {
                 if mapping.is_empty() {
@@ -93,8 +93,8 @@ pub fn process_school_closure_records(
                         parse_fips_community_id(fips_code.as_bytes()).unwrap().1;
                     processed_records.push(SchoolClosureParameters {
                         geography: Geography::CensusTract(converted_fips_code),
-                        start_time: record.start_time,
-                        end_time: record.end_time,
+                        activates_at: record.activates_at,
+                        deactivates_at: record.deactivates_at,
                     });
                 }
             }
@@ -107,15 +107,15 @@ pub fn process_school_closure_records(
             Geography::County(fips_code) => {
                 processed_records.push(SchoolClosureParameters {
                     geography: Geography::County(fips_code),
-                    start_time: record.start_time,
-                    end_time: record.end_time,
+                    activates_at: record.activates_at,
+                    deactivates_at: record.deactivates_at,
                 });
             }
             Geography::State(state_code) => {
                 processed_records.push(SchoolClosureParameters {
                     geography: Geography::State(state_code),
-                    start_time: record.start_time,
-                    end_time: record.end_time,
+                    activates_at: record.activates_at,
+                    deactivates_at: record.deactivates_at,
                 });
             }
         }
@@ -137,25 +137,27 @@ fn read_mapping(
 
 #[cfg(test)]
 mod test {
-    use std::fs;
-
     use super::*;
-    use crate::geography::{FIPSStateCountyCode, Geography};
+    use crate::{
+        geography::{FIPSStateCountyCode, Geography},
+        schools::school_closure::SchoolClosureModifier,
+    };
+    use std::fs;
 
     #[test]
     fn test_process_school_closure_records() {
-        let school_closures = SchoolClosureRecords {
+        let school_closures = SchoolClosureModifier {
             district_mapping: None,
-            records: vec![
+            closures: vec![
                 SchoolClosureParameters {
                     geography: Geography::State(56),
-                    start_time: 0.0,
-                    end_time: 10.0,
+                    activates_at: 0.0,
+                    deactivates_at: 10.0,
                 },
                 SchoolClosureParameters {
                     geography: Geography::County(FIPSStateCountyCode([1, 2, 3, 4, 5])),
-                    start_time: 5.0,
-                    end_time: 15.0,
+                    activates_at: 5.0,
+                    deactivates_at: 15.0,
                 },
             ],
         };
@@ -167,8 +169,12 @@ mod test {
             processed_records[1].geography,
             Geography::County(FIPSStateCountyCode([1, 2, 3, 4, 5]))
         );
-        assert!(processed_records[0].start_time == 0.0 && processed_records[0].end_time == 10.0);
-        assert!(processed_records[1].start_time == 5.0 && processed_records[1].end_time == 15.0);
+        assert!(
+            processed_records[0].activates_at == 0.0 && processed_records[0].deactivates_at == 10.0
+        );
+        assert!(
+            processed_records[1].activates_at == 5.0 && processed_records[1].deactivates_at == 15.0
+        );
     }
 
     #[test]
@@ -179,12 +185,12 @@ mod test {
         ));
         fs::write(&mapping_path, r#"{"1234567":["01001020100"]}"#).unwrap();
 
-        let school_closures = SchoolClosureRecords {
+        let school_closures = SchoolClosureModifier {
             district_mapping: Some(mapping_path.clone()),
-            records: vec![SchoolClosureParameters {
+            closures: vec![SchoolClosureParameters {
                 geography: Geography::SchoolDistrict(LEACode([1, 2, 3, 4, 5, 6, 7])),
-                start_time: 10.0,
-                end_time: 20.0,
+                activates_at: 10.0,
+                deactivates_at: 20.0,
             }],
         };
 
@@ -194,19 +200,22 @@ mod test {
             processed_records[0].geography,
             Geography::CensusTract(parse_fips_community_id(b"01001020100").unwrap().1)
         );
-        assert!(processed_records[0].start_time == 10.0 && processed_records[0].end_time == 20.0);
+        assert!(
+            processed_records[0].activates_at == 10.0
+                && processed_records[0].deactivates_at == 20.0
+        );
 
         fs::remove_file(mapping_path).unwrap();
     }
 
     #[test]
     fn test_error_if_no_mapping_for_district() {
-        let school_closures = SchoolClosureRecords {
+        let school_closures = SchoolClosureModifier {
             district_mapping: None,
-            records: vec![SchoolClosureParameters {
+            closures: vec![SchoolClosureParameters {
                 geography: Geography::SchoolDistrict(LEACode([1, 2, 3, 4, 5, 6, 7])),
-                start_time: 10.0,
-                end_time: 20.0,
+                activates_at: 10.0,
+                deactivates_at: 20.0,
             }],
         };
 
@@ -220,14 +229,14 @@ mod test {
 
     #[test]
     fn test_error_for_tract_record() {
-        let school_closures = SchoolClosureRecords {
+        let school_closures = SchoolClosureModifier {
             district_mapping: None,
-            records: vec![SchoolClosureParameters {
+            closures: vec![SchoolClosureParameters {
                 geography: Geography::CensusTract(
                     parse_fips_community_id(b"01001020100").unwrap().1,
                 ),
-                start_time: 10.0,
-                end_time: 20.0,
+                activates_at: 10.0,
+                deactivates_at: 20.0,
             }],
         };
 

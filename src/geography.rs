@@ -62,7 +62,7 @@ impl FIPSStateCountyCode {
 #[strum_discriminants(name(GeographyType))]
 #[strum_discriminants(derive(PartialOrd, Ord, Hash, Deserialize, Serialize))]
 #[strum_discriminants(derive(IntoStaticStr), repr(u8))]
-#[serde(tag = "geography_type", content = "code")]
+#[serde(tag = "type", content = "code")]
 pub enum Geography {
     #[strum_discriminants(serde(
         rename = "schooldistrict",
@@ -154,5 +154,24 @@ mod test {
         let g4 = Geography::State(2);
         assert!(g1 > g3);
         assert!(!(g1 < g4) && !(g4 > g1));
+    }
+
+    #[test]
+    fn test_geography_overlaps() {
+        let g1 = Geography::State(1);
+        let g2 = Geography::County(FIPSStateCountyCode([0, 1, 0, 0, 1]));
+        let g3 = Geography::CensusTract(parse_fips_community_id(b"01001020100").unwrap().1);
+        let g4 = Geography::County(FIPSStateCountyCode([0, 2, 0, 0, 1]));
+        let g5 = Geography::CensusTract(parse_fips_community_id(b"02001020200").unwrap().1);
+        assert!(g1.overlaps(&g2).unwrap());
+        assert!(g1.overlaps(&g3).unwrap());
+        assert!(!g1.overlaps(&g4).unwrap());
+        assert!(!g1.overlaps(&g5).unwrap());
+        assert!(g2.overlaps(&g3).unwrap());
+        assert!(!g2.overlaps(&g4).unwrap());
+        assert!(!g2.overlaps(&g5).unwrap());
+        assert!(!g3.overlaps(&g4).unwrap());
+        assert!(!g3.overlaps(&g5).unwrap());
+        assert!(g4.overlaps(&g5).unwrap());
     }
 }

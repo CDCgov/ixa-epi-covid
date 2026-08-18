@@ -1,97 +1,15 @@
-# LEA-to-Census-Tract JSON Converter
+# School Closure Pre-processing
+ETL package for generating school district to FIPS census tract code mapping given Geographic Reference Files (GRF) CSV mapping of LEA ID codes to census tract FIPS codes.
 
-`lea_to_tract.py` converts a CSV containing school district and census tract relationships into a JSON lookup. Each school district LEA ID becomes a JSON key, and its value is a list of the census tracts associated with that district.
+## Background
+In ixa-epi-covid school closures are modeled at the school district, county and state level. School districts are designated by an LEA ID which is different numeric representation than FIPS code. Since FIPS codes are used in the model, this packages creates a mapping of school districts to the set of census tracts that fully or partially overlap with the school district. String representations are used in the script for both school district and FIPS codes to preserve leading zeros.
 
-The script uses [Polars](https://pola.rs/) for reading, cleaning, deduplicating, grouping, and sorting the CSV data.
+The required CSV file is available through [National Center for Education Statistics](https://nces.ed.gov/programs/edge/geographic/relationshipfiles).
 
-## Requirements
+## Getting Started
+The script takes in three arguments
+ - path to the GRF LEA ID to FIPS code mapping CSV
+ - path the output file where the JSON will be written
+ - an optional parameter of a state's FIPS Code (e.g., WY = 56)
 
-- Python 3.9 or newer
-- Polars
-
-Install Polars with:
-
-```powershell
-python -m pip install polars
-```
-
-## Input CSV
-
-By default, the CSV must contain these columns:
-
-| Column | Description |
-| --- | --- |
-| `LEAID` | School district LEA identifier |
-| `TRACT` | Census tract identifier |
-
-Other columns may be present; the script ignores them.
-
-Example:
-
-```csv
-LEAID,NAME_LEA25,TRACT
-0100001,Fort Rucker School District,01031010300
-0100001,Fort Rucker School District,01045020000
-0100003,Maxwell AFB School District,01101000900
-```
-
-## Usage
-
-From the directory containing the script:
-
-```powershell
-python lea_tracts_to_json.py INPUT_CSV [OUTPUT_JSON]
-```
-
-For example:
-
-```powershell
-python lea_tracts_to_json.py "C:\data\grf25_lea_tract.csv" "C:\data\lea_tracts.json"
-```
-
-If `OUTPUT_JSON` is omitted, the output is written beside the input CSV with `_lea_tracts` added to its filename. For example:
-
-```powershell
-python lea_tracts_to_json.py "C:\data\grf25_lea_tract.csv"
-```
-
-This creates:
-
-```text
-C:\data\grf25_lea_tract_lea_tracts.json
-```
-
-## Output
-
-The output is a JSON object in this format:
-
-```json
-{
-  "0100001": [
-    "01031010300",
-    "01045020000"
-  ],
-  "0100003": [
-    "01101000900"
-  ]
-}
-```
-
-LEA IDs and census tract IDs are intentionally stored as JSON strings. Census tracts must remain quoted because JSON numbers cannot contain leading zeros. Storing them as strings preserves the complete 11-digit tract identifier.
-### Display command help
-
-```powershell
-python lea_tracts_to_json.py --help
-```
-
-## Data handling
-
-The script:
-
-- reads LEA and tract identifiers as strings to preserve leading zeros;
-- removes whitespace from the beginning and end of identifiers;
-- skips rows with a blank LEA ID or tract ID;
-- removes duplicate LEA-to-tract relationships;
-- sorts LEA IDs and each district's tract list for stable output; and
-
-If the input file is missing, required columns are absent, or the CSV cannot be read, the script prints an error and exits without reporting success.
+`uv run python packages/school_closure/src/school_closure/src/lea_to_tract.py input/grf25_lea_tract.csv input/district_tract_mapping.json --state 56`

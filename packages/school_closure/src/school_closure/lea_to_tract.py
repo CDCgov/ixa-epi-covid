@@ -48,12 +48,9 @@ def build_mapping(
         pl.col(tract_column) == "",
     )
 
-    print(frame.shape)
-    print(state)
     frame = frame.filter(
         pl.col(tract_column).str.slice(0, 2) == state if state else True
     )
-    print(frame.shape)
 
     valid = frame.filter(~blank_id)
     unique_links = valid.unique(subset=[lea_column, tract_column])

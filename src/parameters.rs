@@ -6,7 +6,7 @@ use crate::error::ModelError;
 use crate::infection_importation::ImportCasesFromFile;
 use crate::reports::ReportParams;
 use crate::school_calendar::{SchoolCalendarModifier, SchoolCalendarModifierType};
-use crate::schools::school_closure::SchoolClosureRecords;
+use crate::schools::school_closure::SchoolClosureModifier;
 use crate::settings::SettingCategory;
 use crate::symptom_status_manager::{SymptomAgeGroup, SymptomDelayDistLogNormParams};
 
@@ -25,13 +25,6 @@ pub enum RateFnType {
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct SettingProperties {
     pub alpha: f64,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
-pub struct Weekends {
-    pub delay: Option<f64>,
-    pub prop_school_time_to_home: Option<f64>,
-    pub prop_school_time_to_comm: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -77,10 +70,10 @@ pub struct Params {
     pub settings_properties: HashMap<SettingCategory, SettingProperties>,
     /// ratios used to initialize individuals itineraries by setting type.
     pub itinerary_ratios: HashMap<SettingCategory, f64>,
-    /// itinerary modifier for weekends
+    /// Vector of modifiers that impacting school itineraries
     pub school_calendar: Vec<SchoolCalendarModifier>,
-    /// school closure parameters
-    pub school_closures: SchoolClosureRecords,
+    /// Parameters for school closures by geography with school district to census tract mapping
+    pub school_closures: SchoolClosureModifier,
     /// Prevalence report with a period and name required
     pub prevalence_report: ReportParams,
     /// Incidence report with a period and name required
@@ -398,8 +391,8 @@ impl Default for Params {
             settings_properties: HashMap::new(),
             itinerary_ratios: HashMap::new(),
             school_calendar: Vec::new(),
-            school_closures: SchoolClosureRecords {
-                records: Vec::new(),
+            school_closures: SchoolClosureModifier {
+                closures: Vec::new(),
                 district_mapping: None,
             },
             prevalence_report: ReportParams {

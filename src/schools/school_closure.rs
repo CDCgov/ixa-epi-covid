@@ -33,7 +33,7 @@ pub struct SchoolCounty(pub Option<FIPSCode>);
 impl_derived_property!(SchoolCounty, Person, [Itinerary], [], |itinerary| {
     SchoolCounty(
         itinerary.setting_ids[SettingCategory::School]
-            .and_then(|code| code.0.county_fips_code().ok()),
+            .and_then(|code| code.0.state_county_fips_code().ok()),
     )
 });
 
@@ -49,13 +49,13 @@ impl_derived_property!(SchoolCensusTract, Person, [Itinerary], [], |itinerary| {
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct SchoolClosureParameters {
     pub geography: Geography,
-    pub start_time: f64,
-    pub end_time: f64,
+    pub activates_at: f64,
+    pub deactivates_at: f64,
 }
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
-pub struct SchoolClosureRecords {
-    pub records: Vec<SchoolClosureParameters>,
+pub struct SchoolClosureModifier {
+    pub closures: Vec<SchoolClosureParameters>,
     pub district_mapping: Option<PathBuf>,
 }
 
@@ -244,7 +244,11 @@ pub fn init(context: &mut Context) -> Result<(), ModelError> {
     } = context.get_params().clone();
     let processed_school_closures = process_school_closure_records(school_closures)?;
     for record in processed_school_closures {
-        context.setup_school_closure_triggers(record.start_time, record.end_time, record.geography);
+        context.setup_school_closure_triggers(
+            record.activates_at,
+            record.deactivates_at,
+            record.geography,
+        );
     }
     context.setup_school_closure_itinerary_modification();
     Ok(())

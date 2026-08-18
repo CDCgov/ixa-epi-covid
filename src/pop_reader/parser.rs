@@ -213,7 +213,7 @@ pub fn parse_fips_community_id(input: &[u8]) -> FIPSParseResult<FIPSCode> {
     }
 }
 
-/// Parses the input as a FIPS code for a community id. Returns `(rest, FIPSCode)`,
+/// Parses the input as a FIPS code for a state + county id. Returns `(rest, FIPSCode)`,
 /// where `rest` is the remaining input after the FIPS code.
 pub fn parse_fips_state_county_id(input: &[u8]) -> FIPSParseResult<FIPSCode> {
     let (rest, state): (&[u8], StateCode) = parse_state_code(input)?;
@@ -496,6 +496,35 @@ mod tests {
                 },
             ))
         );
+    }
+
+    #[test]
+    fn test_parse_community_id() {
+        // Basic successful parsing
+        assert_eq!(
+            parse_fips_community_id(b"110010109000024rest"),
+            Ok((
+                &b"0024rest"[..],
+                FIPSCode::new(11, 1, 10900, 5, 0, 0).unwrap()
+            ))
+        );
+
+        // Error cases
+        assert!(parse_fips_community_id(b"").is_err()); // Empty string
+        assert!(parse_fips_community_id(b"abc").is_err()); // No digits
+    }
+
+    #[test]
+    fn test_parse_state_county_id() {
+        // Basic successful parsing
+        assert_eq!(
+            parse_fips_state_county_id(b"11001rest"),
+            Ok((&b"rest"[..], FIPSCode::new(11, 1, 0, 0, 0, 0).unwrap()))
+        );
+
+        // Error cases
+        assert!(parse_fips_state_county_id(b"").is_err()); // Empty string
+        assert!(parse_fips_state_county_id(b"abc").is_err()); // No digits
     }
 
     #[test]
