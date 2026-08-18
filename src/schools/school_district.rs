@@ -47,6 +47,16 @@ impl<'de> Deserialize<'de> for LEACode {
 
                 Ok(LEACode(digits))
             }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let value = value
+                    .parse::<u64>()
+                    .map_err(|_| E::custom("expected a 7-digit number"))?;
+                self.visit_u64(value)
+            }
         }
 
         deserializer.deserialize_u64(LEACodeVisitor)
@@ -70,6 +80,11 @@ pub fn process_school_closure_records(
     for record in school_closures.records {
         match record.geography {
             Geography::SchoolDistrict(code) => {
+                if mapping.is_empty() {
+                    return Err(ModelError::ModelError(
+                        "No school district mapping entries were provided".to_string(),
+                    ));
+                }
                 let fips_codes = mapping.get(&code).ok_or_else(|| {
                     ModelError::ModelError(format!("No FIPS codes found for LEA code: {:?}", code))
                 })?;
@@ -84,11 +99,10 @@ pub fn process_school_closure_records(
                 }
             }
             Geography::CensusTract(fips_code) => {
-                processed_records.push(SchoolClosureParameters {
-                    geography: Geography::CensusTract(fips_code),
-                    start_time: record.start_time,
-                    end_time: record.end_time,
-                });
+                Err(ModelError::ModelError(format!(
+                    "Census tract closures are not supported: {:?}",
+                    fips_code
+                )))?;
             }
             Geography::County(fips_code) => {
                 processed_records.push(SchoolClosureParameters {
@@ -118,5 +132,110 @@ fn read_mapping(
         Ok(mapping)
     } else {
         Ok(HashMap::new())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::fs;
+
+    use super::*;
+    use crate::geography::{FIPSStateCountyCode, Geography};
+
+    #[test]
+    fn test_process_school_closure_records() {
+        let school_closures = SchoolClosureRecords {
+            district_mapping: None,
+            records: vec![
+                SchoolClosureParameters {
+                    geography: Geography::State(56),
+                    start_time: 0.0,
+                    end_time: 10.0,
+                },
+                SchoolClosureParameters {
+                    geography: Geography::County(FIPSStateCountyCode([1, 2, 3, 4, 5])),
+                    start_time: 5.0,
+                    end_time: 15.0,
+                },
+            ],
+        };
+
+        let processed_records = process_school_closure_records(school_closures).unwrap();
+        assert_eq!(processed_records.len(), 2);
+        assert_eq!(processed_records[0].geography, Geography::State(56));
+        assert_eq!(
+            processed_records[1].geography,
+            Geography::County(FIPSStateCountyCode([1, 2, 3, 4, 5]))
+        );
+        assert!(processed_records[0].start_time == 0.0 && processed_records[0].end_time == 10.0);
+        assert!(processed_records[1].start_time == 5.0 && processed_records[1].end_time == 15.0);
+    }
+
+    #[test]
+    fn test_read_mapping_json_and_process_districts() {
+        let mapping_path = std::env::temp_dir().join(format!(
+            "school_district_mapping_{}.json",
+            std::process::id()
+        ));
+        fs::write(&mapping_path, r#"{"1234567":["01001020100"]}"#).unwrap();
+
+        let school_closures = SchoolClosureRecords {
+            district_mapping: Some(mapping_path.clone()),
+            records: vec![SchoolClosureParameters {
+                geography: Geography::SchoolDistrict(LEACode([1, 2, 3, 4, 5, 6, 7])),
+                start_time: 10.0,
+                end_time: 20.0,
+            }],
+        };
+
+        let processed_records = process_school_closure_records(school_closures).unwrap();
+        assert_eq!(processed_records.len(), 1);
+        assert_eq!(
+            processed_records[0].geography,
+            Geography::CensusTract(parse_fips_community_id(b"01001020100").unwrap().1)
+        );
+        assert!(processed_records[0].start_time == 10.0 && processed_records[0].end_time == 20.0);
+
+        fs::remove_file(mapping_path).unwrap();
+    }
+
+    #[test]
+    fn test_error_if_no_mapping_for_district() {
+        let school_closures = SchoolClosureRecords {
+            district_mapping: None,
+            records: vec![SchoolClosureParameters {
+                geography: Geography::SchoolDistrict(LEACode([1, 2, 3, 4, 5, 6, 7])),
+                start_time: 10.0,
+                end_time: 20.0,
+            }],
+        };
+
+        let error = process_school_closure_records(school_closures).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("No school district mapping entries were provided")
+        );
+    }
+
+    #[test]
+    fn test_error_for_tract_record() {
+        let school_closures = SchoolClosureRecords {
+            district_mapping: None,
+            records: vec![SchoolClosureParameters {
+                geography: Geography::CensusTract(
+                    parse_fips_community_id(b"01001020100").unwrap().1,
+                ),
+                start_time: 10.0,
+                end_time: 20.0,
+            }],
+        };
+
+        let error = process_school_closure_records(school_closures).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Census tract closures are not supported:")
+        );
     }
 }
