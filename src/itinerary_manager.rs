@@ -2,11 +2,12 @@ use ixa::prelude::*;
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
+    default,
 };
 
 use crate::{
     population_loader::{Person, PersonId},
-    settings::{Itinerary, SETTING_COUNT},
+    settings::{ContextSettingExt, Itinerary, SETTING_COUNT},
 };
 
 pub trait ItineraryModifier: std::fmt::Debug + 'static {
@@ -25,7 +26,7 @@ impl PartialEq for dyn ItineraryModifier {
     }
 }
 
-pub trait PersonPropertyItineraryModifierStorage: std::fmt::Debug + Any {
+pub trait PersonPropertyItineraryModifierStorage: Any {
     fn get_itinerary_modifiers<'a>(
         &'a self,
         context: &Context,
@@ -35,10 +36,11 @@ pub trait PersonPropertyItineraryModifierStorage: std::fmt::Debug + Any {
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
-#[derive(Debug)]
+// #[derive(Debug)]
 struct PersonPropertyItineraryModifier<P> {
     // Use fully qualified syntax for the associated type because type aliases do not have type checking
     itinerary_modifier_map: HashMap<P, Vec<Box<dyn ItineraryModifier>>>,
+    event_listener_map: HashMap<P, EventListenerId<PropertyChangeEvent<Person, P>>>,
 }
 
 impl<P> PersonPropertyItineraryModifierStorage for PersonPropertyItineraryModifier<P>
@@ -79,13 +81,57 @@ define_data_plugin!(
     ItineraryModifierContainer::default()
 );
 
-pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
+pub trait ContextItineraryModifierExt:
+    PluginContext + ContextEntitiesExt
+{
+    /// Subscribe to a general person property event for itinerary modifier registration.
+    fn setup_event_subscription_for_setting_membership<
+        P: IndexableProperty<Person>,
+        I: ItineraryModifier,
+    >(
+        &mut self,
+        person_property: P
+    ) {
+        let listener: EventListenerId<PropertyChangeEvent<Person, P>> = self.subscribe_to_event::<PropertyChangeEvent<Person, P>>(move |context, event| {
+            if event.current == person_property {
+                let modified_itinerary = context.get_itinerary(event.entity_id);
+                let default_itinerary = context
+                    .get_property::<Person, Itinerary>(event.entity_id)
+                    .itinerary_ratios;
+                let setting_ids = context
+                    .get_property::<Person, Itinerary>(event.entity_id)
+                    .setting_ids;
+                for i in 0..SETTING_COUNT {
+                    if modified_itinerary[i] == 0.0
+                        && default_itinerary[i] > 0.0
+                        && let Some(setting_id) = setting_ids[i]
+                    {
+                        context.remove_person_from_setting(event.entity_id, setting_id);
+                    }
+                }
+            }
+        });
+    }
+
+    fn remove_event_subscription_for_setting_membership<P: IndexableProperty<Person>>(
+        &mut self,
+        person_property: P,
+    ) {
+        self.unsubscribe_from_event::<PropertyChangeEvent<Person, P>>();
+    }
     /// Register a generic itinerary modifier.
     fn register_itinerary_modifier<P: IndexableProperty<Person>, I: ItineraryModifier>(
         &mut self,
         person_property: P,
         itinerary_modifier: I,
+        setup_event_subscription: bool,
     ) {
+        if setup_event_subscription {
+            self.setup_event_subscription_for_setting_membership::<P, I>(
+                person_property,
+                itinerary_modifier,
+            );
+        }
         let storage = self
             .get_data_mut(ItineraryModifierPlugin)
             .itinerary_modifier_map

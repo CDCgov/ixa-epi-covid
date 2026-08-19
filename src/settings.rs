@@ -18,25 +18,35 @@ pub(crate) use crate::{
 
 define_rng!(SettingRng);
 
-// define_entity!(Setting);
+#[derive(Clone, Copy)]
+enum MembershipSelector {
+    Active,
+    All,
+}
 
 /// An index of settings as represented by their setting codes.
 #[derive(Default)]
 pub struct SettingMembership {
-    members: HashMap<SettingCode, Vec<PersonId>>,
+    active_members: HashMap<SettingCode, Vec<PersonId>>,
+    all_members: HashMap<SettingCode, Vec<PersonId>>,
 }
 
 impl SettingMembership {
     pub fn new() -> Self {
         Self {
-            members: HashMap::default(),
+            active_members: HashMap::default(),
+            all_members: HashMap::default(),
         }
     }
 
     pub fn add_member(&mut self, setting_code: SettingCode, person_id: PersonId) {
-        let members = self.members.entry(setting_code).or_default();
-        if !members.contains(&person_id) {
-            members.push(person_id);
+        let active_members = self.active_members.entry(setting_code).or_default();
+        if !active_members.contains(&person_id) {
+            active_members.push(person_id);
+        }
+        let all_members = self.all_members.entry(setting_code).or_default();
+        if !all_members.contains(&person_id) {
+            all_members.push(person_id);
         }
     }
 
@@ -49,25 +59,64 @@ impl SettingMembership {
         }
     }
 
-    pub fn get_members(&self, setting_code: SettingCode) -> Option<&Vec<PersonId>> {
-        self.members.get(&setting_code)
+    pub fn get_members(
+        &self,
+        setting_code: SettingCode,
+        selector: MembershipSelector,
+    ) -> Option<&Vec<PersonId>> {
+        match selector {
+            MembershipSelector::Active => self.active_members.get(&setting_code),
+            MembershipSelector::All => self.all_members.get(&setting_code),
+        }
     }
 
-    pub fn get_members_mut(&mut self, setting_code: SettingCode) -> Option<&mut Vec<PersonId>> {
-        self.members.get_mut(&setting_code)
+    pub fn get_members_mut(
+        &mut self,
+        setting_code: SettingCode,
+        selector: MembershipSelector,
+    ) -> Option<&mut Vec<PersonId>> {
+        match selector {
+            MembershipSelector::Active => self.active_members.get_mut(&setting_code),
+            MembershipSelector::All => self.all_members.get_mut(&setting_code),
+        }
     }
 
-    pub fn remove_member(&mut self, setting_code: SettingCode, person_id: PersonId) {
-        self.members
-            .entry(setting_code)
-            .and_modify(|members| members.retain(|id| *id != person_id));
+    pub fn remove_member(
+        &mut self,
+        setting_code: SettingCode,
+        person_id: PersonId,
+        selector: MembershipSelector,
+    ) {
+        match selector {
+            MembershipSelector::Active => {
+                self.active_members
+                    .entry(setting_code)
+                    .and_modify(|members| members.retain(|id| *id != person_id));
+            }
+            MembershipSelector::All => {
+                self.active_members
+                    .entry(setting_code)
+                    .and_modify(|members| members.retain(|id| *id != person_id));
+                self.all_members
+                    .entry(setting_code)
+                    .and_modify(|members| members.retain(|id| *id != person_id));
+            }
+        }
     }
 
-    pub fn member_count(&self, setting_code: SettingCode) -> usize {
-        self.members
-            .get(&setting_code)
-            .map(|members| members.len())
-            .unwrap_or(0)
+    pub fn member_count(&self, setting_code: SettingCode, selector: MembershipSelector) -> usize {
+        match selector {
+            MembershipSelector::Active => self
+                .active_members
+                .get(&setting_code)
+                .map(|members| members.len())
+                .unwrap_or(0),
+            MembershipSelector::All => self
+                .all_members
+                .get(&setting_code)
+                .map(|members| members.len())
+                .unwrap_or(0),
+        }
     }
 }
 
@@ -112,7 +161,9 @@ pub const SETTING_COUNT: usize = SettingCategory::COUNT;
 define_global_property!(SettingAlphas, [f64; SETTING_COUNT]);
 define_global_property!(SettingRatios, [f64; SETTING_COUNT]);
 
-trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextParametersExt {
+trait ContextSettingExtPrivate:
+    PluginContext + ContextEntitiesExt + ContextParametersExt + ContextItineraryModifierExt
+{
     #[allow(dead_code)]
     fn get_setting_ratio(&self, setting_category: SettingCategory) -> Result<f64, ModelError> {
         let ratios = self.get_global_property_value(SettingRatios).unwrap();
@@ -122,6 +173,68 @@ trait ContextSettingExtPrivate: PluginContext + ContextEntitiesExt + ContextPara
     fn get_setting_alpha(&self, setting_category: SettingCategory) -> Result<f64, ModelError> {
         let alphas = self.get_global_property_value(SettingAlphas).unwrap();
         Ok(alphas[setting_category])
+    }
+
+    fn get_setting_size_internal(
+        &self,
+        setting: SettingCode,
+        selector: MembershipSelector,
+    ) -> usize {
+        let membership = self.get_data(SettingMembershipPlugin);
+        membership.member_count(setting, selector)
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn get_settings_for_person_internal(
+        &self,
+        person_id: PersonId,
+        selector: MembershipSelector,
+    ) -> Result<SmallVec<[(SettingCode, f64, f64); SETTING_COUNT]>, ModelError> {
+        let mut active_settings = SmallVec::<[(SettingCode, f64, f64); SETTING_COUNT]>::new();
+        let setting_ids = self
+            .get_property::<Person, Itinerary>(person_id)
+            .setting_ids;
+        let itinerary_ratios = match selector {
+            MembershipSelector::Active => self.get_itinerary(person_id),
+            MembershipSelector::All => {
+                self.get_property::<Person, Itinerary>(person_id)
+                    .itinerary_ratios
+            }
+        };
+
+        for category in SettingCategory::iter() {
+            if let Some(id) = setting_ids[category] {
+                let ratio = itinerary_ratios[category];
+                if ratio > 0.0 {
+                    let multiplier = self.calculate_multiplier(id, selector)?;
+                    active_settings.push((id, ratio, multiplier));
+                }
+            }
+        }
+        Ok(active_settings)
+    }
+
+    fn calculate_multiplier(
+        &self,
+        setting: SettingCode,
+        selector: MembershipSelector,
+    ) -> Result<f64, ModelError> {
+        let alpha = self.get_setting_alpha(setting.category())?;
+        match alpha {
+            0.0 => {
+                // (n-1)^0 = 1
+                Ok(1.0)
+            }
+            1.0 => {
+                let size = self.get_setting_size_internal(setting, selector);
+                Ok((size - 1) as f64)
+            }
+            alpha => {
+                let size = self.get_setting_size_internal(setting, selector);
+                let size = (size - 1) as f64;
+                Ok(size.powf(alpha))
+            }
+        }
     }
 }
 impl ContextSettingExtPrivate for Context {}
@@ -176,37 +289,24 @@ pub trait ContextSettingExt:
 
     fn get_setting_size(&self, setting: SettingCode) -> usize {
         let membership = self.get_data(SettingMembershipPlugin);
-        membership.member_count(setting)
+        membership.member_count(setting, MembershipSelector::Active)
     }
 
     #[allow(clippy::type_complexity)]
-    fn get_active_settings_for_person(
+    fn get_settings_for_person(
         &self,
         person_id: PersonId,
     ) -> Result<SmallVec<[(SettingCode, f64, f64); SETTING_COUNT]>, ModelError> {
-        let mut active_settings = SmallVec::<[(SettingCode, f64, f64); SETTING_COUNT]>::new();
-        let setting_ids = self
-            .get_property::<Person, Itinerary>(person_id)
-            .setting_ids;
-        let itinerary_ratios = self.get_itinerary(person_id);
-
-        for category in SettingCategory::iter() {
-            if let Some(id) = setting_ids[category] {
-                let ratio = itinerary_ratios[category];
-                if ratio > 0.0 {
-                    let multiplier = self.calculate_multiplier(id)?;
-                    active_settings.push((id, ratio, multiplier));
-                }
-            }
-        }
-        Ok(active_settings)
+        self.get_settings_for_person_internal(person_id, MembershipSelector::Active)
     }
 
     fn calculate_current_infectiousness_multiplier_for_person(&self, person_id: PersonId) -> f64 {
         // active settings is a vector of (setting_id, ratio, multiplier) for the person.
         // When iterating through this vector s.0 refers to the setting_id, s.1 refers to ratio of time the person spends in the setting
         // and s.2 refers to the multiplier for that setting based on its size and alpha.
-        let active_settings = self.get_active_settings_for_person(person_id).unwrap();
+        let active_settings = self
+            .get_settings_for_person_internal(person_id, MembershipSelector::Active)
+            .unwrap();
         let mut current_inf = 0.0;
         let mut sum_ratio = 0.0;
         // we calculate sum of ratios to normalize weights
@@ -228,7 +328,9 @@ pub trait ContextSettingExt:
         // active settings is a vector of (setting_id, ratio, multiplier) for the person.
         // When iterating through this vector s.0 refers to the setting_id, s.1 refers to ratio of time the person spends in the setting
         // and s.2 refers to the multiplier for that setting based on its size and alpha.
-        let active_settings = self.get_active_settings_for_person(person_id).unwrap();
+        let active_settings = self
+            .get_settings_for_person_internal(person_id, MembershipSelector::All)
+            .unwrap();
         let mut max_inf = 0.0;
         for (_, _, multiplier) in active_settings.iter() {
             max_inf = f64::max(max_inf, *multiplier);
@@ -238,9 +340,11 @@ pub trait ContextSettingExt:
 
     fn sample_person_from_setting(&self, setting: SettingCode) -> Result<PersonId, ModelError> {
         let membership = self.get_data(SettingMembershipPlugin);
-        let members = membership.get_members(setting).ok_or_else(|| {
-            ModelError::ModelError(format!("No members found for setting: {:?}", setting))
-        })?;
+        let members = membership
+            .get_members(setting, MembershipSelector::Active)
+            .ok_or_else(|| {
+                ModelError::ModelError(format!("No members found for setting: {:?}", setting))
+            })?;
         let idx = self.sample_range(SettingRng, 0..members.len());
         Ok(members[idx])
     }
@@ -250,7 +354,7 @@ pub trait ContextSettingExt:
         person_id: PersonId,
         setting: SettingCode,
     ) -> Result<Option<PersonId>, ModelError> {
-        if self.get_setting_size(setting) == 1 {
+        if self.get_setting_size_internal(setting, MembershipSelector::Active) == 1 {
             return Ok(None);
         }
         loop {
@@ -261,27 +365,10 @@ pub trait ContextSettingExt:
         }
     }
 
-    fn calculate_multiplier(&self, setting: SettingCode) -> Result<f64, ModelError> {
-        let alpha = self.get_setting_alpha(setting.category())?;
-        match alpha {
-            0.0 => {
-                // (n-1)^0 = 1
-                Ok(1.0)
-            }
-            1.0 => {
-                let size = self.get_setting_size(setting);
-                Ok((size - 1) as f64)
-            }
-            alpha => {
-                let size = self.get_setting_size(setting);
-                let size = (size - 1) as f64;
-                Ok(size.powf(alpha))
-            }
-        }
-    }
-
     fn sample_active_setting(&self, person_id: PersonId) -> Result<SettingCode, ModelError> {
-        let active_settings = self.get_active_settings_for_person(person_id)?;
+        let active_settings = self
+            .get_settings_for_person_internal(person_id, MembershipSelector::Active)
+            .unwrap();
         let mut weights_vec = vec![];
         for setting in active_settings.iter() {
             let ratio = setting.1;
@@ -340,6 +427,11 @@ pub trait ContextSettingExt:
         // Register setting membership for this person.
         let membership = self.get_data_mut(SettingMembershipPlugin);
         membership.add_members(&setting_ids, person_id);
+    }
+
+    fn remove_person_from_setting(&mut self, person_id: PersonId, setting_id: SettingCode) {
+        let membership = self.get_data_mut(SettingMembershipPlugin);
+        membership.remove_member(setting_id, person_id, MembershipSelector::Active);
     }
 }
 
@@ -445,8 +537,10 @@ mod test {
         let context = setup_test_context(0.0);
         let home_id = SettingCode::arbitrary_home_code();
         // No persons assigned yet
-        let size = context.get_setting_size(home_id);
-        assert_eq!(size, 0);
+        let size_active = context.get_setting_size_internal(home_id, MembershipSelector::Active);
+        let size_all = context.get_setting_size_internal(home_id, MembershipSelector::All);
+        assert_eq!(size_active, 0);
+        assert_eq!(size_all, 0);
     }
 
     #[test]
@@ -465,10 +559,16 @@ mod test {
 
         let home_id = context.get_property::<Person, HomeId>(person1).0.unwrap();
         let work_id = context.get_property::<Person, WorkId>(person3).0.unwrap();
-        let home_size = context.get_setting_size(home_id);
-        let work_size = context.get_setting_size(work_id);
-        assert_eq!(home_size, 2);
-        assert_eq!(work_size, 1);
+        let home_size_active =
+            context.get_setting_size_internal(home_id, MembershipSelector::Active);
+        let home_size_all = context.get_setting_size_internal(home_id, MembershipSelector::All);
+        let work_size_active =
+            context.get_setting_size_internal(work_id, MembershipSelector::Active);
+        let work_size_all = context.get_setting_size_internal(work_id, MembershipSelector::All);
+        assert_eq!(home_size_active, 2);
+        assert_eq!(home_size_all, 2);
+        assert_eq!(work_size_active, 1);
+        assert_eq!(work_size_all, 1);
     }
 
     #[test]
@@ -549,8 +649,10 @@ mod test {
         let person2 = context.add_entity(with!(Person, Age(21))).unwrap();
         assign_person_settings(&mut context, person1, &[home_id], [1.0, 0.0, 0.0, 0.0]);
         assign_person_settings(&mut context, person2, &[home_id], [1.0, 0.0, 0.0, 0.0]);
-        let size = context.get_setting_size(home_id);
-        assert_eq!(size, 2);
+        let size_active = context.get_setting_size_internal(home_id, MembershipSelector::Active);
+        let size_all = context.get_setting_size_internal(home_id, MembershipSelector::All);
+        assert_eq!(size_active, 2);
+        assert_eq!(size_all, 2);
     }
 
     #[test]
@@ -561,16 +663,25 @@ mod test {
     }
 
     #[test]
-    fn test_get_active_settings_for_person() {
+    fn test_get_settings_for_person() {
         let mut context = setup_test_context(0.5);
         let home_id = SettingCode::arbitrary_home_code();
         let person_id = context.add_entity(with!(Person, Age(22))).unwrap();
         assign_person_settings(&mut context, person_id, &[home_id], [0.25, 0.0, 0.0, 0.0]);
-        let active = context.get_active_settings_for_person(person_id).unwrap();
+        let active = context
+            .get_settings_for_person_internal(person_id, MembershipSelector::Active)
+            .unwrap();
+        let all = context
+            .get_settings_for_person_internal(person_id, MembershipSelector::All)
+            .unwrap();
         assert_eq!(active.len(), 1);
         assert_eq!(active[0].0, home_id);
         assert_eq!(active[0].1, 0.25); // default ratio for home is 0.25
         assert_eq!(active[0].2, 0.0); // alpha is set to 0.5 size is set to 1 so the multipler is (1-1)^0.5 = 0
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].0, home_id);
+        assert_eq!(all[0].1, 0.25);
+        assert_eq!(all[0].2, 0.0);
     }
 
     #[test]
@@ -673,7 +784,9 @@ mod test {
             Some(make_school_id(b"1603796020001443")),
             Some(make_community_id(b"160379602000011")),
         );
-        let active_settings = context.get_active_settings_for_person(person_id).unwrap();
+        let active_settings = context
+            .get_settings_for_person_internal(person_id, MembershipSelector::Active)
+            .unwrap();
         let setting_codes: Vec<SettingCode> = active_settings.iter().map(|s| s.0).collect();
         let itinerary_ratios: Vec<f64> = active_settings.iter().map(|s| s.1).collect();
         let multipliers: Vec<f64> = active_settings.iter().map(|s| s.2).collect();
@@ -702,9 +815,11 @@ mod test {
 
         let weekend_modifier = create_itinerary_transition_matrix(Some(weekend_matrix), None, None);
 
-        context.register_itinerary_modifier(Age(20), weekend_modifier);
+        context.register_itinerary_modifier(Age(20), weekend_modifier, false);
 
-        let active_settings = context.get_active_settings_for_person(person_id).unwrap();
+        let active_settings = context
+            .get_settings_for_person_internal(person_id, MembershipSelector::Active)
+            .unwrap();
         let setting_codes: Vec<SettingCode> = active_settings.iter().map(|s| s.0).collect();
         let itinerary_ratios: Vec<f64> = active_settings.iter().map(|s| s.1).collect();
         let multipliers: Vec<f64> = active_settings.iter().map(|s| s.2).collect();

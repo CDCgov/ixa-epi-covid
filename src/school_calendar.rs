@@ -88,7 +88,7 @@ pub fn init(context: &mut Context) {
     } = context.get_params().clone();
     for modifier in school_calendar {
         let itinerary_modifier = define_school_calendar_itinerary_modifier(&modifier).unwrap();
-        context.register_itinerary_modifier(Student(true), itinerary_modifier);
+        context.register_itinerary_modifier(Student(true), itinerary_modifier, false);
     }
 }
 

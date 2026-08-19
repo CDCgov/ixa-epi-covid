@@ -132,6 +132,7 @@ mod test {
                 },
             );
         });
+        context.add_plan(3.0, Context::shutdown);
         context.execute();
 
         let Params {
