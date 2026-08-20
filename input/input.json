@@ -62,16 +62,13 @@
                 "prop_school_time_to_comm": 0.5
             }
         ],
-        "school_closures": {
-            "district_mapping": "input/district_tract_mapping.json",
-            "closures": [
+        "school_closures": [
                 {
                     "geography": {"type": "State", "code": "56"},
                     "activates_at": 1.0,
                     "deactivates_at": 30.0
                 }
-            ]
-        },
+            ],
         "prevalence_report": {
             "write": true,
             "filename": "person_property_count.csv",

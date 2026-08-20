@@ -190,29 +190,6 @@ pub fn parse_fips_workplace_id(input: &[u8]) -> FIPSParseResult<FIPSCode> {
     }
 }
 
-/// Parses the input as a FIPS code for a community id. Returns `(rest, FIPSCode)`,
-/// where `rest` is the remaining input after the FIPS code.
-pub fn parse_fips_state_county_tract_id(input: &[u8]) -> FIPSParseResult<FIPSCode> {
-    let (rest, state): (&[u8], StateCode) = parse_state_code(input)?;
-    let (rest, county): (&[u8], CountyCode) = parse_county_code(rest)?;
-    let (rest, tract): (&[u8], TractCode) = parse_tract_code(rest)?;
-
-    let fips_code = FIPSCode::new(
-        state,
-        county,
-        tract,
-        PopulationReaderSettingCategory::CensusTract.encode(),
-        0,
-        0,
-    );
-    match fips_code {
-        Ok(fips_code) => Ok((rest, fips_code)),
-        Err(_) => {
-            panic!("FIPS code is invalid. This is a bug in the population ID parser.");
-        }
-    }
-}
-
 /// Parses the input as a FIPS code for a state + county id. Returns `(rest, FIPSCode)`,
 /// where `rest` is the remaining input after the FIPS code.
 pub fn parse_fips_state_county_id(input: &[u8]) -> FIPSParseResult<FIPSCode> {
@@ -496,22 +473,6 @@ mod tests {
                 },
             ))
         );
-    }
-
-    #[test]
-    fn test_parse_fips_state_county_tract_id() {
-        // Basic successful parsing
-        assert_eq!(
-            parse_fips_state_county_tract_id(b"110010109000024rest"),
-            Ok((
-                &b"0024rest"[..],
-                FIPSCode::new(11, 1, 10900, 5, 0, 0).unwrap()
-            ))
-        );
-
-        // Error cases
-        assert!(parse_fips_state_county_tract_id(b"").is_err()); // Empty string
-        assert!(parse_fips_state_county_tract_id(b"abc").is_err()); // No digits
     }
 
     #[test]

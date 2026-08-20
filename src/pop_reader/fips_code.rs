@@ -220,19 +220,6 @@ impl FIPSCode {
         Self::new(self.state_code(), self.county_code(), 0, 0, 0, 0)
     }
 
-    /// Returns a new [`FIPSCode`] that is the fips of state, county, and census tract.
-    #[inline(always)]
-    pub fn state_county_tract_code(&self) -> Result<Self, FIPSError> {
-        Self::new(
-            self.state_code(),
-            self.county_code(),
-            self.census_tract_code(),
-            0,
-            0,
-            0,
-        )
-    }
-
     /// Returns the monotonically increasing ID number as an [`IdCode`]
     #[inline(always)]
     #[must_use]

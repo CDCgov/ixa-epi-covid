@@ -46,7 +46,6 @@ experiments/**/simulations/
 !input/people_test.csv
 !input/symptom_delay_median_iqr.csv
 !tests/data/*
-!input/district_tract_mapping.json
 
 
 #####

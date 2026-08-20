@@ -6,7 +6,7 @@ use crate::error::ModelError;
 use crate::infection_importation::ImportCasesFromFile;
 use crate::reports::ReportParams;
 use crate::school_calendar::{SchoolCalendarModifier, SchoolCalendarModifierType};
-use crate::schools::school_closure::SchoolClosureModifier;
+use crate::schools::school_closure::SchoolClosureParameters;
 use crate::settings::SettingCategory;
 use crate::symptom_status_manager::{SymptomAgeGroup, SymptomDelayDistLogNormParams};
 
@@ -72,8 +72,8 @@ pub struct Params {
     pub itinerary_ratios: HashMap<SettingCategory, f64>,
     /// Vector of modifiers that impacting school itineraries
     pub school_calendar: Vec<SchoolCalendarModifier>,
-    /// Parameters for school closures by geography with school district to census tract mapping
-    pub school_closures: SchoolClosureModifier,
+    /// Parameters for school closures by geography
+    pub school_closures: Vec<SchoolClosureParameters>,
     /// Prevalence report with a period and name required
     pub prevalence_report: ReportParams,
     /// Incidence report with a period and name required
@@ -391,10 +391,7 @@ impl Default for Params {
             settings_properties: HashMap::new(),
             itinerary_ratios: HashMap::new(),
             school_calendar: Vec::new(),
-            school_closures: SchoolClosureModifier {
-                closures: Vec::new(),
-                district_mapping: None,
-            },
+            school_closures: Vec::new(),
             prevalence_report: ReportParams {
                 write: false,
                 filename: None,
