@@ -2,7 +2,7 @@
     "epimodel.GlobalParams": {
         "seed": 1234,
         "max_time": 100.0,
-        "synth_population_file": "input/synth_pop_people_WY_1_000.csv",
+        "synth_population_file": "input/people_test.csv",
         "initial_prevalence": 0.01,
         "imported_cases_timeseries": {
             "include": true,
@@ -69,16 +69,6 @@
                     "geography": {"type": "State", "code": "56"},
                     "activates_at": 1.0,
                     "deactivates_at": 30.0
-                },
-                {
-                    "geography": {"type": "County", "code": "56001"},
-                    "activates_at": 40.0,
-                    "deactivates_at": 50.0
-                },
-                {
-                    "geography": {"type": "SchoolDistrict", "code": "5601980"},
-                    "activates_at": 60.0,
-                    "deactivates_at": 70.0
                 }
             ]
         },
