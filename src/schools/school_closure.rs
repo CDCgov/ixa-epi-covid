@@ -3,12 +3,11 @@ use std::path::PathBuf;
 use crate::{
     ContextParametersExt, Params,
     error::ModelError,
-    geography::Geography,
     itinerary_modifiers::{
         AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
     },
-    pop_reader::{FIPSCode, StateCode, parser::parse_fips_state_county_id},
-    schools::school_district::process_school_closure_records,
+    pop_reader::{FIPSCode, StateCode},
+    schools::school_geography::{Geography, process_school_closure_records},
     settings::{ContextSettingExt, Itinerary, Person, SettingCategory},
 };
 use ixa::{
@@ -33,7 +32,7 @@ pub struct SchoolCounty(pub Option<FIPSCode>);
 impl_derived_property!(SchoolCounty, Person, [Itinerary], [], |itinerary| {
     SchoolCounty(
         itinerary.setting_ids[SettingCategory::School]
-            .and_then(|code| code.0.state_county_fips_code().ok()),
+            .and_then(|code| code.0.state_county_code().ok()),
     )
 });
 
@@ -42,7 +41,7 @@ pub struct SchoolCensusTract(pub Option<FIPSCode>);
 impl_derived_property!(SchoolCensusTract, Person, [Itinerary], [], |itinerary| {
     SchoolCensusTract(
         itinerary.setting_ids[SettingCategory::School]
-            .and_then(|code| code.0.community_code().ok()),
+            .and_then(|code| code.0.state_county_tract_code().ok()),
     )
 });
 
@@ -67,34 +66,34 @@ struct SchoolClosure {
 
 #[derive(Default)]
 pub struct SchoolClosureData {
-    state_school_closure: bool,
-    county_school_closures: Vec<Geography>,
+    active_state_school_closure: bool,
+    active_county_school_closures: Vec<Geography>,
 }
 
 impl SchoolClosureData {
     pub fn new() -> Self {
         Self {
-            state_school_closure: false,
-            county_school_closures: Vec::new(),
+            active_state_school_closure: false,
+            active_county_school_closures: Vec::new(),
         }
     }
 
     pub fn set_state_school_closure(&mut self, active: bool) {
-        self.state_school_closure = active;
+        self.active_state_school_closure = active;
     }
 
     pub fn is_state_school_closure_active(&self) -> bool {
-        self.state_school_closure
+        self.active_state_school_closure
     }
 
     pub fn add_county_school_closure(&mut self, geography: Geography) {
-        if !self.county_school_closures.contains(&geography) {
-            self.county_school_closures.push(geography);
+        if !self.active_county_school_closures.contains(&geography) {
+            self.active_county_school_closures.push(geography);
         }
     }
 
     pub fn remove_county_school_closure(&mut self, geography: Geography) {
-        self.county_school_closures
+        self.active_county_school_closures
             .retain(|&code| code != geography);
     }
 }
@@ -114,22 +113,14 @@ pub trait SchoolClosureContextExt:
     ) -> Result<(), ModelError> {
         let itinerary_modifier = define_virtual_school_closure_itinerary_modifier(geography);
         match geography {
-            Geography::State(state) => {
-                self.register_itinerary_modifier(SchoolState(Some(state)), itinerary_modifier);
+            Geography::State(code) => {
+                self.register_itinerary_modifier(SchoolState(Some(code)), itinerary_modifier);
             }
-
-            Geography::County(state_county_fips_code) => {
-                let parsed = parse_fips_state_county_id(&state_county_fips_code.as_ascii())
-                    .unwrap()
-                    .1;
-                self.register_itinerary_modifier(SchoolCounty(Some(parsed)), itinerary_modifier);
+            Geography::County(code) => {
+                self.register_itinerary_modifier(SchoolCounty(Some(code)), itinerary_modifier);
             }
-
-            Geography::CensusTract(fips_code) => {
-                self.register_itinerary_modifier(
-                    SchoolCensusTract(Some(fips_code)),
-                    itinerary_modifier,
-                );
+            Geography::CensusTract(code) => {
+                self.register_itinerary_modifier(SchoolCensusTract(Some(code)), itinerary_modifier);
             }
             _ => {
                 return Err(ModelError::ModelError(
@@ -144,15 +135,14 @@ pub trait SchoolClosureContextExt:
         geography: Geography,
     ) -> Result<(), ModelError> {
         match geography {
-            Geography::State(state) => {
-                self.remove_itinerary_modifier_by_property(SchoolState(Some(state)));
+            Geography::State(code) => {
+                self.remove_itinerary_modifier_by_property(SchoolState(Some(code)));
             }
-            Geography::County(fips_code) => {
-                let parsed = parse_fips_state_county_id(&fips_code.as_ascii()).unwrap().1;
-                self.remove_itinerary_modifier_by_property(SchoolCounty(Some(parsed)));
+            Geography::County(code) => {
+                self.remove_itinerary_modifier_by_property(SchoolCounty(Some(code)));
             }
-            Geography::CensusTract(fips_code) => {
-                self.remove_itinerary_modifier_by_property(SchoolCensusTract(Some(fips_code)));
+            Geography::CensusTract(code) => {
+                self.remove_itinerary_modifier_by_property(SchoolCensusTract(Some(code)));
             }
             _ => {
                 return Err(ModelError::ModelError(
@@ -231,7 +221,7 @@ pub trait SchoolClosureContextExt:
 
     fn is_county_overlapping_school_closure_active(&self, geography: Geography) -> bool {
         let data = self.get_data(SchoolClosureDataPlugin);
-        data.county_school_closures
+        data.active_county_school_closures
             .iter()
             .any(|code| code.overlaps(&geography).unwrap())
     }
@@ -284,10 +274,9 @@ mod test {
 
     use crate::{
         Age,
-        geography::FIPSStateCountyCode,
         itinerary_manager::ContextItineraryModifierExt,
         parameters::{GlobalParams, SettingProperties},
-        pop_reader::parser::parse_fips_school_id,
+        pop_reader::parser::{parse_fips_school_id, parse_fips_state_county_id},
         settings::SettingCode,
     };
 
@@ -406,7 +395,7 @@ mod test {
         context.setup_school_closure_itinerary_modification();
         let school_code = make_school_id(b"16037960200002");
         let g1 = Geography::State(school_code.0.state_code());
-        let g2 = Geography::CensusTract(school_code.0.community_code().unwrap());
+        let g2 = Geography::CensusTract(school_code.0.state_county_tract_code().unwrap());
         let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
         context.set_property(
             p1,
@@ -459,8 +448,8 @@ mod test {
         let mut context = setup();
         context.setup_school_closure_itinerary_modification();
         let school_code = make_school_id(b"16037960200002");
-        let county_fips_code = FIPSStateCountyCode([1, 6, 0, 3, 7]);
-        let g1 = Geography::CensusTract(school_code.0.community_code().unwrap());
+        let county_fips_code = parse_fips_state_county_id(b"16037").unwrap().1;
+        let g1 = Geography::CensusTract(school_code.0.state_county_tract_code().unwrap());
         let g2 = Geography::County(county_fips_code);
         let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
         context.set_property(

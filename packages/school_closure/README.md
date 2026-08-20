@@ -1,5 +1,5 @@
 # School Closure Pre-processing
-ETL package for generating school district to FIPS census tract code mapping given Geographic Reference Files (GRF) CSV mapping of LEA ID codes to census tract FIPS codes.
+ETL package for generating school district to FIPS census tract code mapping given Geographic Reference Files (GRF) CSV mapping of Local Education Agency (LEA) ID codes to census tract FIPS codes.
 
 ## Background
 In ixa-epi-covid school closures are modeled at the school district, county and state level. School districts are designated by an LEA ID which is different numeric representation than FIPS code. Since FIPS codes are used in the model, this packages creates a mapping of school districts to the set of census tracts that fully or partially overlap with the school district. String representations are used in the script for both school district and FIPS codes to preserve leading zeros.

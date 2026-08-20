@@ -216,13 +216,13 @@ impl FIPSCode {
         ((self.0.get() >> CATEGORY_OFFSET) as SettingCategoryCode) & FOUR_BIT_MASK
     }
 
-    pub fn state_county_fips_code(&self) -> Result<Self, FIPSError> {
+    pub fn state_county_code(&self) -> Result<Self, FIPSError> {
         Self::new(self.state_code(), self.county_code(), 0, 0, 0, 0)
     }
 
     /// Returns a new [`FIPSCode`] that is the fips of state, county, and census tract.
     #[inline(always)]
-    pub fn community_code(&self) -> Result<Self, FIPSError> {
+    pub fn state_county_tract_code(&self) -> Result<Self, FIPSError> {
         Self::new(
             self.state_code(),
             self.county_code(),
