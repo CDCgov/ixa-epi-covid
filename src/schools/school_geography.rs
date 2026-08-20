@@ -2,8 +2,6 @@ use serde::{
     Deserialize, Deserializer, Serialize,
     de::{self},
 };
-use std::cmp::Ordering;
-use strum::{EnumDiscriminants, IntoStaticStr};
 
 use crate::pop_reader::{FIPSCode, StateCode, parser::parse_fips_state_county_id};
 
@@ -17,10 +15,7 @@ enum RawGeography {
     State(String),
 }
 
-#[derive(Copy, Clone, PartialEq, Debug, Serialize, Eq, Hash, EnumDiscriminants)]
-#[strum_discriminants(name(GeographyType))]
-#[strum_discriminants(derive(PartialOrd, Ord, Hash, Deserialize, Serialize))]
-#[strum_discriminants(derive(IntoStaticStr), repr(u8))]
+#[derive(Copy, Clone, PartialEq, Debug, Serialize, Eq, Hash)]
 pub enum Geography {
     County(FIPSCode),
     State(StateCode),
@@ -57,28 +52,6 @@ impl<'de> Deserialize<'de> for Geography {
     }
 }
 
-impl PartialOrd for Geography {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Geography {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.geography_type_u8().cmp(&other.geography_type_u8())
-    }
-}
-
-impl Geography {
-    fn geography_type(&self) -> GeographyType {
-        GeographyType::from(*self)
-    }
-
-    fn geography_type_u8(&self) -> u8 {
-        self.geography_type() as u8
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -95,13 +68,5 @@ mod test {
         let json = r#"{"type": "state", "code": "01"}"#;
         let geography: Geography = serde_json::from_str(json).unwrap();
         assert_eq!(geography, Geography::State(1));
-    }
-
-    #[test]
-    #[allow(clippy::nonminimal_bool)]
-    fn test_geography_ordering() {
-        let g1 = Geography::State(1);
-        let g4 = Geography::State(2);
-        assert!(!(g1 > g4) && !(g4 < g1));
     }
 }
