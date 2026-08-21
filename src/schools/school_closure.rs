@@ -50,17 +50,43 @@ struct SchoolClosure {
 #[derive(Default)]
 pub struct SchoolClosureData {
     active_state_school_closure: bool,
+    active_county_school_closure: Vec<Geography>,
 }
 
 impl SchoolClosureData {
     pub fn new() -> Self {
         Self {
             active_state_school_closure: false,
+            active_county_school_closure: Vec::new(),
         }
     }
 
-    pub fn set_state_school_closure(&mut self, active: bool) {
-        self.active_state_school_closure = active;
+    pub fn activate_state_school_closure(&mut self) {
+        self.active_state_school_closure = true;
+    }
+
+    pub fn deactivate_state_school_closure(&mut self) {
+        self.active_state_school_closure = false;
+    }
+
+    pub fn activate_county_school_closure(&mut self, geography: Geography) {
+        if !self.active_county_school_closure.contains(&geography) {
+            self.active_county_school_closure.push(geography);
+        }
+    }
+
+    pub fn deactivate_county_school_closure(&mut self, geography: Geography) {
+        if let Some(pos) = self
+            .active_county_school_closure
+            .iter()
+            .position(|x| *x == geography)
+        {
+            self.active_county_school_closure.remove(pos);
+        }
+    }
+
+    pub fn is_county_school_closure_active(&self, geography: Geography) -> bool {
+        self.active_county_school_closure.contains(&geography)
     }
 
     pub fn is_state_school_closure_active(&self) -> bool {
@@ -77,35 +103,6 @@ define_data_plugin!(
 pub trait SchoolClosureContextExt:
     PluginContext + ContextEntitiesExt + ContextParametersExt + ContextTriggersExt + ContextSettingExt
 {
-    fn register_school_closure_itinerary_modifier(
-        &mut self,
-        geography: Geography,
-    ) -> Result<(), ModelError> {
-        let itinerary_modifier = define_virtual_school_closure_itinerary_modifier(geography);
-        match geography {
-            Geography::State(code) => {
-                self.register_itinerary_modifier(SchoolState(Some(code)), itinerary_modifier);
-            }
-            Geography::County(code) => {
-                self.register_itinerary_modifier(SchoolCounty(Some(code)), itinerary_modifier);
-            }
-        }
-        Ok(())
-    }
-    fn remove_school_closure_itinerary_modifier(
-        &mut self,
-        geography: Geography,
-    ) -> Result<(), ModelError> {
-        match geography {
-            Geography::State(code) => {
-                self.remove_itinerary_modifier_by_property(SchoolState(Some(code)));
-            }
-            Geography::County(code) => {
-                self.remove_itinerary_modifier_by_property(SchoolCounty(Some(code)));
-            }
-        }
-        Ok(())
-    }
     fn setup_school_closure_triggers(
         &mut self,
         activates_at: f64,
@@ -140,27 +137,82 @@ pub trait SchoolClosureContextExt:
     fn handle_school_closure_start(&mut self, geography: Geography) {
         self.register_school_closure_itinerary_modifier(geography)
             .unwrap();
-        if let Geography::State(_) = geography {
-            let data = self.get_data_mut(SchoolClosureDataPlugin);
-            data.set_state_school_closure(true);
+        let data = self.get_data_mut(SchoolClosureDataPlugin);
+        match geography {
+            Geography::State(_) => data.activate_state_school_closure(),
+            Geography::County(_) => data.activate_county_school_closure(geography),
         }
     }
 
     fn handle_school_closure_end(&mut self, geography: Geography) {
         self.remove_school_closure_itinerary_modifier(geography)
             .unwrap();
-        if let Geography::State(_) = geography {
-            let data = self.get_data_mut(SchoolClosureDataPlugin);
-            data.set_state_school_closure(false);
+        let data = self.get_data_mut(SchoolClosureDataPlugin);
+        match geography {
+            Geography::State(_) => data.deactivate_state_school_closure(),
+            Geography::County(_) => data.deactivate_county_school_closure(geography),
         }
+    }
+
+    fn register_school_closure_itinerary_modifier(
+        &mut self,
+        geography: Geography,
+    ) -> Result<(), ModelError> {
+        let itinerary_modifier = define_school_closure_itinerary_modifier(geography);
+        match geography {
+            Geography::State(code) => {
+                self.register_itinerary_modifier(SchoolState(Some(code)), itinerary_modifier);
+            }
+            Geography::County(code) => {
+                self.register_itinerary_modifier(SchoolCounty(Some(code)), itinerary_modifier);
+            }
+        }
+        Ok(())
+    }
+    fn remove_school_closure_itinerary_modifier(
+        &mut self,
+        geography: Geography,
+    ) -> Result<(), ModelError> {
+        match geography {
+            Geography::State(code) => {
+                self.remove_itinerary_modifier_by_property(SchoolState(Some(code)));
+            }
+            Geography::County(code) => {
+                self.remove_itinerary_modifier_by_property(SchoolCounty(Some(code)));
+            }
+        }
+        Ok(())
     }
 
     fn is_state_school_closure_active(&self) -> bool {
         let data = self.get_data(SchoolClosureDataPlugin);
         data.is_state_school_closure_active()
     }
+
+    fn is_county_school_closure_active(&self, geography: Geography) -> bool {
+        let data = self.get_data(SchoolClosureDataPlugin);
+        data.is_county_school_closure_active(geography)
+    }
 }
 impl SchoolClosureContextExt for Context {}
+
+fn define_school_closure_itinerary_modifier(geography: Geography) -> ItineraryTransitionMatrix {
+    let matrix = [
+        [0.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 0.0],
+    ];
+    let acceptance_function: Option<AcceptanceFunction> =
+        Some(Box::new(move |context, _person| match geography {
+            Geography::State(_) => context.is_state_school_closure_active(),
+            Geography::County(_) => {
+                !context.is_state_school_closure_active()
+                    && context.is_county_school_closure_active(geography)
+            }
+        }));
+    create_itinerary_transition_matrix(None, Some(matrix), acceptance_function)
+}
 
 pub fn init(context: &mut Context) -> Result<(), ModelError> {
     let Params {
@@ -175,23 +227,6 @@ pub fn init(context: &mut Context) -> Result<(), ModelError> {
     }
     context.setup_school_closure_trigger_event_subscription();
     Ok(())
-}
-
-fn define_virtual_school_closure_itinerary_modifier(
-    geography: Geography,
-) -> ItineraryTransitionMatrix {
-    let matrix = [
-        [0.0, 0.0, 0.0, 0.0],
-        [0.0, 0.0, 0.0, 0.0],
-        [1.0, 0.0, 0.0, 0.0],
-        [0.0, 0.0, 0.0, 0.0],
-    ];
-    let acceptance_function: Option<AcceptanceFunction> =
-        Some(Box::new(move |context, _person| match geography {
-            Geography::State(_) => context.is_state_school_closure_active(),
-            Geography::County(_) => !context.is_state_school_closure_active(),
-        }));
-    create_itinerary_transition_matrix(None, Some(matrix), acceptance_function)
 }
 
 #[cfg(test)]
