@@ -4,35 +4,20 @@ use crate::{
     itinerary_modifiers::{
         AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
     },
-    pop_reader::{FIPSCode, StateCode},
+    population_loader::SchoolId,
+    school_calendar::Student,
     schools::school_geography::Geography,
-    settings::{ContextSettingExt, Itinerary, Person, SettingCategory},
+    settings::{
+        ActivityStatus, Category, ContextSettingExt, County, Person, Setting, SettingCategory,
+        State,
+    },
 };
 use ixa::{
-    ExecutionPhase, IxaEvent, impl_derived_property,
+    ExecutionPhase, IxaEvent,
     prelude::*,
     triggers::{ContextTriggersExt, TimeTrigger, TriggerCriterion},
 };
 use serde::{Deserialize, Serialize};
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct SchoolState(pub Option<StateCode>);
-impl_derived_property!(SchoolState, Person, [Itinerary], [], |itinerary| {
-    SchoolState(
-        itinerary.setting_ids[SettingCategory::School]
-            .map(|code| Some(code.0.state_code()))
-            .unwrap_or(None),
-    )
-});
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct SchoolCounty(pub Option<FIPSCode>);
-impl_derived_property!(SchoolCounty, Person, [Itinerary], [], |itinerary| {
-    SchoolCounty(
-        itinerary.setting_ids[SettingCategory::School]
-            .and_then(|code| code.0.state_county_code().ok()),
-    )
-});
 
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct SchoolClosureParameters {
@@ -47,58 +32,8 @@ struct SchoolClosure {
     geography: Geography,
 }
 
-#[derive(Default)]
-pub struct SchoolClosureData {
-    active_state_school_closure: bool,
-    active_county_school_closure: Vec<Geography>,
-}
-
-impl SchoolClosureData {
-    pub fn new() -> Self {
-        Self {
-            active_state_school_closure: false,
-            active_county_school_closure: Vec::new(),
-        }
-    }
-
-    pub fn activate_state_school_closure(&mut self) {
-        self.active_state_school_closure = true;
-    }
-
-    pub fn deactivate_state_school_closure(&mut self) {
-        self.active_state_school_closure = false;
-    }
-
-    pub fn activate_county_school_closure(&mut self, geography: Geography) {
-        if !self.active_county_school_closure.contains(&geography) {
-            self.active_county_school_closure.push(geography);
-        }
-    }
-
-    pub fn deactivate_county_school_closure(&mut self, geography: Geography) {
-        if let Some(pos) = self
-            .active_county_school_closure
-            .iter()
-            .position(|x| *x == geography)
-        {
-            self.active_county_school_closure.remove(pos);
-        }
-    }
-
-    pub fn is_county_school_closure_active(&self, geography: Geography) -> bool {
-        self.active_county_school_closure.contains(&geography)
-    }
-
-    pub fn is_state_school_closure_active(&self) -> bool {
-        self.active_state_school_closure
-    }
-}
-
-define_data_plugin!(
-    SchoolClosureDataPlugin,
-    SchoolClosureData,
-    SchoolClosureData::default()
-);
+define_multi_property!(Setting, (State, Category));
+define_multi_property!(Setting, (County, Category));
 
 pub trait SchoolClosureContextExt:
     PluginContext + ContextEntitiesExt + ContextParametersExt + ContextTriggersExt + ContextSettingExt
@@ -135,89 +70,89 @@ pub trait SchoolClosureContextExt:
     }
 
     fn handle_school_closure_start(&mut self, geography: Geography) {
-        self.register_school_closure_itinerary_modifier(geography)
-            .unwrap();
-        let data = self.get_data_mut(SchoolClosureDataPlugin);
-        match geography {
-            Geography::State(_) => data.activate_state_school_closure(),
-            Geography::County(_) => data.activate_county_school_closure(geography),
+        self.register_school_closure_itinerary_modifier().unwrap();
+        let setting_ids: Vec<_> = match geography {
+            Geography::State(code) => self
+                .query_result_iterator(with!(
+                    Setting,
+                    State(code),
+                    Category(SettingCategory::School)
+                ))
+                .collect(),
+            Geography::County(code) => self
+                .query_result_iterator(with!(
+                    Setting,
+                    County(code),
+                    Category(SettingCategory::School)
+                ))
+                .collect(),
+        };
+        for setting in setting_ids {
+            self.set_property(setting, ActivityStatus::Closed);
         }
     }
 
     fn handle_school_closure_end(&mut self, geography: Geography) {
-        self.remove_school_closure_itinerary_modifier(geography)
-            .unwrap();
-        let data = self.get_data_mut(SchoolClosureDataPlugin);
-        match geography {
-            Geography::State(_) => data.deactivate_state_school_closure(),
-            Geography::County(_) => data.deactivate_county_school_closure(geography),
+        self.remove_school_closure_itinerary_modifier().unwrap();
+        let setting_ids: Vec<_> = match geography {
+            Geography::State(code) => self
+                .query_result_iterator(with!(
+                    Setting,
+                    State(code),
+                    Category(SettingCategory::School)
+                ))
+                .collect(),
+            Geography::County(code) => self
+                .query_result_iterator(with!(
+                    Setting,
+                    County(code),
+                    Category(SettingCategory::School)
+                ))
+                .collect(),
+        };
+        for setting in setting_ids {
+            self.set_property(setting, ActivityStatus::Open);
         }
     }
 
-    fn register_school_closure_itinerary_modifier(
-        &mut self,
-        geography: Geography,
-    ) -> Result<(), ModelError> {
-        let itinerary_modifier = define_school_closure_itinerary_modifier(geography);
-        match geography {
-            Geography::State(code) => {
-                self.register_itinerary_modifier(SchoolState(Some(code)), itinerary_modifier);
-            }
-            Geography::County(code) => {
-                self.register_itinerary_modifier(SchoolCounty(Some(code)), itinerary_modifier);
-            }
-        }
+    fn register_school_closure_itinerary_modifier(&mut self) -> Result<(), ModelError> {
+        let itinerary_modifier = define_school_closure_itinerary_modifier();
+        self.register_itinerary_modifier(Student(true), itinerary_modifier);
         Ok(())
     }
-    fn remove_school_closure_itinerary_modifier(
-        &mut self,
-        geography: Geography,
-    ) -> Result<(), ModelError> {
-        match geography {
-            Geography::State(code) => {
-                self.remove_itinerary_modifier_by_property(SchoolState(Some(code)));
-            }
-            Geography::County(code) => {
-                self.remove_itinerary_modifier_by_property(SchoolCounty(Some(code)));
-            }
-        }
+    fn remove_school_closure_itinerary_modifier(&mut self) -> Result<(), ModelError> {
+        self.remove_itinerary_modifier_by_property(Student(true));
         Ok(())
-    }
-
-    fn is_state_school_closure_active(&self) -> bool {
-        let data = self.get_data(SchoolClosureDataPlugin);
-        data.is_state_school_closure_active()
-    }
-
-    fn is_county_school_closure_active(&self, geography: Geography) -> bool {
-        let data = self.get_data(SchoolClosureDataPlugin);
-        data.is_county_school_closure_active(geography)
     }
 }
 impl SchoolClosureContextExt for Context {}
 
-fn define_school_closure_itinerary_modifier(geography: Geography) -> ItineraryTransitionMatrix {
+fn define_school_closure_itinerary_modifier() -> ItineraryTransitionMatrix {
     let matrix = [
         [0.0, 0.0, 0.0, 0.0],
         [0.0, 0.0, 0.0, 0.0],
         [1.0, 0.0, 0.0, 0.0],
         [0.0, 0.0, 0.0, 0.0],
     ];
-    let acceptance_function: Option<AcceptanceFunction> =
-        Some(Box::new(move |context, _person| match geography {
-            Geography::State(_) => context.is_state_school_closure_active(),
-            Geography::County(_) => {
-                !context.is_state_school_closure_active()
-                    && context.is_county_school_closure_active(geography)
-            }
-        }));
+    let acceptance_function: Option<AcceptanceFunction> = Some(Box::new(move |context, person| {
+        context
+            .get_property::<Person, SchoolId>(person)
+            .0
+            .is_some_and(|school_id| {
+                context.get_property::<Setting, ActivityStatus>(school_id) == ActivityStatus::Closed
+            })
+    }));
     create_itinerary_transition_matrix(None, Some(matrix), acceptance_function)
 }
 
 pub fn init(context: &mut Context) -> Result<(), ModelError> {
+    context.index_property::<Setting, (State, Category)>();
+    context.index_property::<Setting, (County, Category)>();
+
     let Params {
         school_closures, ..
     } = context.get_params().clone();
+
     for record in school_closures {
         context.setup_school_closure_triggers(
             record.activates_at,
@@ -236,7 +171,7 @@ mod test {
         itinerary_manager::ContextItineraryModifierExt,
         parameters::{GlobalParams, SettingProperties},
         pop_reader::parser::parse_fips_school_id,
-        settings::SettingCode,
+        settings::{Code, Itinerary, Person, SettingCategory, SettingCode},
     };
     use ixa::HashMap;
     use std::{cell::RefCell, rc::Rc};
@@ -312,13 +247,20 @@ mod test {
     fn test_setup_school_closure_itinerary_modification() {
         let mut context = setup();
         let school_code = make_school_id(b"16037960200002");
+        let school_id = context
+            .add_entity(with!(
+                Setting,
+                Code(school_code),
+                Category(SettingCategory::School)
+            ))
+            .unwrap();
         let g1 = Geography::State(school_code.0.state_code());
         let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
         context.setup_school_closure_trigger_event_subscription();
         context.set_property(
             p1,
             Itinerary {
-                setting_ids: [None, None, Some(school_code), None],
+                setting_ids: [None, None, Some(school_id), None],
                 itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
             },
         );

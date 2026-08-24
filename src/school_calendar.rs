@@ -154,7 +154,7 @@ mod test {
     use crate::parameters::{GlobalParams, Params, SettingProperties};
     use crate::pop_reader::parser::parse_fips_school_id;
     use crate::setting_code::SettingCode;
-    use crate::settings::SettingCategory;
+    use crate::settings::{Category, Code, Setting, SettingCategory};
     use ixa::{ExecutionPhase, HashMap};
 
     fn make_school_id(school_id: &[u8]) -> SettingCode {
@@ -206,11 +206,18 @@ mod test {
         let weekend = Rc::new(RefCell::new(0));
         let weekday = Rc::new(RefCell::new(0));
         let school_code = make_school_id(b"16037960200002");
+        let school_id = context
+            .add_entity(with!(
+                Setting,
+                Code(school_code),
+                Category(SettingCategory::School)
+            ))
+            .unwrap();
         let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
         context.set_property(
             p1,
             Itinerary {
-                setting_ids: [None, None, Some(school_code), None],
+                setting_ids: [None, None, Some(school_id), None],
                 itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
             },
         );
@@ -249,11 +256,18 @@ mod test {
         let summer_break = Rc::new(RefCell::new(0));
         let school_days = Rc::new(RefCell::new(0));
         let school_code = make_school_id(b"16037960200002");
+        let school_id = context
+            .add_entity(with!(
+                Setting,
+                Code(school_code),
+                Category(SettingCategory::School)
+            ))
+            .unwrap();
         let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
         context.set_property(
             p1,
             Itinerary {
-                setting_ids: [None, None, Some(school_code), None],
+                setting_ids: [None, None, Some(school_id), None],
                 itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
             },
         );

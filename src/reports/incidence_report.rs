@@ -68,7 +68,7 @@ mod test {
         population_loader::{Age, Person, PersonId},
         rate_fns::load_rate_fns,
         reports::ReportParams,
-        settings::SettingCode,
+        settings::{Category, Code, Setting, SettingCategory, SettingCode},
         symptom_status_manager::SymptomAgeGroup,
     };
     use ixa::{csv, prelude::*};
@@ -119,8 +119,15 @@ mod test {
 
         let source: PersonId = context.add_entity(with!(Person, Age(42))).unwrap();
         let target: PersonId = context.add_entity(with!(Person, Age(43))).unwrap();
-        let home: SettingCode = SettingCode::arbitrary_home_code();
-        let setting = Some(home);
+        let home_code: SettingCode = SettingCode::arbitrary_home_code();
+        let home_id = context
+            .add_entity(with!(
+                Setting,
+                Code(home_code),
+                Category(SettingCategory::Home)
+            ))
+            .unwrap();
+        let setting = Some(home_id);
         let infection_time = 1.0;
 
         context.infect_person(source, None, None);
@@ -181,8 +188,15 @@ mod test {
 
         let source: PersonId = context.add_entity(with!(Person, Age(42))).unwrap();
         let target: PersonId = context.add_entity(with!(Person, Age(43))).unwrap();
-        let home: SettingCode = SettingCode::arbitrary_home_code();
-        let setting = Some(home);
+        let home_code: SettingCode = SettingCode::arbitrary_home_code();
+        let home_id = context
+            .add_entity(with!(
+                Setting,
+                Code(home_code),
+                Category(SettingCategory::Home)
+            ))
+            .unwrap();
+        let setting = Some(home_id);
         let infection_time = 1.0;
 
         context.infect_person(source, None, None);

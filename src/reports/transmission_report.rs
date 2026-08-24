@@ -1,7 +1,7 @@
 use crate::error::ModelError;
 use crate::infectiousness_manager::InfectionData;
 use crate::population_loader::{Person, PersonId};
-use crate::settings::SettingCode;
+use crate::settings::{Code, Setting, SettingId};
 use ixa::prelude::*;
 use ixa::profiling::open_span;
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ struct TransmissionReport {
     time: f64,
     target_id: PersonId,
     infected_by: Option<PersonId>,
-    infection_setting_id: Option<String>,
+    infection_setting_code: Option<String>,
 }
 
 define_report!(TransmissionReport);
@@ -20,15 +20,21 @@ fn record_transmission_event(
     context: &mut Context,
     target_id: PersonId,
     infected_by: Option<PersonId>,
-    infection_setting_id: Option<SettingCode>,
+    infection_setting_id: Option<SettingId>,
 ) {
-    let infection_setting_id = infection_setting_id.map(|code| code.0.to_report_string());
+    let infection_setting_code = infection_setting_id.map(|id| {
+        context
+            .get_property::<Setting, Code>(id)
+            .0
+            .0
+            .to_report_string()
+    });
     if infected_by.is_some() {
         context.send_report(TransmissionReport {
             time: context.get_current_time(),
             target_id,
             infected_by,
-            infection_setting_id,
+            infection_setting_code,
         });
     }
 }
@@ -55,6 +61,7 @@ pub fn init(context: &mut Context, file_name: &str) -> Result<(), ModelError> {
 #[cfg(test)]
 mod test {
     use crate::population_loader::Person;
+    use crate::settings::{Category, Code, Setting, SettingCategory};
     use crate::{
         Age,
         infectiousness_manager::InfectionContextExt,
@@ -103,8 +110,15 @@ mod test {
 
         let source: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         let target: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
-        let home: SettingCode = SettingCode::arbitrary_home_code();
-        let setting = Some(home);
+        let home_code: SettingCode = SettingCode::arbitrary_home_code();
+        let home_id = context
+            .add_entity(with!(
+                Setting,
+                Code(home_code),
+                Category(SettingCategory::Home)
+            ))
+            .unwrap();
+        let setting = Some(home_id);
         let infection_time = 1.0;
 
         context.infect_person(source, None, None);
@@ -125,6 +139,14 @@ mod test {
             panic!("No report name specified");
         };
 
+        let expected_infection_setting_id = setting.map(|id| {
+            context
+                .get_property::<Setting, Code>(id)
+                .0
+                .0
+                .to_report_string()
+        });
+
         assert!(file_path.exists());
         std::mem::drop(context);
 
@@ -136,10 +158,7 @@ mod test {
             assert_almost_eq!(record.time, infection_time, 0.0);
             assert_eq!(record.target_id, target);
             assert_eq!(record.infected_by.unwrap(), source);
-            assert_eq!(
-                record.infection_setting_id,
-                setting.map(|code| code.0.to_report_string())
-            );
+            assert_eq!(record.infection_setting_code, expected_infection_setting_id);
             line_count += 1;
         }
         assert_eq!(line_count, 1);

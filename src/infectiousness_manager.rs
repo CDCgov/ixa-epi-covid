@@ -6,7 +6,7 @@ use std::hash::{Hash, Hasher};
 use crate::{
     population_loader::PersonId,
     rate_fns::{InfectiousnessRateExt, InfectiousnessRateFn, ScaledRateFn},
-    settings::{ContextSettingExt, SettingCode},
+    settings::{ContextSettingExt, SettingId},
 };
 
 use crate::population_loader::Person;
@@ -19,7 +19,7 @@ pub enum InfectionData {
     Infectious {
         infection_time: f64,
         infected_by: Option<PersonId>,
-        infection_setting_id: Option<SettingCode>,
+        infection_setting_id: Option<SettingId>,
     },
     Recovered {
         infection_time: f64,
@@ -234,7 +234,7 @@ pub trait InfectionContextExt: PluginContext + InfectiousnessRateExt {
         &mut self,
         target_id: PersonId,
         source_id: Option<PersonId>,
-        setting_id: Option<SettingCode>,
+        setting_id: Option<SettingId>,
     ) {
         let infection_time = self.get_current_time();
         trace!("Person {target_id}: Infected at {infection_time}");
@@ -279,6 +279,7 @@ mod test {
         InfectionContextExt, evaluate_forecast, get_forecast, max_total_infectiousness_multiplier,
     };
     use crate::setting_code::SettingCode;
+    use crate::settings::{Category, Code, Setting};
     use crate::{
         Age,
         infectiousness_manager::{InfectionData, InfectionStatus},
@@ -459,7 +460,14 @@ mod test {
         let mut context = setup_context();
         let index: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
         let contact: PersonId = context.add_entity(with!(Person, Age(30))).unwrap();
-        let home_id = SettingCode::arbitrary_home_code();
+        let home_code = SettingCode::arbitrary_home_code();
+        let home_id = context
+            .add_entity(with!(
+                Setting,
+                Code(home_code),
+                Category(SettingCategory::Home)
+            ))
+            .unwrap();
         let infection_setting_id = Some(home_id);
         context.infect_person(contact, Some(index), infection_setting_id);
         context.execute();
