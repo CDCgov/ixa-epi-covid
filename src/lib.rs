@@ -13,6 +13,7 @@ pub mod population_loader;
 pub mod rate_fns;
 pub mod reports;
 pub mod school_calendar;
+pub mod schools;
 mod setting_code;
 pub mod settings;
 pub mod symptom_status_manager;

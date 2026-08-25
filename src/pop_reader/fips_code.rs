@@ -216,6 +216,10 @@ impl FIPSCode {
         ((self.0.get() >> CATEGORY_OFFSET) as SettingCategoryCode) & FOUR_BIT_MASK
     }
 
+    pub fn state_county_code(&self) -> Result<Self, FIPSError> {
+        Self::new(self.state_code(), self.county_code(), 0, 0, 0, 0)
+    }
+
     /// Returns the monotonically increasing ID number as an [`IdCode`]
     #[inline(always)]
     #[must_use]
