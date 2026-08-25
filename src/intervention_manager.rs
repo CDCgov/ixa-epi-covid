@@ -88,20 +88,27 @@ pub struct ModifierParameters {
 }
 
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
+pub struct ModifierSpecification {
+    home: Option<[f64; SETTING_COUNT]>,
+    school: Option<[f64; SETTING_COUNT]>,
+    work: Option<[f64; SETTING_COUNT]>,
+    community: Option<[f64; SETTING_COUNT]>,
+}
+
+#[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct Intervention {
     modifier: Modifier,
     geography: Geography,
     acceptance_probability: f64,
     activation_time: f64,
     duration: Option<f64>,
+    override_modifiers: Option<ModifierSpecification>,
 }
 
 #[derive(IxaEvent)]
 struct InterventionEvent {
     active: bool,
-    geography: Geography,
-    modifier: Modifier,
-    acceptance_probability: f64,
+    intervention: Intervention,
 }
 
 #[derive(Default)]
@@ -116,14 +123,14 @@ impl InterventionData {
         }
     }
 
-    pub fn activate_intervention(&mut self, modifier: Modifier, geography: Geography) {
+    pub fn activate_intervention(&mut self, intervention: Intervention) {
         self.active_interventions
-            .insert((modifier, geography), true);
+            .insert((intervention.modifier, intervention.geography), true);
     }
 
-    pub fn deactivate_intervention(&mut self, modifier: Modifier, geography: Geography) {
+    pub fn deactivate_intervention(&mut self, intervention: Intervention) {
         self.active_interventions
-            .insert((modifier, geography), false);
+            .insert((intervention.modifier, intervention.geography), false);
     }
 
     pub fn is_intervention_active(&self, modifier: Modifier, geography: Geography) -> bool {
@@ -148,9 +155,7 @@ pub trait SchoolClosureContextExt:
             TimeTrigger::at_phase(intervention.activation_time, ExecutionPhase::Last).emit_value(
                 InterventionEvent {
                     active: true,
-                    geography: intervention.geography,
-                    modifier: intervention.modifier,
-                    acceptance_probability: intervention.acceptance_probability,
+                    intervention,
                 },
             );
         self.register_trigger(start_trigger);
@@ -162,9 +167,7 @@ pub trait SchoolClosureContextExt:
             )
             .emit_value(InterventionEvent {
                 active: false,
-                geography: intervention.geography,
-                modifier: intervention.modifier,
-                acceptance_probability: intervention.acceptance_probability,
+                intervention,
             });
             self.register_trigger(end_trigger);
         }
@@ -173,48 +176,27 @@ pub trait SchoolClosureContextExt:
     fn setup_intervention_trigger_event_subscription(&mut self) {
         self.subscribe_to_event(move |context, event: InterventionEvent| {
             if event.active {
-                context.handle_intervention_start(
-                    event.modifier,
-                    event.geography,
-                    event.acceptance_probability,
-                );
+                context
+                    .register_intervention_itinerary_modifier(event.intervention)
+                    .unwrap();
+                let data = context.get_data_mut(InterventionDataPlugin);
+                data.activate_intervention(event.intervention);
             } else {
-                context.handle_intervention_end(event.modifier, event.geography);
+                context
+                    .remove_intervention_itinerary_modifier(event.intervention)
+                    .unwrap();
+                let data = context.get_data_mut(InterventionDataPlugin);
+                data.deactivate_intervention(event.intervention);
             }
         });
     }
 
-    fn handle_intervention_start(
-        &mut self,
-        modifier: Modifier,
-        geography: Geography,
-        acceptance_probability: f64,
-    ) {
-        self.register_intervention_itinerary_modifier(modifier, geography, acceptance_probability)
-            .unwrap();
-        let data = self.get_data_mut(InterventionDataPlugin);
-        data.activate_intervention(modifier, geography);
-    }
-
-    fn handle_intervention_end(&mut self, modifier: Modifier, geography: Geography) {
-        self.remove_intervention_itinerary_modifier(modifier, geography)
-            .unwrap();
-        let data = self.get_data_mut(InterventionDataPlugin);
-        data.deactivate_intervention(modifier, geography);
-    }
-
     fn register_intervention_itinerary_modifier(
         &mut self,
-        modifier: Modifier,
-        geography: Geography,
-        acceptance_probability: f64,
+        intervention: Intervention,
     ) -> Result<(), ModelError> {
-        let itinerary_modifier = self.define_intervention_itinerary_modifier(
-            modifier,
-            geography,
-            acceptance_probability,
-        );
-        match (modifier, geography) {
+        let itinerary_modifier = self.define_intervention_itinerary_modifier(intervention);
+        match (intervention.modifier, intervention.geography) {
             (Modifier::SchoolClosure, Geography::State(code)) => {
                 self.register_itinerary_modifier(SchoolState(Some(code)), itinerary_modifier);
             }
@@ -238,10 +220,9 @@ pub trait SchoolClosureContextExt:
     }
     fn remove_intervention_itinerary_modifier(
         &mut self,
-        modifier: Modifier,
-        geography: Geography,
+        intervention: Intervention,
     ) -> Result<(), ModelError> {
-        match (modifier, geography) {
+        match (intervention.modifier, intervention.geography) {
             (Modifier::SchoolClosure, Geography::State(code)) => {
                 self.remove_itinerary_modifier_by_property(SchoolState(Some(code)));
             }
@@ -271,13 +252,11 @@ pub trait SchoolClosureContextExt:
 
     fn define_intervention_itinerary_modifier(
         &self,
-        modifier: Modifier,
-        geography: Geography,
-        acceptance_probability: f64,
+        intervention: Intervention,
     ) -> ItineraryTransitionMatrix {
         let default_modifers = self.get_params().default_modifiers.clone();
         let modifier_params = default_modifers
-            .get(&modifier)
+            .get(&intervention.modifier)
             .expect("Modifier parameters not found");
 
         let matrix = std::array::from_fn(|row| {
@@ -289,17 +268,23 @@ pub trait SchoolClosureContextExt:
         });
 
         let acceptance_function: Option<AcceptanceFunction> =
-            Some(Box::new(move |context, _person| match geography {
-                Geography::State(_) => {
-                    context.is_intervention_active(modifier, geography)
-                        && context.sample_bool(InterventionRng, acceptance_probability)
-                }
-                Geography::County(code) => {
-                    !context.is_intervention_active(
-                        Modifier::SchoolClosure,
-                        Geography::State(code.state_code()),
-                    ) && context.is_intervention_active(Modifier::SchoolClosure, geography)
-                        && context.sample_bool(InterventionRng, acceptance_probability)
+            Some(Box::new(move |context, _person| {
+                match intervention.geography {
+                    Geography::State(_) => {
+                        context
+                            .is_intervention_active(intervention.modifier, intervention.geography)
+                            && context
+                                .sample_bool(InterventionRng, intervention.acceptance_probability)
+                    }
+                    Geography::County(code) => {
+                        !context.is_intervention_active(
+                            Modifier::SchoolClosure,
+                            Geography::State(code.state_code()),
+                        ) && context
+                            .is_intervention_active(Modifier::SchoolClosure, intervention.geography)
+                            && context
+                                .sample_bool(InterventionRng, intervention.acceptance_probability)
+                    }
                 }
             }));
         create_itinerary_transition_matrix(None, Some(matrix), acceptance_function)
@@ -402,11 +387,12 @@ mod test {
             acceptance_probability: 1.0,
             activation_time: 1.0,
             duration: Some(1.0),
+            override_modifiers: None,
         };
         context.setup_intervention_triggers(intervention);
         context.setup_intervention_trigger_event_subscription();
         context.subscribe_to_event(move |cxt, event: InterventionEvent| {
-            if event.active && event.geography == g1 {
+            if event.active && event.intervention.geography == g1 {
                 assert_eq!(cxt.get_current_time(), 1.0);
                 *school_closures_starts_clone.borrow_mut() += 1;
             } else {
@@ -431,6 +417,14 @@ mod test {
         let school_code = make_school_id(b"16037960200002");
         let g1 = Geography::State(school_code.0.state_code());
         let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
+        let intervention = Intervention {
+            modifier: Modifier::SchoolClosure,
+            geography: g1,
+            acceptance_probability: 1.0,
+            activation_time: 1.0,
+            duration: Some(1.0),
+            override_modifiers: None,
+        };
         context.setup_intervention_trigger_event_subscription();
         context.set_property(
             p1,
@@ -442,17 +436,13 @@ mod test {
         context.add_plan(1.0, move |context| {
             context.emit_event(InterventionEvent {
                 active: true,
-                geography: g1,
-                acceptance_probability: 1.0,
-                modifier: Modifier::SchoolClosure,
+                intervention,
             });
         });
         context.add_plan(2.0, move |context| {
             context.emit_event(InterventionEvent {
                 active: false,
-                geography: g1,
-                acceptance_probability: 1.0,
-                modifier: Modifier::SchoolClosure,
+                intervention,
             });
         });
 

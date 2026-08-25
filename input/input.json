@@ -82,7 +82,15 @@
                 }
             ]
         },
-        "interventions": [],
+        "interventions": [
+            {
+                "modifier":"SchoolClosure",
+                "geography": {"type": "State", "code": "56"},
+                "acceptance_probability": 1.0,
+                "activation_time": 0.0,
+                "duration": 30.0
+            }
+        ],
         "prevalence_report": {
             "write": true,
             "filename": "person_property_count.csv",
