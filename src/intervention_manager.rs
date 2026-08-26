@@ -81,11 +81,11 @@ pub enum Modifier {
     WorkplaceMobilityReduction,
 }
 
-#[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
-pub struct ModifierParameters {
-    setting: SettingCategory,
-    itinerary_modifier: [f64; SETTING_COUNT],
-}
+// #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
+// pub struct ModifierParameters {
+//     setting: SettingCategory,
+//     itinerary_modifier: [f64; SETTING_COUNT],
+// }
 
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct ModifierSpecification {
@@ -259,13 +259,20 @@ pub trait SchoolClosureContextExt:
             .get(&intervention.modifier)
             .expect("Modifier parameters not found");
 
-        let matrix = std::array::from_fn(|row| {
-            modifier_params
-                .iter()
-                .find(|params| row == params.setting as usize)
-                .map(|params| params.itinerary_modifier)
-                .unwrap_or([0.0; 4])
-        });
+        let mut matrix = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+        let overrides = intervention.override_modifiers.as_ref();
+        let settings = [
+            (SettingCategory::Home, modifier_params.home, overrides.and_then(|m| m.home)),
+            (SettingCategory::School, modifier_params.school, overrides.and_then(|m| m.school)),
+            (SettingCategory::Work, modifier_params.work, overrides.and_then(|m| m.work)),
+            (SettingCategory::Community, modifier_params.community, overrides.and_then(|m| m.community)),
+        ];
+
+        for (category, default_val, override_val) in settings {
+            if let Some(val) = override_val.or(default_val) {
+                matrix[category] = val;
+            }
+        }
 
         let acceptance_function: Option<AcceptanceFunction> =
             Some(Box::new(move |context, _person| {
@@ -344,24 +351,30 @@ mod test {
             default_modifiers: HashMap::from_iter([
                 (
                     Modifier::SchoolClosure,
-                    vec![ModifierParameters {
-                        setting: SettingCategory::School,
-                        itinerary_modifier: [1.0, 0.0, 0.0, 0.0],
-                    }],
+                    ModifierSpecification {
+                        home: None,
+                        school: Some([1.0, 0.0, 0.0, 0.0]),
+                        work: None,
+                        community: None,
+                    },
                 ),
                 (
                     Modifier::WorkplaceMobilityReduction,
-                    vec![ModifierParameters {
-                        setting: SettingCategory::Work,
-                        itinerary_modifier: [1.0, 0.0, 0.0, 0.0],
-                    }],
+                    ModifierSpecification {
+                        home: None,
+                        school: None,
+                        work: Some([1.0, 0.0, 0.0, 0.0]),
+                        community: None,
+                    },
                 ),
                 (
                     Modifier::CommunityMobilityReduction,
-                    vec![ModifierParameters {
-                        setting: SettingCategory::Community,
-                        itinerary_modifier: [1.0, 0.0, 0.0, 0.0],
-                    }],
+                    ModifierSpecification {
+                        home: None,
+                        school: None,
+                        work: None,
+                        community: Some([1.0, 0.0, 0.0, 0.0]),
+                    },
                 ),
             ]),
             ..Default::default()

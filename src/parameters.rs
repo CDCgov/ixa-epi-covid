@@ -4,7 +4,7 @@ use std::{fmt::Debug, path::PathBuf};
 
 use crate::error::ModelError;
 use crate::infection_importation::ImportCasesFromFile;
-use crate::intervention_manager::{Intervention, Modifier, ModifierParameters};
+use crate::intervention_manager::{Intervention, Modifier, ModifierSpecification};
 use crate::reports::ReportParams;
 use crate::school_calendar::{SchoolCalendarModifier, SchoolCalendarModifierType};
 use crate::settings::SettingCategory;
@@ -73,7 +73,7 @@ pub struct Params {
     /// Vector of modifiers that impacting school itineraries
     pub school_calendar: Vec<SchoolCalendarModifier>,
     /// Parameters defining default itinerary modifiers
-    pub default_modifiers: HashMap<Modifier, Vec<ModifierParameters>>,
+    pub default_modifiers: HashMap<Modifier, ModifierSpecification>,
     /// Parameters defining interventions
     pub interventions: Vec<Intervention>,
     /// Prevalence report with a period and name required
