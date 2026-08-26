@@ -81,12 +81,6 @@ pub enum Modifier {
     WorkplaceMobilityReduction,
 }
 
-// #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
-// pub struct ModifierParameters {
-//     setting: SettingCategory,
-//     itinerary_modifier: [f64; SETTING_COUNT],
-// }
-
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct ModifierSpecification {
     home: Option<[f64; SETTING_COUNT]>,
