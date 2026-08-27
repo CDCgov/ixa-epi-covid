@@ -514,7 +514,18 @@ pub trait SchoolClosureContextExt:
                     }
                 }
             }));
-        create_itinerary_transition_matrix(None, Some(matrix), acceptance_function)
+        // Interventions have different effects on location and activity
+        match intervention.modifier {
+            Modifier::SchoolClosure => {
+                create_itinerary_transition_matrix(None, Some(matrix), acceptance_function)
+            }
+            Modifier::WorkplaceMobilityReduction => {
+                create_itinerary_transition_matrix(None, Some(matrix), acceptance_function)
+            }
+            Modifier::CommunityMobilityReduction => {
+                create_itinerary_transition_matrix(Some(matrix), None, acceptance_function)
+            }
+        }
     }
 }
 impl SchoolClosureContextExt for Context {}
