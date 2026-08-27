@@ -1,7 +1,10 @@
+use std::ops::{Index, IndexMut};
+
 use serde::{
     Deserialize, Deserializer, Serialize,
     de::{self},
 };
+use strum::{EnumCount, EnumIter};
 
 use crate::pop_reader::{FIPSCode, StateCode, parser::parse_fips_state_county_id};
 
@@ -15,11 +18,37 @@ enum RawGeography {
     State(String),
 }
 
-#[derive(Copy, Clone, PartialEq, Debug, Serialize, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Debug, Serialize, Eq, Hash, EnumCount, EnumIter)]
+#[repr(u8)]
 pub enum Geography {
-    County(FIPSCode),
+    County(FIPSCode) = 0,
     State(StateCode),
 }
+
+impl Geography {
+    const fn index(self) -> usize {
+        match self {
+            Geography::County(_) => 0,
+            Geography::State(_) => 1,
+        }
+    }
+}
+
+impl<T> Index<Geography> for [T; GEOGRAPHY_COUNT] {
+    type Output = T;
+
+    fn index(&self, index: Geography) -> &Self::Output {
+        &self[index.index()]
+    }
+}
+
+impl<T> IndexMut<Geography> for [T; GEOGRAPHY_COUNT] {
+    fn index_mut(&mut self, index: Geography) -> &mut Self::Output {
+        &mut self[index.index()]
+    }
+}
+
+pub const GEOGRAPHY_COUNT: usize = Geography::COUNT;
 
 impl<'de> Deserialize<'de> for Geography {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
