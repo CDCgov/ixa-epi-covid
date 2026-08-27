@@ -104,6 +104,12 @@ const ID_OFFSET: usize = 8;
 #[serde(transparent)]
 pub struct FIPSCode(NonZero<u64>);
 
+impl Default for FIPSCode {
+    fn default() -> Self {
+        Self::with_state_code(1).unwrap()
+    }
+}
+
 impl FIPSCode {
     /// Converts the FIPSCode to a string in the same format as the Debug implementation.
     #[must_use]

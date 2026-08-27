@@ -313,6 +313,20 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error 
         }
         unique_school_calendar_modifiers.push(school_calendar_modifier.clone());
     }
+
+    for value in parameters.default_modifiers.values() {
+        value.validate()?;
+    }
+
+    for intervention in &parameters.interventions {
+        intervention.validate()?;
+        for other_intervention in &parameters.interventions {
+            if intervention != other_intervention {
+                intervention.validate_overlap(other_intervention)?;
+            }
+        }
+    }
+
     Ok(())
 }
 
