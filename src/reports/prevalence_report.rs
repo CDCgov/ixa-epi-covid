@@ -165,6 +165,9 @@ mod test {
         context.add_plan(infection_time, move |context| {
             context.infect_person(target, Some(source), setting);
         });
+        context.add_plan(3.0, |context| {
+            context.shutdown();
+        });
         context.execute();
 
         let Params {

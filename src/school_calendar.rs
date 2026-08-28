@@ -1,11 +1,10 @@
 use crate::{
     ContextParametersExt, Params,
     error::ModelError,
-    itinerary_manager::ContextItineraryModifierExt,
     itinerary_modifiers::{
         AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
     },
-    settings::{Itinerary, Person, SettingCategory},
+    settings::{ContextSettingExt, Itinerary, Person, SettingCategory, SettingMembershipChange},
 };
 use ixa::{impl_derived_property, prelude::*};
 use serde::{Deserialize, Serialize};
@@ -88,7 +87,11 @@ pub fn init(context: &mut Context) {
     } = context.get_params().clone();
     for modifier in school_calendar {
         let itinerary_modifier = define_school_calendar_itinerary_modifier(&modifier).unwrap();
-        context.register_itinerary_modifier(Student(true), itinerary_modifier);
+        context.setup_itinerary_modifer(
+            Student(true),
+            itinerary_modifier,
+            SettingMembershipChange::NoChange,
+        );
     }
 }
 
@@ -151,6 +154,7 @@ mod test {
 
     use super::*;
     use crate::Age;
+    use crate::itinerary_manager::ContextItineraryModifierExt;
     use crate::parameters::{GlobalParams, Params, SettingProperties};
     use crate::pop_reader::parser::parse_fips_school_id;
     use crate::setting_code::SettingCode;

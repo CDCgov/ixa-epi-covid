@@ -8,7 +8,10 @@ use crate::{
         AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
     },
     pop_reader::{FIPSCode, StateCode},
-    settings::{ContextSettingExt, Itinerary, Person, PersonId, SETTING_COUNT, SettingCategory},
+    settings::{
+        ContextSettingExt, Itinerary, Person, PersonId, SETTING_COUNT, SettingCategory,
+        SettingMembershipChange,
+    },
 };
 use ixa::{
     ExecutionPhase, HashMap, HashMapExt, IxaEvent, impl_derived_property,
@@ -399,39 +402,45 @@ pub trait SchoolClosureContextExt:
         let itinerary_modifier = self.define_intervention_itinerary_modifier(intervention);
         match (intervention.modifier, intervention.geography) {
             (Modifier::SchoolClosure, Geography::State(_)) => {
-                self.register_itinerary_modifier(
+                self.setup_itinerary_modifer(
                     AcceptsSchoolClosureState(true),
                     itinerary_modifier,
+                    SettingMembershipChange::NoChange,
                 );
             }
             (Modifier::SchoolClosure, Geography::County(_)) => {
-                self.register_itinerary_modifier(
+                self.setup_itinerary_modifer(
                     AcceptsSchoolClosureCounty(true),
                     itinerary_modifier,
+                    SettingMembershipChange::NoChange,
                 );
             }
             (Modifier::WorkplaceMobilityReduction, Geography::State(_)) => {
-                self.register_itinerary_modifier(
+                self.setup_itinerary_modifer(
                     AcceptsWorkMobilityState(true),
                     itinerary_modifier,
+                    SettingMembershipChange::Active,
                 );
             }
             (Modifier::WorkplaceMobilityReduction, Geography::County(_)) => {
-                self.register_itinerary_modifier(
+                self.setup_itinerary_modifer(
                     AcceptsWorkMobilityCounty(true),
                     itinerary_modifier,
+                    SettingMembershipChange::Active,
                 );
             }
             (Modifier::CommunityMobilityReduction, Geography::State(_)) => {
-                self.register_itinerary_modifier(
+                self.setup_itinerary_modifer(
                     AcceptsCommunityMobilityState(true),
                     itinerary_modifier,
+                    SettingMembershipChange::NoChange,
                 );
             }
             (Modifier::CommunityMobilityReduction, Geography::County(_)) => {
-                self.register_itinerary_modifier(
+                self.setup_itinerary_modifer(
                     AcceptsCommunityMobilityCounty(true),
                     itinerary_modifier,
+                    SettingMembershipChange::NoChange,
                 );
             }
         }
