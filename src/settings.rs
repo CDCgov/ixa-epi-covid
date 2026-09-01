@@ -554,6 +554,7 @@ pub trait ContextSettingExt:
     }
 
     fn remove_itinerary_modifier<P: IndexableProperty<Person>>(&mut self, person_property: P) {
+        self.handle_active_setting_membership_change(person_property, true);
         self.remove_itinerary_modifier_by_property(person_property);
         let data = self.get_data_mut(EventListenerPlugin);
         if let Some(listener_ids) = data.remove_event_listener_ids(person_property) {
@@ -561,7 +562,6 @@ pub trait ContextSettingExt:
                 self.unsubscribe_from_event::<PropertyChangeEvent<Person, P>>(&listener_id);
             }
         }
-        self.handle_active_setting_membership_change(person_property, true);
     }
 
     /// Subscribe to a general person property event for itinerary modifier registration.
@@ -582,7 +582,7 @@ pub trait ContextSettingExt:
                 }
                 if event.previous == person_property {
                     context
-                        .determine_setting_membership_changes(event.entity_id)
+                        .determine_previous_setting_membership_changes(event.entity_id)
                         .into_iter()
                         .filter_map(|(setting_id, add)| add.then_some(setting_id))
                         .for_each(|setting_id| {
@@ -618,14 +618,39 @@ pub trait ContextSettingExt:
         }
     }
 
-    fn determine_setting_membership_changes(
-        &self,
-        person_id: PersonId,
-    ) -> Vec<(SettingCode, bool)> {
+    fn handle_setting_membership_removals(&self, person_id: PersonId) -> Vec<SettingCode> {
         let default_itinerary = self
             .get_property::<Person, Itinerary>(person_id)
             .itinerary_ratios;
         let modified_itinerary = self.get_itinerary(person_id);
+        let mut removals = Vec::new();
+        let setting_ids = self
+            .get_property::<Person, Itinerary>(person_id)
+            .setting_ids;
+        for i in 0..SETTING_COUNT {
+            if modified_itinerary[i] == 0.0
+                && default_itinerary[i] > 0.0
+                && let Some(setting_id) = setting_ids[i]
+            {
+                removals.push(setting_id);
+            }
+        }
+        removals
+    }
+
+    fn handle_setting_membership_additions(
+        &self,
+        person_id: PersonId,
+        previous_property: Option<impl IndexableProperty<Person>>,
+    ) -> Vec<(SettingCode, bool)> {
+        let default_itinerary = self
+            .get_property::<Person, Itinerary>(person_id)
+            .itinerary_ratios;
+        let modified_itinerary = if previous_property.is_some() {
+            self.get_previous_itinerary(person_id, previous_property.unwrap())
+        } else {
+            self.get_itinerary(person_id)
+        };
         let mut changes = Vec::new();
         let setting_ids = self
             .get_property::<Person, Itinerary>(person_id)
@@ -638,6 +663,8 @@ pub trait ContextSettingExt:
                 changes.push((setting_id, true));
             }
         }
+        println!("modified_itinerary: {:?}, default_itinerary: {:?}", modified_itinerary, default_itinerary);
+        println!("determine_setting_membership_changes: person_id: {:?}, changes: {:?}", person_id, changes);
         changes
     }
 }
@@ -654,7 +681,8 @@ mod test {
     use super::*;
     use crate::itinerary_modifiers::create_itinerary_transition_matrix;
     use crate::population_loader::{CommunityId, HomeId, SchoolId, WorkId};
-    use crate::{
+    use crate::symptom_status_manager::{SymptomData, SymptomStatus};
+use crate::{
         Age, Params,
         parameters::{GlobalParams, SettingProperties},
         pop_reader::{
@@ -1021,7 +1049,7 @@ mod test {
     }
 
     #[test]
-    fn test_setup_itinerary_modifier_and_remove() {
+    fn test_itinerary_modifier_active_membership_change() {
         let mut context = setup_test_context(0.0);
         let p1 = context.add_entity(with!(Person, Age(20))).unwrap();
         let home_id = make_home_id(b"160379602000011");
@@ -1071,9 +1099,81 @@ mod test {
             "Active settings for p1: {:?}",
             active_settings_after_removal
         );
-        assert_eq!(context.get_setting_size(home_id), 2); // Both p1 and p2 are still members of home
-        assert_eq!(context.get_setting_size(work_id), 2); // Only p2 is a member of work now
-        assert_eq!(context.get_setting_size(school_id), 2); // Only p2 is a member of school now
-        assert_eq!(context.get_setting_size(community_id), 2); // Both p1 and p2 are still members of community
+        assert_eq!(context.get_setting_size(home_id), 2);
+        assert_eq!(context.get_setting_size(work_id), 2);
+        assert_eq!(context.get_setting_size(school_id), 2);
+        assert_eq!(context.get_setting_size(community_id), 2);
+    }
+
+    #[test]
+    fn test_itinerary_modifier_passive_membership_change() {
+        let mut context = setup_test_context(0.0);
+        let p1 = context.add_entity(with!(Person, Age(20))).unwrap();
+        let p2 = context.add_entity(with!(Person, Age(21))).unwrap();
+        let home_id = make_home_id(b"160379602000011");
+        let work_id = make_workplace_id(b"1603796020001332");
+        let school_id = make_school_id(b"1603796020001443");
+        let community_id = make_community_id(b"160379602000011");
+        context.add_person_to_settings(
+            p1,
+            Some(home_id),
+            Some(work_id),
+            Some(school_id),
+            Some(community_id),
+        );
+        context.add_person_to_settings(
+            p2,
+            Some(home_id),
+            Some(work_id),
+            Some(school_id),
+            Some(community_id),
+        );
+
+        let symptom_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+        ];
+
+        let weekend_modifier = create_itinerary_transition_matrix(Some(symptom_matrix), None, None);
+
+        context.setup_itinerary_modifer(SymptomStatus::Mild, weekend_modifier, SettingMembershipChange::Passive);
+        
+        // After setting up the itinerary modifier with passive membership change,
+        // the active settings for p1 should remain unchanged.
+        let active_settings = context.get_settings_for_person(p1).unwrap();
+        assert_eq!(active_settings.len(), 4); // All settings should still be active
+
+        context.add_plan(1.0, move |context| {
+            context.set_property::<Person, SymptomData>(p1, SymptomData::Mild {
+                    mild_time: 1.0
+                });
+        });
+        context.add_plan(1.5, move |context| {
+            let active_settings = context.get_settings_for_person(p1).unwrap();
+            assert_eq!(active_settings.len(), 2); // Only home and community should be active
+            assert_eq!(context.get_setting_size(home_id), 2); // Both p1 and p2 are still members of home
+            assert_eq!(context.get_setting_size(work_id), 1); // Only p2 is a member of work now
+            assert_eq!(context.get_setting_size(school_id), 1); // Only p2 is a member of school now
+            assert_eq!(context.get_setting_size(community_id), 2); // Both p1 and p2 are still members of community
+        });
+        context.add_plan(2.0, move |context| {
+            context.set_property::<Person, SymptomData>(p1, SymptomData::Resolved { mild_time: 1.0, severe_time: None, critical_time: None, resolved_time: 2.0 });
+        });
+
+        context.execute();
+
+        let active_settings_after_removal = context.get_settings_for_person(p1).unwrap();
+        assert_eq!(active_settings_after_removal.len(), 4); // All settings should be active again
+        println!(
+            "Active settings for p1: {:?}",
+            active_settings_after_removal
+        );
+        assert_eq!(context.get_setting_size(home_id), 2);
+        assert_eq!(context.get_setting_size(work_id), 2);
+        assert_eq!(context.get_setting_size(school_id), 2);
+        assert_eq!(context.get_setting_size(community_id), 2);
+
     }
 }

@@ -130,6 +130,9 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
     fn get_itinerary_modifiers(&self, person_id: PersonId) -> Vec<&dyn ItineraryModifier>;
     #[must_use]
     fn get_itinerary(&self, person_id: PersonId) -> [f64; SETTING_COUNT];
+    fn get_previous_itinerary<P>(&self, person_id: PersonId, previous_property: P) -> [f64; SETTING_COUNT]
+    where
+        P: IndexableProperty<Person>;
 }
 impl ContextItineraryModifierExt for Context {
     // This needs to be here to have access to the concrete context type for the get_itinerary trait method
@@ -166,6 +169,50 @@ impl ContextItineraryModifierExt for Context {
                 layered.layer(modifier)
             })
             .apply(&base_itinerary)
+    }
+
+    fn get_previous_itinerary<P>(&self, person_id: PersonId, previous_property: P) -> [f64; SETTING_COUNT]
+    where
+        P: IndexableProperty<Person>
+    {
+        let mut modifiers = self.get_itinerary_modifiers(person_id);
+        let data = self.get_data(ItineraryModifierPlugin);
+        let previous_modifiers = data
+            .itinerary_modifier_map
+            .get(&TypeId::of::<P>())
+            .and_then(|modifier_map| {
+                modifier_map
+                    .as_any()
+                    .downcast_ref::<PersonPropertyItineraryModifier<P>>()
+            })
+            .and_then(|modifier_map| {
+                modifier_map.itinerary_modifier_map.get(&previous_property)
+            });
+        if let Some(previous_modifiers) = previous_modifiers {
+                modifiers.extend(previous_modifiers.iter().map(|modifier| modifier.as_ref()));
+        }
+        let mut modifiers = modifiers
+            .into_iter()
+            .filter(|modifier| modifier.accept(self, person_id));
+        
+        let base_itinerary = self
+            .get_property::<Person, Itinerary>(person_id)
+            .itinerary_ratios;
+
+        let Some(first) = modifiers.next() else {
+            return base_itinerary;
+        };
+
+        let Some(second) = modifiers.next() else {
+            return first.apply(&base_itinerary);
+        };
+
+        modifiers
+            .fold(first.layer(second), |layered, modifier| {
+                layered.layer(modifier)
+            })
+            .apply(&base_itinerary)
+        
     }
 }
 
