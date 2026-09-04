@@ -209,6 +209,21 @@ define_derived_property!(
     }
 );
 
+define_derived_property!(
+    enum HospitalizationStatus {
+        NotHospitalized,
+        Hospitalized,
+    },
+    Person,
+    [SymptomData],
+    [],
+    |symptom_data| match symptom_data {
+        SymptomData::Severe { .. } => HospitalizationStatus::Hospitalized,
+        SymptomData::Critical { .. } => HospitalizationStatus::Hospitalized,
+        _ => HospitalizationStatus::NotHospitalized,
+    }
+);
+
 #[derive(Debug, Eq, PartialEq, Clone, Deserialize, Serialize)]
 pub struct SymptomAgeGroup {
     pub label: String,

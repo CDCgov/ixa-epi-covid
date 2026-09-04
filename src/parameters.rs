@@ -76,6 +76,8 @@ pub struct Params {
     pub transmission_report: ReportParams,
     /// Aggregated incident deaths report with a period and name required
     pub aggregated_deaths_report: ReportParams,
+    /// Current hospitalizations report with a period and name required
+    pub current_hospitalizations_report: ReportParams,
     /// Terminate run on first observed death
     pub first_death_terminates_run: bool,
 }
@@ -372,6 +374,11 @@ impl Default for Params {
                 period: None,
             },
             aggregated_deaths_report: ReportParams {
+                write: false,
+                filename: None,
+                period: None,
+            },
+            current_hospitalizations_report: ReportParams {
                 write: false,
                 filename: None,
                 period: None,
