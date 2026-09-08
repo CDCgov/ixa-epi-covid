@@ -3,11 +3,11 @@ use std::ops::{Index, IndexMut};
 use crate::{
     ContextParametersExt, Params,
     error::ModelError,
-    geography::{GEOGRAPHY_COUNT, Geography},
+    geography::{GEOGRAPHY_COUNT, Geography, GeographyDiscriminants},
     itinerary_modifiers::{
         AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
     },
-    pop_reader::{FIPSCode, StateCode},
+    pop_reader::{FIPSCode, states::USState},
     settings::{ContextSettingExt, Itinerary, Person, PersonId, SETTING_COUNT, SettingCategory},
 };
 use ixa::{
@@ -21,11 +21,11 @@ use strum::{EnumCount, EnumIter};
 define_rng!(InterventionRng);
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct SchoolState(pub Option<StateCode>);
+pub struct SchoolState(pub Option<USState>);
 impl_derived_property!(SchoolState, Person, [Itinerary], [], |itinerary| {
     SchoolState(
         itinerary.setting_ids[SettingCategory::School]
-            .map(|code| Some(code.0.state_code()))
+            .map(|code| Some(code.0.state().unwrap()))
             .unwrap_or(None),
     )
 });
@@ -40,11 +40,11 @@ impl_derived_property!(SchoolCounty, Person, [Itinerary], [], |itinerary| {
 });
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct WorkState(pub Option<StateCode>);
+pub struct WorkState(pub Option<USState>);
 impl_derived_property!(WorkState, Person, [Itinerary], [], |itinerary| {
     WorkState(
         itinerary.setting_ids[SettingCategory::Work]
-            .map(|code| Some(code.0.state_code()))
+            .map(|code| Some(code.0.state().unwrap()))
             .unwrap_or(None),
     )
 });
@@ -59,11 +59,11 @@ impl_derived_property!(WorkCounty, Person, [Itinerary], [], |itinerary| {
 });
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct HomeState(pub Option<StateCode>);
+pub struct HomeState(pub Option<USState>);
 impl_derived_property!(HomeState, Person, [Itinerary], [], |itinerary| {
     HomeState(
         itinerary.setting_ids[SettingCategory::Home]
-            .map(|code| Some(code.0.state_code()))
+            .map(|code| Some(code.0.state().unwrap()))
             .unwrap_or(None),
     )
 });
@@ -78,94 +78,92 @@ impl_derived_property!(HomeCounty, Person, [Itinerary], [], |itinerary| {
 });
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct AcceptsIntervention(pub [[bool; MODIFIER_COUNT]; GEOGRAPHY_COUNT]);
+pub struct AcceptsIntervention(pub [[Option<Geography>; MODIFIER_COUNT]; GEOGRAPHY_COUNT]);
 impl_property!(
     AcceptsIntervention,
     Person,
-    default_const = AcceptsIntervention([[false; MODIFIER_COUNT]; GEOGRAPHY_COUNT])
+    default_const = AcceptsIntervention([[None; MODIFIER_COUNT]; GEOGRAPHY_COUNT])
 );
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct AcceptsSchoolClosureState(pub bool);
+pub struct AcceptsSchoolClosureState(pub Option<Geography>);
 impl_derived_property!(
     AcceptsSchoolClosureState,
     Person,
-    [AcceptsIntervention, SchoolState],
+    [AcceptsIntervention],
     [],
-    |accepts, school_state| {
-        AcceptsSchoolClosureState(school_state.0.is_some_and(|state_code| {
-            accepts.0[Geography::State(state_code)][Modifier::SchoolClosure]
-        }))
+    |accepts| {
+        AcceptsSchoolClosureState(accepts.0[GeographyDiscriminants::State][Modifier::SchoolClosure])
     }
 );
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct AcceptsSchoolClosureCounty(pub bool);
+pub struct AcceptsSchoolClosureCounty(pub Option<Geography>);
 impl_derived_property!(
     AcceptsSchoolClosureCounty,
     Person,
-    [AcceptsIntervention, SchoolCounty],
+    [AcceptsIntervention],
     [],
-    |accepts, school_county| {
-        AcceptsSchoolClosureCounty(school_county.0.is_some_and(|fips_code| {
-            accepts.0[Geography::County(fips_code)][Modifier::SchoolClosure]
-        }))
+    |accepts| {
+        AcceptsSchoolClosureCounty(
+            accepts.0[GeographyDiscriminants::County][Modifier::SchoolClosure],
+        )
     }
 );
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct AcceptsWorkMobilityState(pub bool);
+pub struct AcceptsWorkMobilityState(pub Option<Geography>);
 impl_derived_property!(
     AcceptsWorkMobilityState,
     Person,
     [AcceptsIntervention, WorkState],
     [],
     |accepts, work_state| {
-        AcceptsWorkMobilityState(work_state.0.is_some_and(|state_code| {
-            accepts.0[Geography::State(state_code)][Modifier::WorkplaceMobilityReduction]
-        }))
+        AcceptsWorkMobilityState(
+            accepts.0[GeographyDiscriminants::State][Modifier::WorkplaceMobilityReduction],
+        )
     }
 );
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct AcceptsWorkMobilityCounty(pub bool);
+pub struct AcceptsWorkMobilityCounty(pub Option<Geography>);
 impl_derived_property!(
     AcceptsWorkMobilityCounty,
     Person,
     [AcceptsIntervention, WorkCounty],
     [],
     |accepts, work_county| {
-        AcceptsWorkMobilityCounty(work_county.0.is_some_and(|fips_code| {
-            accepts.0[Geography::County(fips_code)][Modifier::WorkplaceMobilityReduction]
-        }))
+        AcceptsWorkMobilityCounty(
+            accepts.0[GeographyDiscriminants::County][Modifier::WorkplaceMobilityReduction],
+        )
     }
 );
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct AcceptsCommunityMobilityState(pub bool);
+pub struct AcceptsCommunityMobilityState(pub Option<Geography>);
 impl_derived_property!(
     AcceptsCommunityMobilityState,
     Person,
     [AcceptsIntervention, HomeState],
     [],
     |accepts, home_state| {
-        AcceptsCommunityMobilityState(home_state.0.is_some_and(|state_code| {
-            accepts.0[Geography::State(state_code)][Modifier::CommunityMobilityReduction]
-        }))
+        AcceptsCommunityMobilityState(
+            accepts.0[GeographyDiscriminants::State][Modifier::CommunityMobilityReduction],
+        )
     }
 );
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct AcceptsCommunityMobilityCounty(pub bool);
+pub struct AcceptsCommunityMobilityCounty(pub Option<Geography>);
 impl_derived_property!(
     AcceptsCommunityMobilityCounty,
     Person,
     [AcceptsIntervention, HomeCounty],
     [],
     |accepts, home_county| {
-        AcceptsCommunityMobilityCounty(home_county.0.is_some_and(|fips_code| {
-            accepts.0[Geography::County(fips_code)][Modifier::CommunityMobilityReduction]
-        }))
+        AcceptsCommunityMobilityCounty(
+            accepts.0[GeographyDiscriminants::County][Modifier::CommunityMobilityReduction],
+        )
     }
 );
 
@@ -318,7 +316,7 @@ define_data_plugin!(
     InterventionData::default()
 );
 
-pub trait SchoolClosureContextExt:
+pub trait InterventionContextExt:
     PluginContext + ContextEntitiesExt + ContextParametersExt + ContextTriggersExt + ContextSettingExt
 {
     fn setup_intervention_triggers(&mut self, intervention: Intervention) {
@@ -364,6 +362,8 @@ pub trait SchoolClosureContextExt:
     }
 
     fn set_accepts_intervention(&mut self, intervention: Intervention) {
+        // Not including the geography in the registration person property could lead to
+        // not handling overriding itinerary modifiers correctly.
         let people: Vec<PersonId> = match (intervention.geography, intervention.modifier) {
             (Geography::State(code), Modifier::SchoolClosure) => self
                 .query_result_iterator(with!(Person, SchoolState(Some(code))))
@@ -387,7 +387,10 @@ pub trait SchoolClosureContextExt:
         for person in people {
             let accepts = self.sample_bool(InterventionRng, intervention.acceptance_probability);
             let mut current_accepts = self.get_property::<Person, AcceptsIntervention>(person);
-            current_accepts.0[intervention.geography][intervention.modifier] = accepts;
+            if accepts {
+                current_accepts.0[intervention.geography][intervention.modifier] =
+                    Some(intervention.geography);
+            }
             self.set_property(person, current_accepts);
         }
     }
@@ -398,39 +401,39 @@ pub trait SchoolClosureContextExt:
     ) -> Result<(), ModelError> {
         let itinerary_modifier = self.define_intervention_itinerary_modifier(intervention);
         match (intervention.modifier, intervention.geography) {
-            (Modifier::SchoolClosure, Geography::State(_)) => {
+            (Modifier::SchoolClosure, Geography::State(state_code)) => {
                 self.register_itinerary_modifier(
-                    AcceptsSchoolClosureState(true),
+                    AcceptsSchoolClosureState(Some(Geography::State(state_code))),
                     itinerary_modifier,
                 );
             }
-            (Modifier::SchoolClosure, Geography::County(_)) => {
+            (Modifier::SchoolClosure, Geography::County(fips_code)) => {
                 self.register_itinerary_modifier(
-                    AcceptsSchoolClosureCounty(true),
+                    AcceptsSchoolClosureCounty(Some(Geography::County(fips_code))),
                     itinerary_modifier,
                 );
             }
-            (Modifier::WorkplaceMobilityReduction, Geography::State(_)) => {
+            (Modifier::WorkplaceMobilityReduction, Geography::State(state_code)) => {
                 self.register_itinerary_modifier(
-                    AcceptsWorkMobilityState(true),
+                    AcceptsWorkMobilityState(Some(Geography::State(state_code))),
                     itinerary_modifier,
                 );
             }
-            (Modifier::WorkplaceMobilityReduction, Geography::County(_)) => {
+            (Modifier::WorkplaceMobilityReduction, Geography::County(fips_code)) => {
                 self.register_itinerary_modifier(
-                    AcceptsWorkMobilityCounty(true),
+                    AcceptsWorkMobilityCounty(Some(Geography::County(fips_code))),
                     itinerary_modifier,
                 );
             }
-            (Modifier::CommunityMobilityReduction, Geography::State(_)) => {
+            (Modifier::CommunityMobilityReduction, Geography::State(state_code)) => {
                 self.register_itinerary_modifier(
-                    AcceptsCommunityMobilityState(true),
+                    AcceptsCommunityMobilityState(Some(Geography::State(state_code))),
                     itinerary_modifier,
                 );
             }
-            (Modifier::CommunityMobilityReduction, Geography::County(_)) => {
+            (Modifier::CommunityMobilityReduction, Geography::County(fips_code)) => {
                 self.register_itinerary_modifier(
-                    AcceptsCommunityMobilityCounty(true),
+                    AcceptsCommunityMobilityCounty(Some(Geography::County(fips_code))),
                     itinerary_modifier,
                 );
             }
@@ -442,23 +445,35 @@ pub trait SchoolClosureContextExt:
         intervention: Intervention,
     ) -> Result<(), ModelError> {
         match (intervention.modifier, intervention.geography) {
-            (Modifier::SchoolClosure, Geography::State(_)) => {
-                self.remove_itinerary_modifier_by_property(AcceptsSchoolClosureState(true));
+            (Modifier::SchoolClosure, Geography::State(state_code)) => {
+                self.remove_itinerary_modifier_by_property(AcceptsSchoolClosureState(Some(
+                    Geography::State(state_code),
+                )));
             }
-            (Modifier::SchoolClosure, Geography::County(_)) => {
-                self.remove_itinerary_modifier_by_property(AcceptsSchoolClosureCounty(true));
+            (Modifier::SchoolClosure, Geography::County(fips_code)) => {
+                self.remove_itinerary_modifier_by_property(AcceptsSchoolClosureCounty(Some(
+                    Geography::County(fips_code),
+                )));
             }
-            (Modifier::WorkplaceMobilityReduction, Geography::State(_)) => {
-                self.remove_itinerary_modifier_by_property(AcceptsWorkMobilityState(true));
+            (Modifier::WorkplaceMobilityReduction, Geography::State(state_code)) => {
+                self.remove_itinerary_modifier_by_property(AcceptsWorkMobilityState(Some(
+                    Geography::State(state_code),
+                )));
             }
-            (Modifier::WorkplaceMobilityReduction, Geography::County(_)) => {
-                self.remove_itinerary_modifier_by_property(AcceptsWorkMobilityCounty(true));
+            (Modifier::WorkplaceMobilityReduction, Geography::County(fips_code)) => {
+                self.remove_itinerary_modifier_by_property(AcceptsWorkMobilityCounty(Some(
+                    Geography::County(fips_code),
+                )));
             }
-            (Modifier::CommunityMobilityReduction, Geography::State(_)) => {
-                self.remove_itinerary_modifier_by_property(AcceptsCommunityMobilityState(true));
+            (Modifier::CommunityMobilityReduction, Geography::State(state_code)) => {
+                self.remove_itinerary_modifier_by_property(AcceptsCommunityMobilityState(Some(
+                    Geography::State(state_code),
+                )));
             }
-            (Modifier::CommunityMobilityReduction, Geography::County(_)) => {
-                self.remove_itinerary_modifier_by_property(AcceptsCommunityMobilityCounty(true));
+            (Modifier::CommunityMobilityReduction, Geography::County(fips_code)) => {
+                self.remove_itinerary_modifier_by_property(AcceptsCommunityMobilityCounty(Some(
+                    Geography::County(fips_code),
+                )));
             }
         }
         Ok(())
@@ -508,7 +523,7 @@ pub trait SchoolClosureContextExt:
                     Geography::County(code) => {
                         !context.is_intervention_active(
                             intervention.modifier,
-                            Geography::State(code.state_code()),
+                            Geography::State(code.state().unwrap()),
                         ) && context
                             .is_intervention_active(intervention.modifier, intervention.geography)
                     }
@@ -528,7 +543,7 @@ pub trait SchoolClosureContextExt:
         }
     }
 }
-impl SchoolClosureContextExt for Context {}
+impl InterventionContextExt for Context {}
 
 pub fn init(context: &mut Context) -> Result<(), ModelError> {
     context.index_property::<Person, SchoolState>();
@@ -657,7 +672,7 @@ mod test {
         let intervention_starts_clone: Rc<RefCell<usize>> = Rc::clone(&intervention_starts);
         let intervention_ends = Rc::new(RefCell::new(0));
         let intervention_ends_clone: Rc<RefCell<usize>> = Rc::clone(&intervention_ends);
-        let g1 = Geography::State(1);
+        let g1 = Geography::State(USState::decode(1).unwrap());
         let school_closure = Intervention {
             modifier: Modifier::SchoolClosure,
             geography: g1,
@@ -725,7 +740,7 @@ mod test {
         let work_code = make_work_id(b"16037960200003");
         let home_code = make_home_id(b"16037960200004");
         let community_code = make_community_id(b"16037960200004");
-        let g1 = Geography::State(school_code.0.state_code());
+        let g1 = Geography::State(school_code.0.state().unwrap());
         let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
         let school_closure = Intervention {
             modifier: Modifier::SchoolClosure,
@@ -799,7 +814,7 @@ mod test {
     fn test_intervention_override_modifier() {
         let mut context = setup();
         let school_code = make_school_id(b"16037960200002");
-        let g1 = Geography::State(school_code.0.state_code());
+        let g1 = Geography::State(school_code.0.state().unwrap());
         let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
         let intervention = Intervention {
             modifier: Modifier::SchoolClosure,
@@ -845,7 +860,7 @@ mod test {
         let acceptance = Rc::new(RefCell::new(0));
         let acceptance_clone: Rc<RefCell<usize>> = Rc::clone(&acceptance);
         let school_code = make_school_id(b"16037960200002");
-        let g1 = Geography::State(school_code.0.state_code());
+        let g1 = Geography::State(school_code.0.state().unwrap());
         let pop_size = 10000;
         for _ in 0..pop_size {
             let person = context.add_entity(with!(Person, Age(10))).unwrap();
@@ -872,7 +887,7 @@ mod test {
             let people = context.get_entity_iterator::<Person>();
             for person in people {
                 let accepts = context.get_property::<Person, AcceptsIntervention>(person);
-                if accepts.0[g1][Modifier::SchoolClosure] {
+                if accepts.0[g1][Modifier::SchoolClosure] == Some(g1) {
                     *acceptance_clone.borrow_mut() += 1;
                 }
             }
@@ -937,7 +952,7 @@ mod test {
         // Valid intervention with all fields
         let valid_intervention = Intervention {
             modifier: Modifier::SchoolClosure,
-            geography: Geography::State(1),
+            geography: Geography::State(USState::decode(1).unwrap()),
             acceptance_probability: 0.95,
             activation_time: 10.0,
             duration: Some(5.0),
@@ -953,7 +968,7 @@ mod test {
         // Invalid - acceptance probability > 1.0
         let invalid_probability_high = Intervention {
             modifier: Modifier::SchoolClosure,
-            geography: Geography::State(1),
+            geography: Geography::State(USState::decode(1).unwrap()),
             acceptance_probability: 1.5,
             activation_time: 10.0,
             duration: Some(5.0),
@@ -964,7 +979,7 @@ mod test {
         // Invalid - acceptance probability < 0.0
         let invalid_probability_low = Intervention {
             modifier: Modifier::SchoolClosure,
-            geography: Geography::State(1),
+            geography: Geography::State(USState::decode(1).unwrap()),
             acceptance_probability: -0.1,
             activation_time: 10.0,
             duration: Some(5.0),
@@ -975,7 +990,7 @@ mod test {
         // Invalid - negative activation time
         let invalid_activation = Intervention {
             modifier: Modifier::SchoolClosure,
-            geography: Geography::State(1),
+            geography: Geography::State(USState::decode(1).unwrap()),
             acceptance_probability: 0.5,
             activation_time: -1.0,
             duration: Some(5.0),
@@ -986,7 +1001,7 @@ mod test {
         // Invalid - non-positive duration
         let invalid_duration = Intervention {
             modifier: Modifier::SchoolClosure,
-            geography: Geography::State(1),
+            geography: Geography::State(USState::decode(1).unwrap()),
             acceptance_probability: 0.5,
             activation_time: 10.0,
             duration: Some(0.0),
@@ -997,7 +1012,7 @@ mod test {
         // Invalid - invalid override modifiers
         let invalid_overrides = Intervention {
             modifier: Modifier::SchoolClosure,
-            geography: Geography::State(1),
+            geography: Geography::State(USState::decode(1).unwrap()),
             acceptance_probability: 0.5,
             activation_time: 10.0,
             duration: Some(5.0),
@@ -1009,5 +1024,77 @@ mod test {
             }),
         };
         assert!(invalid_overrides.validate().is_err());
+    }
+
+    #[test]
+    fn test_different_modifiers_in_different_geographies() {
+        let school_code1 = make_school_id(b"16037960200002");
+        let school_code2 = make_school_id(b"16038960200002");
+        let g1 = Geography::County(school_code1.0.state_county_code().unwrap());
+        let g2 = Geography::County(school_code2.0.state_county_code().unwrap());
+        let modifier_specification = ModifierSpecification {
+            home: None,
+            school: Some([0.5, 0.0, 0.0, 0.5]),
+            work: None,
+            community: None,
+        };
+        let intervention1 = Intervention {
+            modifier: Modifier::SchoolClosure,
+            geography: g1,
+            acceptance_probability: 1.0,
+            activation_time: 1.0,
+            duration: Some(1.0),
+            override_modifiers: None,
+        };
+        let intervention2 = Intervention {
+            modifier: Modifier::SchoolClosure,
+            geography: g2,
+            acceptance_probability: 1.0,
+            activation_time: 1.0,
+            duration: Some(1.0),
+            override_modifiers: Some(modifier_specification),
+        };
+
+        let mut context = setup();
+        let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
+        let p2 = context.add_entity(with!(Person, Age(10))).unwrap();
+        context.setup_intervention_triggers(intervention1);
+        context.setup_intervention_triggers(intervention2);
+        context.setup_intervention_trigger_event_subscription();
+        context.set_property(
+            p1,
+            Itinerary {
+                setting_ids: [None, None, Some(school_code1), None],
+                itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
+            },
+        );
+
+        context.set_property(
+            p2,
+            Itinerary {
+                setting_ids: [None, None, Some(school_code2), None],
+                itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
+            },
+        );
+
+        context.add_plan(0.0, move |context| {
+            let itinerary1 = context.get_itinerary(p1);
+            let itinerary2 = context.get_itinerary(p2);
+            assert_eq!(itinerary1, [0.3, 0.0, 0.5, 0.2]);
+            assert_eq!(itinerary2, [0.3, 0.0, 0.5, 0.2]);
+        });
+        context.add_plan(1.5, move |context| {
+            let itinerary1 = context.get_itinerary(p1);
+            let itinerary2 = context.get_itinerary(p2);
+            assert_eq!(itinerary1, [0.8, 0.0, 0.0, 0.2]);
+            assert_eq!(itinerary2, [0.55, 0.0, 0.0, 0.45]);
+        });
+        context.add_plan(3.0, move |context| {
+            let itinerary1 = context.get_itinerary(p1);
+            let itinerary2 = context.get_itinerary(p2);
+            assert_eq!(itinerary1, [0.3, 0.0, 0.5, 0.2]);
+            assert_eq!(itinerary2, [0.3, 0.0, 0.5, 0.2]);
+        });
+        context.execute();
     }
 }

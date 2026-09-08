@@ -4,9 +4,9 @@ use serde::{
     Deserialize, Deserializer, Serialize,
     de::{self},
 };
-use strum::{EnumCount, EnumIter};
+use strum::{EnumCount, EnumDiscriminants, IntoDiscriminant};
 
-use crate::pop_reader::{FIPSCode, StateCode, parser::parse_fips_state_county_id};
+use crate::pop_reader::{FIPSCode, parser::parse_fips_state_county_id, states::USState};
 
 #[derive(Deserialize)]
 #[serde(tag = "type", content = "code")]
@@ -18,19 +18,24 @@ enum RawGeography {
     State(String),
 }
 
-#[derive(Copy, Clone, PartialEq, Debug, Serialize, Eq, Hash, EnumCount, EnumIter)]
+#[derive(Copy, Clone, PartialEq, Debug, Serialize, Eq, Hash, EnumCount, EnumDiscriminants)]
 #[repr(u8)]
 pub enum Geography {
     County(FIPSCode) = 0,
-    State(StateCode),
+    State(USState),
 }
 
-impl Geography {
-    const fn index(self) -> usize {
-        match self {
-            Geography::County(_) => 0,
-            Geography::State(_) => 1,
-        }
+impl<T> Index<GeographyDiscriminants> for [T; GEOGRAPHY_COUNT] {
+    type Output = T;
+
+    fn index(&self, index: GeographyDiscriminants) -> &T {
+        &self[index as usize]
+    }
+}
+
+impl<T> IndexMut<GeographyDiscriminants> for [T; GEOGRAPHY_COUNT] {
+    fn index_mut(&mut self, index: GeographyDiscriminants) -> &mut T {
+        &mut self[index as usize]
     }
 }
 
@@ -38,13 +43,13 @@ impl<T> Index<Geography> for [T; GEOGRAPHY_COUNT] {
     type Output = T;
 
     fn index(&self, index: Geography) -> &Self::Output {
-        &self[index.index()]
+        &self[index.discriminant() as usize]
     }
 }
 
 impl<T> IndexMut<Geography> for [T; GEOGRAPHY_COUNT] {
     fn index_mut(&mut self, index: Geography) -> &mut Self::Output {
-        &mut self[index.index()]
+        &mut self[index.discriminant() as usize]
     }
 }
 
@@ -62,8 +67,8 @@ impl<'de> Deserialize<'de> for Geography {
                 let state_code = code
                     .parse::<u8>()
                     .map_err(|_| de::Error::custom("state code must be a valid u8"))?;
-
-                Ok(Geography::State(state_code))
+                let us_state = USState::decode(state_code).unwrap();
+                Ok(Geography::State(us_state))
             }
             RawGeography::County(code) => {
                 let (rest, fips_code) =
@@ -96,6 +101,6 @@ mod test {
 
         let json = r#"{"type": "state", "code": "01"}"#;
         let geography: Geography = serde_json::from_str(json).unwrap();
-        assert_eq!(geography, Geography::State(1));
+        assert_eq!(geography, Geography::State(USState::decode(1).unwrap()));
     }
 }
