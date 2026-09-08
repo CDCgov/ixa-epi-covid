@@ -5,12 +5,13 @@
 //! Note that the `FIPSCode` encoded type only uses six bits to encode the state code, which can
 //! accommodate codes <= 63. Thus, it is best to only use `FIPSCode` for these states.
 
+use serde::Serialize;
 use strum::{Display, FromRepr, IntoStaticStr};
 
 use super::StateCode;
 use super::errors::FIPSError;
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, IntoStaticStr, FromRepr, Display)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Serialize, IntoStaticStr, FromRepr, Display)]
 #[repr(u8)]
 pub enum USState {
     AL = 1,
