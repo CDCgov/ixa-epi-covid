@@ -107,7 +107,7 @@
         "current_hospitalizations_report": {
             "write": true,
             "filename": "current_hospitalizations_report.csv",
-            "period": 1.0
+            "period": 7.0
         },
         "attack_rate_report": {
             "write": true,

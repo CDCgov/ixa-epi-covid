@@ -73,13 +73,12 @@ fn set_age_group_populations(context: &mut Context) {
         .get_data(AttackRateReportDataPlugin)
         .age_group_population
         .clone();
-    for person_id in context.get_entity_iterator::<Person>() {
-        let age_group_index = context.get_property::<Person, AttackRateAgeGroupIndex>(person_id);
-        age_group_population[age_group_index.0] += 1;
+    if let Some(age_groups) = context.get_global_property_value(AttackRateAgeGroupsParam) {
+        for (index, _age_group) in age_groups.iter().enumerate() {
+            age_group_population[index] =
+                context.query_entity_count(with!(Person, AttackRateAgeGroupIndex(index)));
+        }
     }
-    context
-        .get_data_mut(AttackRateReportDataPlugin)
-        .age_group_population = age_group_population;
 }
 
 fn send_property_counts(context: &mut Context) {
