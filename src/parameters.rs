@@ -1,5 +1,6 @@
 use ixa::{HashMap, HashMapExt, HashSet, prelude::*};
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::{fmt::Debug, path::PathBuf};
 
 use crate::error::ModelError;
@@ -8,7 +9,7 @@ use crate::intervention_manager::{Intervention, Modifier, ModifierSpecification}
 use crate::reports::ReportParams;
 use crate::school_calendar::{SchoolCalendarModifier, SchoolCalendarModifierType};
 use crate::settings::SettingCategory;
-use crate::symptom_status_manager::{SymptomAgeGroup, SymptomDelayDistLogNormParams};
+use crate::symptom_status_manager::SymptomDelayDistLogNormParams;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub enum ItinerarySpecificationType {
@@ -27,6 +28,25 @@ pub struct SettingProperties {
     pub alpha: f64,
 }
 
+#[derive(Debug, Eq, PartialEq, Clone, Deserialize, Serialize)]
+pub struct AgeGroup {
+    pub label: String,
+    pub min: u8,
+    pub max: u8,
+}
+
+impl Ord for AgeGroup {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.min.cmp(&other.min)
+    }
+}
+
+impl PartialOrd for AgeGroup {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Params {
     /// The random seed for the simulation.
@@ -42,8 +62,10 @@ pub struct Params {
     pub imported_cases_timeseries: ImportCasesFromFile,
     /// A library of infection rates to assign to infected people.
     pub infectiousness_rate_fn: RateFnType,
-    /// age thresholds
-    pub symptom_age_groups: Vec<SymptomAgeGroup>,
+    /// age groups for symptom progress parameters
+    pub symptom_age_groups: Vec<AgeGroup>,
+    /// age groups for attack_rate measures for attack rate report
+    pub attack_rate_age_groups: Vec<AgeGroup>,
     /// Probability an infected person develops mild illness
     pub probability_mild_given_infect: f64,
     /// Parameters for log normal delay distribution from infection to mild illness
@@ -84,6 +106,10 @@ pub struct Params {
     pub transmission_report: ReportParams,
     /// Aggregated incident deaths report with a period and name required
     pub aggregated_deaths_report: ReportParams,
+    /// Current hospitalizations report with a period and name required
+    pub current_hospitalizations_report: ReportParams,
+    /// Age group specific measures of attack_rate with a period and name required
+    pub attack_rate_report: ReportParams,
     /// Terminate run on first observed death
     pub first_death_terminates_run: bool,
 }
@@ -118,37 +144,12 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error 
     }
 
     // create version of symptom_age_groups sorted by minimum age thresholds
-    let mut sorted_symptom_age_groups = parameters.symptom_age_groups.clone();
-    sorted_symptom_age_groups.sort();
 
-    // check that lowest symptom age group threshold is zero
-    if sorted_symptom_age_groups[0].min != 0 {
-        return Err(Box::new(ModelError::ModelError(
-            "lowest age threshold in symptom_age_groups must be zero".to_string(),
-        )));
-    }
+    let symptom_age_groups = parameters.symptom_age_groups.clone();
+    validate_age_groups(symptom_age_groups)?;
 
-    // check that the max threshold is >= the min threshold in each age group
-    // (age is defined as a u8 and we do want to allow for a single-year group where max == min)
-    for symptom_age_group in &sorted_symptom_age_groups {
-        if symptom_age_group.max < symptom_age_group.min {
-            return Err(Box::new(ModelError::ModelError(format!(
-                "max threshold is less than min threshold for {:?}",
-                symptom_age_group.label
-            ))));
-        }
-    }
-
-    // check that the max of each symptom age group is 1 year less than the min of the next highest symptom age group
-    for i in 1..sorted_symptom_age_groups.len() {
-        if sorted_symptom_age_groups[i].min - sorted_symptom_age_groups[i - 1].max != 1 {
-            return Err(Box::new(ModelError::ModelError(format!(
-                "difference between min threshold of {:?} and max threshold of {:?} is not 1",
-                sorted_symptom_age_groups[i].label,
-                sorted_symptom_age_groups[i - 1].label
-            ))));
-        }
-    }
+    let attack_rate_age_groups = parameters.attack_rate_age_groups.clone();
+    validate_age_groups(attack_rate_age_groups)?;
 
     // check probability_mild_given_infect
     if !(0.0..=1.0).contains(&parameters.probability_mild_given_infect) {
@@ -330,8 +331,43 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error 
     Ok(())
 }
 
+pub fn validate_age_groups(mut age_groups: Vec<AgeGroup>) -> Result<(), ModelError> {
+    age_groups.sort();
+
+    // check that lowest symptom age group threshold is zero
+    if age_groups[0].min != 0 {
+        return Err(ModelError::ModelError(
+            "lowest age threshold in symptom_age_groups must be zero".to_string(),
+        ));
+    }
+
+    // check that the max threshold is >= the min threshold in each age group
+    // (age is defined as a u8 and we do want to allow for a single-year group where max == min)
+    for group in &age_groups {
+        if group.max < group.min {
+            return Err(ModelError::ModelError(format!(
+                "max threshold is less than min threshold for {:?}",
+                group.label
+            )));
+        }
+    }
+
+    // check that the max of each symptom age group is 1 year less than the min of the next highest symptom age group
+    for i in 1..age_groups.len() {
+        if age_groups[i].min - age_groups[i - 1].max != 1 {
+            return Err(ModelError::ModelError(format!(
+                "difference between min threshold of {:?} and max threshold of {:?} is not 1",
+                age_groups[i].label,
+                age_groups[i - 1].label
+            )));
+        }
+    }
+    Ok(())
+}
+
 define_global_property!(GlobalParams, Params, validate_inputs);
-define_global_property!(OrderedAgeGroupsParam, Vec<SymptomAgeGroup>);
+define_global_property!(SymptomAgeGroupsParam, Vec<AgeGroup>);
+define_global_property!(AttackRateAgeGroupsParam, Vec<AgeGroup>);
 
 pub trait ContextParametersExt: PluginContext + ContextGlobalPropertiesExt {
     fn get_params(&self) -> &Params {
@@ -342,13 +378,22 @@ pub trait ContextParametersExt: PluginContext + ContextGlobalPropertiesExt {
 impl ContextParametersExt for Context {}
 
 pub fn init(context: &mut Context) -> Result<(), IxaError> {
-    let Params {
-        symptom_age_groups, ..
-    } = context.get_params();
+    let (symptom_age_groups, attack_rate_age_groups) = {
+        let params = context.get_params();
+        (
+            params.symptom_age_groups.clone(),
+            params.attack_rate_age_groups.clone(),
+        )
+    };
 
-    let mut ordered_symptom_age_groups = symptom_age_groups.clone();
+    let mut ordered_symptom_age_groups = symptom_age_groups;
     ordered_symptom_age_groups.sort();
-    let _ = context.set_global_property_value(OrderedAgeGroupsParam, ordered_symptom_age_groups);
+    let _ = context.set_global_property_value(SymptomAgeGroupsParam, ordered_symptom_age_groups);
+
+    let mut ordered_attack_rate_age_groups = attack_rate_age_groups;
+    ordered_attack_rate_age_groups.sort();
+    let _ =
+        context.set_global_property_value(AttackRateAgeGroupsParam, ordered_attack_rate_age_groups);
     Ok(())
 }
 
@@ -367,7 +412,12 @@ impl Default for Params {
                 rate: 1.0,
                 duration: 5.0,
             },
-            symptom_age_groups: vec![SymptomAgeGroup {
+            symptom_age_groups: vec![AgeGroup {
+                label: "Age0To120".to_string(),
+                min: 0,
+                max: 120,
+            }],
+            attack_rate_age_groups: vec![AgeGroup {
                 label: "Age0To120".to_string(),
                 min: 0,
                 max: 120,
@@ -425,6 +475,16 @@ impl Default for Params {
                 period: None,
             },
             aggregated_deaths_report: ReportParams {
+                write: false,
+                filename: None,
+                period: None,
+            },
+            current_hospitalizations_report: ReportParams {
+                write: false,
+                filename: None,
+                period: None,
+            },
+            attack_rate_report: ReportParams {
                 write: false,
                 filename: None,
                 period: None,
@@ -601,22 +661,22 @@ mod tests {
     #[test]
     fn test_sort_age_groups_in_init() {
         let age_groups = vec![
-            SymptomAgeGroup {
+            AgeGroup {
                 label: "Age18To49".to_string(),
                 min: 18,
                 max: 49,
             },
-            SymptomAgeGroup {
+            AgeGroup {
                 label: "Age0To17".to_string(),
                 min: 0,
                 max: 17,
             },
-            SymptomAgeGroup {
+            AgeGroup {
                 label: "Age50To64".to_string(),
                 min: 50,
                 max: 64,
             },
-            SymptomAgeGroup {
+            AgeGroup {
                 label: "Age65Plus".to_string(),
                 min: 65,
                 max: 120,
@@ -650,27 +710,27 @@ mod tests {
             .unwrap();
         init(&mut context).unwrap();
         let ordered_age_groups = context
-            .get_global_property_value(OrderedAgeGroupsParam)
+            .get_global_property_value(SymptomAgeGroupsParam)
             .unwrap();
         assert_eq!(
             *ordered_age_groups,
             vec![
-                SymptomAgeGroup {
+                AgeGroup {
                     label: "Age0To17".to_string(),
                     min: 0,
                     max: 17,
                 },
-                SymptomAgeGroup {
+                AgeGroup {
                     label: "Age18To49".to_string(),
                     min: 18,
                     max: 49,
                 },
-                SymptomAgeGroup {
+                AgeGroup {
                     label: "Age50To64".to_string(),
                     min: 50,
                     max: 64,
                 },
-                SymptomAgeGroup {
+                AgeGroup {
                     label: "Age65Plus".to_string(),
                     min: 65,
                     max: 120,
