@@ -49,9 +49,6 @@ fn observe_property_counts(context: &mut Context) {
         .daily_hospitalizations
         .entry(current_time)
         .or_insert(report_container_mut.hospitalizations);
-    // if current_time % period as i64 == 0 {
-    //     send_property_counts(context, period);
-    // }
 }
 
 fn send_property_counts(context: &mut Context, period: f64) {
@@ -74,14 +71,6 @@ fn send_property_counts(context: &mut Context, period: f64) {
     });
 }
 
-/// Count initial number of people per property status and subscribe to changes
-/// # Errors
-///
-/// Will return `ModelError` if the report cannot be added
-///
-/// # Panics
-///
-/// Will panic if symptom value string is not listed in enum
 pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), ModelError> {
     context.add_report::<CurrentHospitalizationsReport>(file_name)?;
 
