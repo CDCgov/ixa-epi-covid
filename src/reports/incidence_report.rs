@@ -64,12 +64,11 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), M
 mod test {
     use crate::{
         infectiousness_manager::InfectionContextExt,
-        parameters::{ContextParametersExt, GlobalParams, OrderedAgeGroupsParam, Params},
+        parameters::{AgeGroup, ContextParametersExt, GlobalParams, Params, SymptomAgeGroupsParam},
         population_loader::{Age, Person, PersonId},
         rate_fns::load_rate_fns,
         reports::ReportParams,
         settings::SettingCode,
-        symptom_status_manager::SymptomAgeGroup,
     };
     use ixa::{csv, prelude::*};
     use std::path::PathBuf;
@@ -89,8 +88,8 @@ mod test {
             .unwrap();
         context
             .set_global_property_value(
-                OrderedAgeGroupsParam,
-                vec![SymptomAgeGroup {
+                SymptomAgeGroupsParam,
+                vec![AgeGroup {
                     label: "Age0To120".to_string(),
                     min: 0,
                     max: 120,

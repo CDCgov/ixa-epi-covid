@@ -6,6 +6,8 @@ use ixa::prelude::*;
 use serde::{Deserialize, Serialize};
 
 pub mod aggregated_deaths_report;
+pub mod attack_rate_report;
+pub mod current_hospitalizations_report;
 pub mod incidence_report;
 pub mod prevalence_report;
 pub mod transmission_report;
@@ -64,6 +66,8 @@ pub fn init(context: &mut Context) -> Result<(), ModelError> {
         incidence_report,
         transmission_report,
         aggregated_deaths_report,
+        current_hospitalizations_report,
+        attack_rate_report,
         ..
     } = context.get_params().clone();
     let mut report_count = 0;
@@ -86,6 +90,18 @@ pub fn init(context: &mut Context) -> Result<(), ModelError> {
     if let Some((name, period)) = get_period_report_name(&aggregated_deaths_report)? {
         aggregated_deaths_report::init(context, name, period)?;
         info!("Generating the aggregated deaths incidence report.");
+        report_count += 1;
+    }
+
+    if let Some((name, period)) = get_period_report_name(&current_hospitalizations_report)? {
+        current_hospitalizations_report::init(context, name, period)?;
+        info!("Generating the current hospitalizations report.");
+        report_count += 1;
+    }
+
+    if let Some((name, period)) = get_period_report_name(&attack_rate_report)? {
+        attack_rate_report::init(context, name, period)?;
+        info!("Generating the attack_rate report.");
         report_count += 1;
     }
 
