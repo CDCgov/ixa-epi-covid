@@ -3,8 +3,9 @@ use std::path::PathBuf;
 use ixa::{ExecutionPhase, prelude::*};
 
 use crate::{
-    abort_run, error::ModelError, infection_importation, infection_propagation_loop, parameters,
-    population_loader, reports, settings, symptom_status_manager,
+    abort_run, error::ModelError, infection_importation, infection_propagation_loop,
+    intervention_manager, parameters, population_loader, reports, school_calendar, settings,
+    symptom_status_manager,
 };
 
 pub fn initialize_model(
@@ -37,6 +38,10 @@ pub fn initialize_model(
     info!("Infection propagation loop initialized");
     infection_importation::init(context)?;
     info!("Infection importation initialized");
+    school_calendar::init(context);
+    info!("School calendar initialized");
+    intervention_manager::init(context)?;
+    info!("School closure initialized");
     reports::init(context)?;
     info!("Reports initialized");
     abort_run::init(context);
