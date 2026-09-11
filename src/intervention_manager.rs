@@ -206,6 +206,11 @@ impl ModifierSpecification {
             (SettingCategory::Work, self.work),
             (SettingCategory::Community, self.community),
         ];
+        if categories.iter().all(|(_, modifier)| modifier.is_none()) {
+            return Err(ModelError::ModelError(
+                "Modifier specification must include at least one category".to_string(),
+            ));
+        }
         for (category, modifier) in categories.iter() {
             if let Some(modifier) = modifier {
                 let sum: f64 = modifier.iter().sum();
@@ -225,6 +230,7 @@ impl ModifierSpecification {
                 }
             }
         }
+
         Ok(())
     }
 }

@@ -79,6 +79,9 @@ fn set_age_group_populations(context: &mut Context) {
                 context.query_entity_count(with!(Person, AttackRateAgeGroupIndex(index)));
         }
     }
+    context
+        .get_data_mut(AttackRateReportDataPlugin)
+        .age_group_population = age_group_population;
 }
 
 fn send_property_counts(context: &mut Context) {

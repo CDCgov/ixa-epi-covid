@@ -1,7 +1,7 @@
 {
     "epimodel.GlobalParams": {
         "seed": 1234,
-        "max_time": 100.0,
+        "max_time": 10.0,
         "synth_population_file": "input/people_test.csv",
         "initial_prevalence": 0.01,
         "imported_cases_timeseries": {
@@ -60,13 +60,13 @@
         "school_calendar": [],
         "default_modifiers": {
             "SchoolClosure": {
-                "School": [1.0, 0.0, 0.0, 0.0]
+                "school": [1.0, 0.0, 0.0, 0.0]
             },
             "CommunityMobilityReduction": {
-                "Community": [1.0, 0.0, 0.0, 0.0]
+                "community": [1.0, 0.0, 0.0, 0.0]
             },
             "WorkplaceMobilityReduction": {
-                "Work": [1.0, 0.0, 0.0, 0.0]
+                "work": [1.0, 0.0, 0.0, 0.0]
             }
         },
         "interventions": [
@@ -75,7 +75,7 @@
                 "geography": {"type": "State", "code": "56"},
                 "acceptance_probability": 1.0,
                 "activation_time": 1.0,
-                "duration": 100.0
+                "duration": 30.0
             }
         ],
         "prevalence_report": {
