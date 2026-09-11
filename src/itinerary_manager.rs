@@ -158,9 +158,10 @@ impl ContextItineraryModifierExt for Context {
         };
 
         let Some(second) = modifiers.next() else {
+            println!("modifier");
             return first.apply(&base_itinerary);
         };
-
+        println!("Modifier");
         modifiers
             .fold(first.layer(second), |layered, modifier| {
                 layered.layer(modifier)
