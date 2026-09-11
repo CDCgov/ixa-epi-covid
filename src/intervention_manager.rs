@@ -191,6 +191,7 @@ impl<T> IndexMut<Modifier> for [T; MODIFIER_COUNT] {
 pub const MODIFIER_COUNT: usize = Modifier::COUNT;
 
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ModifierSpecification {
     home: Option<[f64; SETTING_COUNT]>,
     school: Option<[f64; SETTING_COUNT]>,
