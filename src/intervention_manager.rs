@@ -590,6 +590,7 @@ mod test {
         settings::SettingCode,
     };
     use ixa::{HashMap, assert_almost_eq};
+    use serde_json::json;
     use std::{cell::RefCell, panic, rc::Rc};
 
     use super::*;
@@ -898,6 +899,38 @@ mod test {
         #[allow(clippy::cast_precision_loss, clippy::cast_lossless)]
         let observed_acceptance = *acceptance.borrow();
         assert_almost_eq!(observed_acceptance as f64 / pop_size as f64, 0.5, 0.025);
+    }
+
+    #[test]
+    fn modifier_specification_rejects_unknown_fields() {
+        let values = [1.0; SETTING_COUNT];
+        let input = json!({
+            "home": values,
+            "unexpected": values
+        });
+
+        let result = serde_json::from_value::<ModifierSpecification>(input);
+
+        assert!(result.is_err());
+
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("unknown field"));
+        assert!(error.contains("unexpected"));
+    }
+
+    #[test]
+    fn modifier_specification_accepts_known_fields() {
+        let values = [1.0; SETTING_COUNT];
+        let input = json!({
+            "home": values,
+            "school": null,
+            "work": values,
+            "community": null
+        });
+
+        let result = serde_json::from_value::<ModifierSpecification>(input);
+
+        assert!(result.is_ok());
     }
 
     #[test]
