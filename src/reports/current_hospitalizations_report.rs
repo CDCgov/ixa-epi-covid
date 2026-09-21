@@ -1,22 +1,21 @@
 use crate::{
     error::ModelError, population_loader::Person, symptom_status_manager::HospitalizationStatus,
 };
+use ixa::ExecutionPhase;
 use ixa::prelude::*;
-use ixa::{ExecutionPhase, HashMap};
 
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 struct CurrentHospitalizationsReport {
-    t: i64,
-    mean_count: f64,
+    t: f64,
+    count: f64,
 }
 
 define_report!(CurrentHospitalizationsReport);
 
 struct HospitalizationReportDataContainer {
     hospitalizations: usize,
-    daily_hospitalizations: HashMap<i64, usize>,
 }
 
 define_data_plugin!(
@@ -24,7 +23,6 @@ define_data_plugin!(
     HospitalizationReportDataContainer,
     HospitalizationReportDataContainer {
         hospitalizations: 0,
-        daily_hospitalizations: HashMap::default(),
     }
 );
 
@@ -42,32 +40,12 @@ fn update_change_counts(context: &mut Context, event: ReportEvent) {
     }
 }
 
-fn observe_property_counts(context: &mut Context) {
-    let current_time = context.get_current_time().floor() as i64;
-    let report_container_mut = context.get_data_mut(HospitalizationReportDataPlugin);
-    report_container_mut
-        .daily_hospitalizations
-        .entry(current_time)
-        .or_insert(report_container_mut.hospitalizations);
-}
-
-fn send_property_counts(context: &mut Context, period: f64) {
+fn send_property_counts(context: &mut Context) {
     let report_container = context.get_data(HospitalizationReportDataPlugin);
-    let current_time = context.get_current_time().floor() as i64;
-    let first_time_in_period = current_time - period as i64;
-    if first_time_in_period < 0 {
-        return;
-    }
-    let mut count = 0.0;
-    for t in first_time_in_period..current_time {
-        count += *report_container
-            .daily_hospitalizations
-            .get(&t)
-            .unwrap_or(&0) as f64;
-    }
+    let count = report_container.hospitalizations as f64;
     context.send_report(CurrentHospitalizationsReport {
-        t: first_time_in_period,
-        mean_count: count / period,
+        t: context.get_current_time(),
+        count,
     });
 }
 
@@ -81,15 +59,7 @@ pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), M
     context.add_periodic_plan_with_phase(
         period,
         move |context: &mut Context| {
-            send_property_counts(context, period);
-        },
-        ExecutionPhase::Last,
-    );
-
-    context.add_periodic_plan_with_phase(
-        1.0,
-        move |context: &mut Context| {
-            observe_property_counts(context);
+            send_property_counts(context);
         },
         ExecutionPhase::Last,
     );
@@ -106,7 +76,7 @@ mod test {
         rate_fns::load_rate_fns,
         reports::ReportParams,
     };
-    use ixa::{assert_almost_eq, csv, prelude::*};
+    use ixa::{csv, prelude::*};
     use std::path::PathBuf;
     use tempfile::tempdir;
 
@@ -238,19 +208,23 @@ mod test {
         for result in reader.deserialize() {
             let record: crate::reports::current_hospitalizations_report::CurrentHospitalizationsReport = result.unwrap();
             line_count += 1;
-            if record.t == 0 {
+            println!("{:?}", record);
+            if record.t == 0.0 {
                 // The current hospitalizations are
                 // 0 -> 1, 1->1, 2->2,
-                assert_almost_eq!(record.mean_count, 4.0 / 3.0, 1e-6);
-            } else if record.t == 3 {
+                assert_eq!(record.count, 1.0);
+            } else if record.t == 3.0 {
                 // The current hospitalizations are
                 // 3 -> 3, 4 -> 3, 5 -> 0
-                assert_almost_eq!(record.mean_count, 2.0, 1e-6);
+                assert_eq!(record.count, 3.0);
+            } else if record.t == 6.0 {
+                // The current hospitalizations are
+                // 6 -> 0, 7 -> 0
+                assert_eq!(record.count, 0.0);
             } else {
-                panic!("record times other than 0, 3 are invalid")
+                panic!("record times other than 0.0, 3.0, 6.0 are invalid")
             }
         }
-
-        assert_eq!(line_count, 2);
+        assert_eq!(line_count, 3);
     }
 }
