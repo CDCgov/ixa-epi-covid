@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 struct CurrentHospitalizationsReport {
-    t: f64,
-    count: f64,
+    t_upper: f64,
+    current_hospitalizations: f64,
 }
 
 define_report!(CurrentHospitalizationsReport);
@@ -42,10 +42,10 @@ fn update_change_counts(context: &mut Context, event: ReportEvent) {
 
 fn send_property_counts(context: &mut Context) {
     let report_container = context.get_data(HospitalizationReportDataPlugin);
-    let count = report_container.hospitalizations as f64;
+    let current_hospitalizations = report_container.hospitalizations as f64;
     context.send_report(CurrentHospitalizationsReport {
-        t: context.get_current_time(),
-        count,
+        t_upper: context.get_current_time(),
+        current_hospitalizations,
     });
 }
 
@@ -209,18 +209,18 @@ mod test {
             let record: crate::reports::current_hospitalizations_report::CurrentHospitalizationsReport = result.unwrap();
             line_count += 1;
             println!("{:?}", record);
-            if record.t == 0.0 {
+            if record.t_upper == 0.0 {
                 // The current hospitalizations are
                 // 0 -> 1, 1->1, 2->2,
-                assert_eq!(record.count, 1.0);
-            } else if record.t == 3.0 {
+                assert_eq!(record.current_hospitalizations, 1.0);
+            } else if record.t_upper == 3.0 {
                 // The current hospitalizations are
                 // 3 -> 3, 4 -> 3, 5 -> 0
-                assert_eq!(record.count, 3.0);
-            } else if record.t == 6.0 {
+                assert_eq!(record.current_hospitalizations, 3.0);
+            } else if record.t_upper == 6.0 {
                 // The current hospitalizations are
                 // 6 -> 0, 7 -> 0
-                assert_eq!(record.count, 0.0);
+                assert_eq!(record.current_hospitalizations, 0.0);
             } else {
                 panic!("record times other than 0.0, 3.0, 6.0 are invalid")
             }

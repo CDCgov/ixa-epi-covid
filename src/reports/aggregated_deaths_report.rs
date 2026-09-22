@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 struct AggregatedDeathsIncidenceReport {
     t_upper: f64,
-    count: u32,
+    deaths: u32,
 }
 
 define_report!(AggregatedDeathsIncidenceReport);
@@ -42,7 +42,7 @@ fn send_incidence_counts(context: &mut Context) {
     let t_upper = context.get_current_time();
     context.send_report(AggregatedDeathsIncidenceReport {
         t_upper,
-        count: report_container.death_status_change,
+        deaths: report_container.death_status_change,
     });
     reset_incidence_map(context);
 }
@@ -156,10 +156,10 @@ mod test {
                 result.unwrap();
             line_count += 1;
             if record.t_upper == 2.0 {
-                assert_eq!(record.count, 1);
+                assert_eq!(record.deaths, 1);
                 event_count += 1;
             } else {
-                assert_eq!(record.count, 0);
+                assert_eq!(record.deaths, 0);
             }
         }
 

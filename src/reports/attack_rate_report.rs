@@ -79,6 +79,9 @@ fn set_age_group_populations(context: &mut Context) {
                 context.query_entity_count(with!(Person, AttackRateAgeGroupIndex(index)));
         }
     }
+    context
+        .get_data_mut(AttackRateReportDataPlugin)
+        .age_group_population = age_group_population;
 }
 
 fn send_property_counts(context: &mut Context) {
@@ -216,7 +219,6 @@ mod test {
         } else {
             panic!("No report name specified");
         };
-        println!("File path: {:?}", file_path);
         assert!(file_path.exists());
         std::mem::drop(context);
 
@@ -225,17 +227,17 @@ mod test {
         for result in reader.deserialize() {
             let record: crate::reports::attack_rate_report::AttackRateReport = result.unwrap();
             line_count += 1;
-            if record.t_upper == 2.0 && record.age_group == *"Age0to49" {
+            if record.t_upper == 2.0 && record.age_group == *"Age0To49" {
                 assert_almost_eq!(record.attack_rate, 2.0 / 3.0, 1e-6);
-            } else if record.t_upper == 2.0 && record.age_group == *"Age50to120" {
+            } else if record.t_upper == 2.0 && record.age_group == *"Age50To120" {
                 assert_almost_eq!(record.attack_rate, 1.0 / 3.0, 1e-6);
-            } else if record.t_upper == 4.0 && record.age_group == *"Age0to49" {
+            } else if record.t_upper == 4.0 && record.age_group == *"Age0To49" {
                 assert_almost_eq!(record.attack_rate, 2.0 / 3.0, 1e-6);
-            } else if record.t_upper == 4.0 && record.age_group == *"Age50to120" {
+            } else if record.t_upper == 4.0 && record.age_group == *"Age50To120" {
                 assert_almost_eq!(record.attack_rate, 3.0 / 3.0, 1e-6);
-            } else if record.t_upper == 6.0 && record.age_group == *"Age0to49" {
+            } else if record.t_upper == 6.0 && record.age_group == *"Age0To49" {
                 assert_almost_eq!(record.attack_rate, 2.0 / 3.0, 1e-6);
-            } else if record.t_upper == 6.0 && record.age_group == *"Age50to120" {
+            } else if record.t_upper == 6.0 && record.age_group == *"Age50To120" {
                 assert_almost_eq!(record.attack_rate, 3.0 / 3.0, 1e-6);
             }
         }
