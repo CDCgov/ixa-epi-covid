@@ -4,12 +4,11 @@ use ixa::{
 };
 use rand_distr::LogNormal;
 use serde::{Deserialize, Serialize};
-use std::cmp::{Ordering, PartialOrd};
 use std::hash::{Hash, Hasher};
 
 use crate::{
     Age, ContextParametersExt, Params, error::ModelError, infectiousness_manager::InfectionStatus,
-    parameters::OrderedAgeGroupsParam, population_loader::Person,
+    parameters::SymptomAgeGroupsParam, population_loader::Person,
 };
 
 define_rng!(SymptomsRng);
@@ -209,30 +208,26 @@ define_derived_property!(
     }
 );
 
-#[derive(Debug, Eq, PartialEq, Clone, Deserialize, Serialize)]
-pub struct SymptomAgeGroup {
-    pub label: String,
-    pub min: u8,
-    pub max: u8,
-}
-
-impl Ord for SymptomAgeGroup {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.min.cmp(&other.min)
+define_derived_property!(
+    enum HospitalizationStatus {
+        NotHospitalized,
+        Hospitalized,
+    },
+    Person,
+    [SymptomData],
+    [],
+    |symptom_data| match symptom_data {
+        SymptomData::Severe { .. } => HospitalizationStatus::Hospitalized,
+        SymptomData::Critical { .. } => HospitalizationStatus::Hospitalized,
+        _ => HospitalizationStatus::NotHospitalized,
     }
-}
-
-impl PartialOrd for SymptomAgeGroup {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
+);
 
 define_derived_property!(
-    struct AgeGroupIndex(usize),
+    struct SymptomAgeGroupIndex(usize),
     Person,
     [Age],
-    [OrderedAgeGroupsParam],
+    [SymptomAgeGroupsParam],
     |age, ordered_age_groups| {
         let mut found_age_group = false;
         let mut index = 0;
@@ -246,7 +241,7 @@ define_derived_property!(
         if !found_age_group {
             panic!("No valid age group for age");
         }
-        return AgeGroupIndex(index);
+        return SymptomAgeGroupIndex(index);
     }
 );
 
@@ -292,10 +287,11 @@ fn process_symptom_change_event(
     } = context.get_params();
 
     let ordered_symptom_age_groups = context
-        .get_global_property_value(OrderedAgeGroupsParam)
+        .get_global_property_value(SymptomAgeGroupsParam)
         .unwrap();
 
-    let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(event.entity_id);
+    let symptom_age_group_index =
+        context.get_property::<Person, SymptomAgeGroupIndex>(event.entity_id);
     let symptom_age_group_label = &ordered_symptom_age_groups[symptom_age_group_index.0].label;
 
     match event.current {
@@ -479,10 +475,10 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 mod test {
     use super::init;
     use crate::infectiousness_manager::InfectionContextExt;
-    use crate::parameters::{GlobalParams, OrderedAgeGroupsParam};
+    use crate::parameters::{AgeGroup, GlobalParams, SymptomAgeGroupsParam};
     use crate::population_loader::{Person, PersonId};
     use crate::symptom_status_manager::{
-        AgeGroupIndex, SymptomAgeGroup, SymptomData, SymptomDelayDistLogNormParams, SymptomStatus,
+        SymptomAgeGroupIndex, SymptomData, SymptomDelayDistLogNormParams, SymptomStatus,
         draw_transition_time, process_symptom_change_event,
     };
     use crate::{Age, Params};
@@ -501,23 +497,23 @@ mod test {
 
     #[test]
     fn test_age_group_property_derivation() {
-        let ordered_symptom_age_groups: Vec<SymptomAgeGroup> = vec![
-            SymptomAgeGroup {
+        let ordered_symptom_age_groups: Vec<AgeGroup> = vec![
+            AgeGroup {
                 label: "Age0To17".to_string(),
                 min: 0,
                 max: 17,
             },
-            SymptomAgeGroup {
+            AgeGroup {
                 label: "Age18To49".to_string(),
                 min: 18,
                 max: 49,
             },
-            SymptomAgeGroup {
+            AgeGroup {
                 label: "Age50To64".to_string(),
                 min: 50,
                 max: 64,
             },
-            SymptomAgeGroup {
+            AgeGroup {
                 label: "Age65Plus".to_string(),
                 min: 65,
                 max: 120,
@@ -526,41 +522,49 @@ mod test {
         let mut context = Context::new();
         context.init_random(1234);
         context
-            .set_global_property_value(OrderedAgeGroupsParam, ordered_symptom_age_groups)
+            .set_global_property_value(SymptomAgeGroupsParam, ordered_symptom_age_groups)
             .unwrap();
 
         // test people who are 0, 17, 18, 49, 50, 64, 65, and 100 years old for correct derived person property
         let person_id: PersonId = context.add_entity(with!(Person, Age(0))).unwrap();
-        let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
-        assert_eq!(symptom_age_group_index, AgeGroupIndex(0));
+        let symptom_age_group_index =
+            context.get_property::<Person, SymptomAgeGroupIndex>(person_id);
+        assert_eq!(symptom_age_group_index, SymptomAgeGroupIndex(0));
 
         let person_id: PersonId = context.add_entity(with!(Person, Age(17))).unwrap();
-        let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
-        assert_eq!(symptom_age_group_index, AgeGroupIndex(0));
+        let symptom_age_group_index =
+            context.get_property::<Person, SymptomAgeGroupIndex>(person_id);
+        assert_eq!(symptom_age_group_index, SymptomAgeGroupIndex(0));
 
         let person_id: PersonId = context.add_entity(with!(Person, Age(18))).unwrap();
-        let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
-        assert_eq!(symptom_age_group_index, AgeGroupIndex(1));
+        let symptom_age_group_index =
+            context.get_property::<Person, SymptomAgeGroupIndex>(person_id);
+        assert_eq!(symptom_age_group_index, SymptomAgeGroupIndex(1));
 
         let person_id: PersonId = context.add_entity(with!(Person, Age(49))).unwrap();
-        let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
-        assert_eq!(symptom_age_group_index, AgeGroupIndex(1));
+        let symptom_age_group_index =
+            context.get_property::<Person, SymptomAgeGroupIndex>(person_id);
+        assert_eq!(symptom_age_group_index, SymptomAgeGroupIndex(1));
 
         let person_id: PersonId = context.add_entity(with!(Person, Age(50))).unwrap();
-        let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
-        assert_eq!(symptom_age_group_index, AgeGroupIndex(2));
+        let symptom_age_group_index =
+            context.get_property::<Person, SymptomAgeGroupIndex>(person_id);
+        assert_eq!(symptom_age_group_index, SymptomAgeGroupIndex(2));
 
         let person_id: PersonId = context.add_entity(with!(Person, Age(64))).unwrap();
-        let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
-        assert_eq!(symptom_age_group_index, AgeGroupIndex(2));
+        let symptom_age_group_index =
+            context.get_property::<Person, SymptomAgeGroupIndex>(person_id);
+        assert_eq!(symptom_age_group_index, SymptomAgeGroupIndex(2));
 
         let person_id: PersonId = context.add_entity(with!(Person, Age(65))).unwrap();
-        let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
-        assert_eq!(symptom_age_group_index, AgeGroupIndex(3));
+        let symptom_age_group_index =
+            context.get_property::<Person, SymptomAgeGroupIndex>(person_id);
+        assert_eq!(symptom_age_group_index, SymptomAgeGroupIndex(3));
 
         let person_id: PersonId = context.add_entity(with!(Person, Age(100))).unwrap();
-        let symptom_age_group_index = context.get_property::<Person, AgeGroupIndex>(person_id);
-        assert_eq!(symptom_age_group_index, AgeGroupIndex(3));
+        let symptom_age_group_index =
+            context.get_property::<Person, SymptomAgeGroupIndex>(person_id);
+        assert_eq!(symptom_age_group_index, SymptomAgeGroupIndex(3));
     }
 
     #[test]
@@ -601,22 +605,22 @@ mod test {
         let mut context = Context::new();
         let parameters = Params {
             symptom_age_groups: vec![
-                SymptomAgeGroup {
+                AgeGroup {
                     label: "Age0To17".to_string(),
                     min: 0,
                     max: 17,
                 },
-                SymptomAgeGroup {
+                AgeGroup {
                     label: "Age18To49".to_string(),
                     min: 18,
                     max: 49,
                 },
-                SymptomAgeGroup {
+                AgeGroup {
                     label: "Age50To64".to_string(),
                     min: 50,
                     max: 64,
                 },
-                SymptomAgeGroup {
+                AgeGroup {
                     label: "Age65Plus".to_string(),
                     min: 65,
                     max: 120,
@@ -666,23 +670,23 @@ mod test {
             },
             ..Default::default()
         };
-        let ordered_symptom_age_groups: Vec<SymptomAgeGroup> = vec![
-            SymptomAgeGroup {
+        let ordered_symptom_age_groups: Vec<AgeGroup> = vec![
+            AgeGroup {
                 label: "Age0To17".to_string(),
                 min: 0,
                 max: 17,
             },
-            SymptomAgeGroup {
+            AgeGroup {
                 label: "Age18To49".to_string(),
                 min: 18,
                 max: 49,
             },
-            SymptomAgeGroup {
+            AgeGroup {
                 label: "Age50To64".to_string(),
                 min: 50,
                 max: 64,
             },
-            SymptomAgeGroup {
+            AgeGroup {
                 label: "Age65Plus".to_string(),
                 min: 65,
                 max: 120,
@@ -693,7 +697,7 @@ mod test {
             .set_global_property_value(GlobalParams, parameters.clone())
             .unwrap();
         context
-            .set_global_property_value(OrderedAgeGroupsParam, ordered_symptom_age_groups)
+            .set_global_property_value(SymptomAgeGroupsParam, ordered_symptom_age_groups)
             .unwrap();
         let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
         let p2 = context.add_entity(with!(Person, Age(30))).unwrap();
@@ -788,8 +792,8 @@ mod test {
             .unwrap();
         context
             .set_global_property_value(
-                OrderedAgeGroupsParam,
-                vec![SymptomAgeGroup {
+                SymptomAgeGroupsParam,
+                vec![AgeGroup {
                     label: "Age0To120".to_string(),
                     min: 0,
                     max: 120,
@@ -873,8 +877,8 @@ mod test {
                 .unwrap();
             context
                 .set_global_property_value(
-                    OrderedAgeGroupsParam,
-                    vec![SymptomAgeGroup {
+                    SymptomAgeGroupsParam,
+                    vec![AgeGroup {
                         label: "Age0To120".to_string(),
                         min: 0,
                         max: 120,
