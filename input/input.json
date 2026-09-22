@@ -64,13 +64,13 @@
         ],
         "default_modifiers": {
             "SchoolClosure": {
-                "School": [1.0, 0.0, 0.0, 0.0]
+                "school": [1.0, 0.0, 0.0, 0.0]
             },
             "CommunityMobilityReduction": {
-                "Community": [1.0, 0.0, 0.0, 0.0]
+                "community": [1.0, 0.0, 0.0, 0.0]
             },
             "WorkplaceMobilityReduction": {
-                "Work": [1.0, 0.0, 0.0, 0.0]
+                "work": [1.0, 0.0, 0.0, 0.0]
             }
         },
         "interventions": [
