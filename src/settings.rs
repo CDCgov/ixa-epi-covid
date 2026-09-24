@@ -18,30 +18,13 @@ pub(crate) use crate::{
 
 define_rng!(SettingRng);
 
-#[derive(Clone, Copy)]
-enum MembershipSelector {
-    Active,
-    All,
-}
-
-pub enum SettingMembershipRule {
-    Prevalent,
-    NoChange,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum SettingMembershipChange {
-    Add,
-    Remove,
-}
-
 /// An index of settings as represented by their setting codes.
 #[derive(Default)]
 pub struct SettingMembership {
     active_members: HashMap<SettingCode, Vec<PersonId>>,
     all_members: HashMap<SettingCode, Vec<PersonId>>,
 }
-
+#[allow(dead_code)]
 impl SettingMembership {
     fn add_member(&mut self, setting_code: SettingCode, person_id: PersonId) {
         let active_members = self.active_members.entry(setting_code).or_default();
@@ -63,53 +46,41 @@ impl SettingMembership {
         }
     }
 
-    fn get_members(
-        &self,
-        setting_code: SettingCode,
-        selector: MembershipSelector,
-    ) -> Option<&Vec<PersonId>> {
-        match selector {
-            MembershipSelector::Active => self.active_members.get(&setting_code),
-            MembershipSelector::All => self.all_members.get(&setting_code),
-        }
+    fn get_active_member(&self, setting_code: SettingCode) -> Option<&Vec<PersonId>> {
+        self.active_members.get(&setting_code)
     }
 
-    fn remove_member(
-        &mut self,
-        setting_code: SettingCode,
-        person_id: PersonId,
-        selector: MembershipSelector,
-    ) {
-        match selector {
-            MembershipSelector::Active => {
-                self.active_members
-                    .entry(setting_code)
-                    .and_modify(|members| members.retain(|id| *id != person_id));
-            }
-            MembershipSelector::All => {
-                self.active_members
-                    .entry(setting_code)
-                    .and_modify(|members| members.retain(|id| *id != person_id));
-                self.all_members
-                    .entry(setting_code)
-                    .and_modify(|members| members.retain(|id| *id != person_id));
-            }
-        }
+    fn get_all_member(&self, setting_code: SettingCode) -> Option<&Vec<PersonId>> {
+        self.all_members.get(&setting_code)
     }
 
-    fn member_count(&self, setting_code: SettingCode, selector: MembershipSelector) -> usize {
-        match selector {
-            MembershipSelector::Active => self
-                .active_members
-                .get(&setting_code)
-                .map(|members| members.len())
-                .unwrap_or(0),
-            MembershipSelector::All => self
-                .all_members
-                .get(&setting_code)
-                .map(|members| members.len())
-                .unwrap_or(0),
-        }
+    fn remove_active_member(&mut self, setting_code: SettingCode, person_id: PersonId) {
+        self.active_members
+            .entry(setting_code)
+            .and_modify(|members| members.retain(|id| *id != person_id));
+    }
+
+    fn remove_all_member(&mut self, setting_code: SettingCode, person_id: PersonId) {
+        self.active_members
+            .entry(setting_code)
+            .and_modify(|members| members.retain(|id| *id != person_id));
+        self.all_members
+            .entry(setting_code)
+            .and_modify(|members| members.retain(|id| *id != person_id));
+    }
+
+    fn active_member_count(&self, setting_code: SettingCode) -> usize {
+        self.active_members
+            .get(&setting_code)
+            .map(|members| members.len())
+            .unwrap_or(0)
+    }
+
+    fn all_member_count(&self, setting_code: SettingCode) -> usize {
+        self.all_members
+            .get(&setting_code)
+            .map(|members| members.len())
+            .unwrap_or(0)
     }
 }
 
@@ -168,38 +139,32 @@ trait ContextSettingExtPrivate:
         Ok(alphas[setting_category])
     }
 
-    fn get_setting_size_internal(
-        &self,
-        setting: SettingCode,
-        selector: MembershipSelector,
-    ) -> usize {
+    fn get_active_setting_size_internal(&self, setting: SettingCode) -> usize {
         let membership = self.get_data(SettingMembershipPlugin);
-        membership.member_count(setting, selector)
+        membership.active_member_count(setting)
+    }
+
+    fn get_all_setting_size_internal(&self, setting: SettingCode) -> usize {
+        let membership = self.get_data(SettingMembershipPlugin);
+        membership.all_member_count(setting)
     }
 
     #[allow(clippy::type_complexity)]
-    fn get_settings_for_person_internal(
+    fn get_active_settings_for_person_internal(
         &self,
         person_id: PersonId,
-        selector: MembershipSelector,
     ) -> Result<SmallVec<[(SettingCode, f64, f64); SETTING_COUNT]>, ModelError> {
         let mut active_settings = SmallVec::<[(SettingCode, f64, f64); SETTING_COUNT]>::new();
         let setting_ids = self
             .get_property::<Person, Itinerary>(person_id)
             .setting_ids;
-        let itinerary_ratios = match selector {
-            MembershipSelector::Active => self.get_itinerary(person_id),
-            MembershipSelector::All => {
-                self.get_property::<Person, Itinerary>(person_id)
-                    .itinerary_ratios
-            }
-        };
+        let itinerary_ratios = self.get_itinerary(person_id);
 
         for category in SettingCategory::iter() {
             if let Some(id) = setting_ids[category] {
                 let ratio = itinerary_ratios[category];
                 if ratio > 0.0 {
-                    let multiplier = self.calculate_multiplier(id, selector)?;
+                    let multiplier = self.calculate_active_multiplier(id)?;
                     active_settings.push((id, ratio, multiplier));
                 }
             }
@@ -207,11 +172,32 @@ trait ContextSettingExtPrivate:
         Ok(active_settings)
     }
 
-    fn calculate_multiplier(
+    #[allow(clippy::type_complexity)]
+    fn get_all_settings_for_person_internal(
         &self,
-        setting: SettingCode,
-        selector: MembershipSelector,
-    ) -> Result<f64, ModelError> {
+        person_id: PersonId,
+    ) -> Result<SmallVec<[(SettingCode, f64, f64); SETTING_COUNT]>, ModelError> {
+        let mut all_settings = SmallVec::<[(SettingCode, f64, f64); SETTING_COUNT]>::new();
+        let setting_ids = self
+            .get_property::<Person, Itinerary>(person_id)
+            .setting_ids;
+        let itinerary_ratios = self
+            .get_property::<Person, Itinerary>(person_id)
+            .itinerary_ratios;
+
+        for category in SettingCategory::iter() {
+            if let Some(id) = setting_ids[category] {
+                let ratio = itinerary_ratios[category];
+                if ratio > 0.0 {
+                    let multiplier = self.calculate_all_multiplier(id)?;
+                    all_settings.push((id, ratio, multiplier));
+                }
+            }
+        }
+        Ok(all_settings)
+    }
+
+    fn calculate_active_multiplier(&self, setting: SettingCode) -> Result<f64, ModelError> {
         let alpha = self.get_setting_alpha(setting.category())?;
         match alpha {
             0.0 => {
@@ -219,11 +205,30 @@ trait ContextSettingExtPrivate:
                 Ok(1.0)
             }
             1.0 => {
-                let size = self.get_setting_size_internal(setting, selector);
+                let size = self.get_active_setting_size_internal(setting);
                 Ok((size - 1) as f64)
             }
             alpha => {
-                let size = self.get_setting_size_internal(setting, selector);
+                let size = self.get_active_setting_size_internal(setting);
+                let size = (size - 1) as f64;
+                Ok(size.powf(alpha))
+            }
+        }
+    }
+
+    fn calculate_all_multiplier(&self, setting: SettingCode) -> Result<f64, ModelError> {
+        let alpha = self.get_setting_alpha(setting.category())?;
+        match alpha {
+            0.0 => {
+                // (n-1)^0 = 1
+                Ok(1.0)
+            }
+            1.0 => {
+                let size = self.get_all_setting_size_internal(setting);
+                Ok((size - 1) as f64)
+            }
+            alpha => {
+                let size = self.get_all_setting_size_internal(setting);
                 let size = (size - 1) as f64;
                 Ok(size.powf(alpha))
             }
@@ -282,7 +287,7 @@ pub trait ContextSettingExt:
 
     fn get_setting_size(&self, setting: SettingCode) -> usize {
         let membership = self.get_data(SettingMembershipPlugin);
-        membership.member_count(setting, MembershipSelector::Active)
+        membership.active_member_count(setting)
     }
 
     #[allow(clippy::type_complexity)]
@@ -290,7 +295,7 @@ pub trait ContextSettingExt:
         &self,
         person_id: PersonId,
     ) -> Result<SmallVec<[(SettingCode, f64, f64); SETTING_COUNT]>, ModelError> {
-        self.get_settings_for_person_internal(person_id, MembershipSelector::Active)
+        self.get_active_settings_for_person_internal(person_id)
     }
 
     fn calculate_current_infectiousness_multiplier_for_person(&self, person_id: PersonId) -> f64 {
@@ -298,7 +303,7 @@ pub trait ContextSettingExt:
         // When iterating through this vector s.0 refers to the setting_id, s.1 refers to ratio of time the person spends in the setting
         // and s.2 refers to the multiplier for that setting based on its size and alpha.
         let active_settings = self
-            .get_settings_for_person_internal(person_id, MembershipSelector::Active)
+            .get_active_settings_for_person_internal(person_id)
             .unwrap();
         let mut current_inf = 0.0;
         let mut sum_ratio = 0.0;
@@ -322,7 +327,7 @@ pub trait ContextSettingExt:
         // When iterating through this vector s.0 refers to the setting_id, s.1 refers to ratio of time the person spends in the setting
         // and s.2 refers to the multiplier for that setting based on its size and alpha.
         let active_settings = self
-            .get_settings_for_person_internal(person_id, MembershipSelector::All)
+            .get_all_settings_for_person_internal(person_id)
             .unwrap();
         let mut max_inf = 0.0;
         for (_, _, multiplier) in active_settings.iter() {
@@ -333,11 +338,9 @@ pub trait ContextSettingExt:
 
     fn sample_person_from_setting(&self, setting: SettingCode) -> Result<PersonId, ModelError> {
         let membership = self.get_data(SettingMembershipPlugin);
-        let members = membership
-            .get_members(setting, MembershipSelector::Active)
-            .ok_or_else(|| {
-                ModelError::ModelError(format!("No members found for setting: {:?}", setting))
-            })?;
+        let members = membership.get_active_member(setting).ok_or_else(|| {
+            ModelError::ModelError(format!("No members found for setting: {:?}", setting))
+        })?;
         let idx = self.sample_range(SettingRng, 0..members.len());
         Ok(members[idx])
     }
@@ -347,7 +350,7 @@ pub trait ContextSettingExt:
         person_id: PersonId,
         setting: SettingCode,
     ) -> Result<Option<PersonId>, ModelError> {
-        if self.get_setting_size_internal(setting, MembershipSelector::Active) == 1 {
+        if self.get_active_setting_size_internal(setting) == 1 {
             return Ok(None);
         }
         loop {
@@ -360,7 +363,7 @@ pub trait ContextSettingExt:
 
     fn sample_active_setting(&self, person_id: PersonId) -> Result<SettingCode, ModelError> {
         let active_settings = self
-            .get_settings_for_person_internal(person_id, MembershipSelector::Active)
+            .get_active_settings_for_person_internal(person_id)
             .unwrap();
         let mut weights_vec = vec![];
         for setting in active_settings.iter() {
@@ -429,64 +432,62 @@ pub trait ContextSettingExt:
 
     fn remove_person_from_single_setting(&mut self, person_id: PersonId, setting_id: SettingCode) {
         let membership = self.get_data_mut(SettingMembershipPlugin);
-        membership.remove_member(setting_id, person_id, MembershipSelector::Active);
+        membership.remove_active_member(setting_id, person_id);
     }
     fn setup_itinerary_modifier<P: IndexableProperty<Person>, I: ItineraryModifier>(
         &mut self,
         person_property: P,
         modifier: I,
-        setting_membership_rule: SettingMembershipRule,
+        change_setting_membership: bool,
     ) {
         // registeration needs to occur before setting membership changes are handled
         // so we have access to the modifier when handling setting membership changes
         self.register_itinerary_modifier(person_property, modifier);
-        match setting_membership_rule {
-            SettingMembershipRule::Prevalent => {
-                self.prevalent_setting_change(person_property, SettingMembershipChange::Remove);
-            }
-            SettingMembershipRule::NoChange => (),
+        if change_setting_membership {
+            self.handle_setting_membership_removal(person_property);
         }
     }
 
     fn remove_itinerary_modifier<P: IndexableProperty<Person>>(&mut self, person_property: P) {
         // the setting addition needs to occur before removing the itinerary modifier
         // so we can still have access to the modifier associated with the itinerary to be removed
-        self.prevalent_setting_change(person_property, SettingMembershipChange::Add);
+        self.handle_setting_membership_addition(person_property);
         self.remove_itinerary_modifier_by_property(person_property);
     }
 
-    fn prevalent_setting_change<P>(
-        &mut self,
-        person_property: P,
-        setting_membership_change: SettingMembershipChange,
-    ) where
+    fn handle_setting_membership_addition<P>(&mut self, person_property: P)
+    where
         P: IndexableProperty<Person>,
     {
         let remaining_people: Vec<_> = self
             .query_result_iterator(with!(Person, person_property))
             .collect();
         for person_id in remaining_people {
-            for setting_id in self.determine_setting_membership(
-                person_id,
-                setting_membership_change,
-                person_property,
-            ) {
-                match setting_membership_change {
-                    SettingMembershipChange::Add => {
-                        self.add_person_to_single_setting(person_id, setting_id)
-                    }
-                    SettingMembershipChange::Remove => {
-                        self.remove_person_from_single_setting(person_id, setting_id)
-                    }
-                }
+            for setting_id in self.determine_setting_membership_addition(person_id, person_property)
+            {
+                self.add_person_to_single_setting(person_id, setting_id);
             }
         }
     }
 
-    fn determine_setting_membership<P>(
+    fn handle_setting_membership_removal<P>(&mut self, person_property: P)
+    where
+        P: IndexableProperty<Person>,
+    {
+        let remaining_people: Vec<_> = self
+            .query_result_iterator(with!(Person, person_property))
+            .collect();
+        for person_id in remaining_people {
+            for setting_id in self.determine_setting_membership_removal(person_id, person_property)
+            {
+                self.remove_person_from_single_setting(person_id, setting_id);
+            }
+        }
+    }
+
+    fn determine_setting_membership_addition<P>(
         &self,
         person_id: PersonId,
-        setting_membership_change: SettingMembershipChange,
         person_property: P,
     ) -> Vec<SettingCode>
     where
@@ -496,22 +497,36 @@ pub trait ContextSettingExt:
         let setting_ids = self
             .get_property::<Person, Itinerary>(person_id)
             .setting_ids;
-        let is_changed: fn(f64, f64) -> bool = match setting_membership_change {
-            SettingMembershipChange::Remove => {
-                |old: f64, modified: f64| modified == 0.0 && old > 0.0
-            }
-            SettingMembershipChange::Add => |old: f64, modified: f64| modified > 0.0 && old == 0.0,
-        };
-        let (old, modified) = match setting_membership_change {
-            SettingMembershipChange::Remove => (
-                self.get_itinerary_without_property(person_id, person_property),
-                self.get_itinerary(person_id),
-            ),
-            SettingMembershipChange::Add => (
-                self.get_itinerary(person_id),
-                self.get_itinerary_without_property(person_id, person_property),
-            ),
-        };
+        let is_changed: fn(f64, f64) -> bool =
+            |old: f64, modified: f64| modified > 0.0 && old == 0.0;
+        let old = self.get_itinerary(person_id);
+        let modified = self.get_itinerary_without_property(person_id, person_property);
+
+        old.iter()
+            .zip(modified.iter())
+            .zip(setting_ids.iter())
+            .filter_map(|((old, modified), setting_id)| {
+                is_changed(*old, *modified).then_some(*setting_id).flatten()
+            })
+            .collect()
+    }
+
+    fn determine_setting_membership_removal<P>(
+        &self,
+        person_id: PersonId,
+        person_property: P,
+    ) -> Vec<SettingCode>
+    where
+        P: IndexableProperty<Person>,
+    {
+        // this needs to be their previous itinerary
+        let setting_ids = self
+            .get_property::<Person, Itinerary>(person_id)
+            .setting_ids;
+        let is_changed: fn(f64, f64) -> bool =
+            |old: f64, modified: f64| modified == 0.0 && old > 0.0;
+        let old = self.get_itinerary_without_property(person_id, person_property);
+        let modified = self.get_itinerary(person_id);
 
         old.iter()
             .zip(modified.iter())
@@ -934,11 +949,7 @@ mod test {
 
         let weekend_modifier = create_itinerary_transition_matrix(Some(weekend_matrix), None, None);
 
-        context.setup_itinerary_modifier(
-            Age(20),
-            weekend_modifier,
-            SettingMembershipRule::Prevalent,
-        );
+        context.setup_itinerary_modifier(Age(20), weekend_modifier, true);
 
         let active_settings = context.get_settings_for_person(p1).unwrap();
         assert_eq!(active_settings.len(), 2); // Only home and community should be active

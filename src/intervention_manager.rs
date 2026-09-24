@@ -8,10 +8,7 @@ use crate::{
         AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
     },
     pop_reader::{FIPSCode, states::USState},
-    settings::{
-        ContextSettingExt, Itinerary, Person, PersonId, SETTING_COUNT, SettingCategory,
-        SettingMembershipRule,
-    },
+    settings::{ContextSettingExt, Itinerary, Person, PersonId, SETTING_COUNT, SettingCategory},
 };
 use ixa::{
     ExecutionPhase, HashMap, HashMapExt, IxaEvent, impl_derived_property,
@@ -409,42 +406,42 @@ pub trait InterventionContextExt:
                 self.setup_itinerary_modifier(
                     AcceptsSchoolClosureState(Some(Geography::State(state_code))),
                     itinerary_modifier,
-                    SettingMembershipRule::NoChange,
+                    false,
                 );
             }
             (Modifier::SchoolClosure, Geography::County(fips_code)) => {
                 self.setup_itinerary_modifier(
                     AcceptsSchoolClosureCounty(Some(Geography::County(fips_code))),
                     itinerary_modifier,
-                    SettingMembershipRule::NoChange,
+                    false,
                 );
             }
             (Modifier::WorkplaceMobilityReduction, Geography::State(state_code)) => {
                 self.setup_itinerary_modifier(
                     AcceptsWorkMobilityState(Some(Geography::State(state_code))),
                     itinerary_modifier,
-                    SettingMembershipRule::Prevalent,
+                    true,
                 );
             }
             (Modifier::WorkplaceMobilityReduction, Geography::County(fips_code)) => {
                 self.setup_itinerary_modifier(
                     AcceptsWorkMobilityCounty(Some(Geography::County(fips_code))),
                     itinerary_modifier,
-                    SettingMembershipRule::Prevalent,
+                    true,
                 );
             }
             (Modifier::CommunityMobilityReduction, Geography::State(state_code)) => {
                 self.setup_itinerary_modifier(
                     AcceptsCommunityMobilityState(Some(Geography::State(state_code))),
                     itinerary_modifier,
-                    SettingMembershipRule::Prevalent,
+                    true,
                 );
             }
             (Modifier::CommunityMobilityReduction, Geography::County(fips_code)) => {
                 self.setup_itinerary_modifier(
                     AcceptsCommunityMobilityCounty(Some(Geography::County(fips_code))),
                     itinerary_modifier,
-                    SettingMembershipRule::Prevalent,
+                    true,
                 );
             }
         }
