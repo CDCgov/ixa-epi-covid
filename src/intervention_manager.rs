@@ -403,39 +403,45 @@ pub trait InterventionContextExt:
         let itinerary_modifier = self.define_intervention_itinerary_modifier(intervention);
         match (intervention.modifier, intervention.geography) {
             (Modifier::SchoolClosure, Geography::State(state_code)) => {
-                self.register_itinerary_modifier(
+                self.setup_itinerary_modifier(
                     AcceptsSchoolClosureState(Some(Geography::State(state_code))),
                     itinerary_modifier,
+                    false,
                 );
             }
             (Modifier::SchoolClosure, Geography::County(fips_code)) => {
-                self.register_itinerary_modifier(
+                self.setup_itinerary_modifier(
                     AcceptsSchoolClosureCounty(Some(Geography::County(fips_code))),
                     itinerary_modifier,
+                    false,
                 );
             }
             (Modifier::WorkplaceMobilityReduction, Geography::State(state_code)) => {
-                self.register_itinerary_modifier(
+                self.setup_itinerary_modifier(
                     AcceptsWorkMobilityState(Some(Geography::State(state_code))),
                     itinerary_modifier,
+                    true,
                 );
             }
             (Modifier::WorkplaceMobilityReduction, Geography::County(fips_code)) => {
-                self.register_itinerary_modifier(
+                self.setup_itinerary_modifier(
                     AcceptsWorkMobilityCounty(Some(Geography::County(fips_code))),
                     itinerary_modifier,
+                    true,
                 );
             }
             (Modifier::CommunityMobilityReduction, Geography::State(state_code)) => {
-                self.register_itinerary_modifier(
+                self.setup_itinerary_modifier(
                     AcceptsCommunityMobilityState(Some(Geography::State(state_code))),
                     itinerary_modifier,
+                    true,
                 );
             }
             (Modifier::CommunityMobilityReduction, Geography::County(fips_code)) => {
-                self.register_itinerary_modifier(
+                self.setup_itinerary_modifier(
                     AcceptsCommunityMobilityCounty(Some(Geography::County(fips_code))),
                     itinerary_modifier,
+                    true,
                 );
             }
         }
@@ -447,32 +453,32 @@ pub trait InterventionContextExt:
     ) -> Result<(), ModelError> {
         match (intervention.modifier, intervention.geography) {
             (Modifier::SchoolClosure, Geography::State(state_code)) => {
-                self.remove_itinerary_modifier_by_property(AcceptsSchoolClosureState(Some(
-                    Geography::State(state_code),
-                )));
+                self.remove_itinerary_modifier(AcceptsSchoolClosureState(Some(Geography::State(
+                    state_code,
+                ))));
             }
             (Modifier::SchoolClosure, Geography::County(fips_code)) => {
-                self.remove_itinerary_modifier_by_property(AcceptsSchoolClosureCounty(Some(
+                self.remove_itinerary_modifier(AcceptsSchoolClosureCounty(Some(
                     Geography::County(fips_code),
                 )));
             }
             (Modifier::WorkplaceMobilityReduction, Geography::State(state_code)) => {
-                self.remove_itinerary_modifier_by_property(AcceptsWorkMobilityState(Some(
-                    Geography::State(state_code),
-                )));
+                self.remove_itinerary_modifier(AcceptsWorkMobilityState(Some(Geography::State(
+                    state_code,
+                ))));
             }
             (Modifier::WorkplaceMobilityReduction, Geography::County(fips_code)) => {
-                self.remove_itinerary_modifier_by_property(AcceptsWorkMobilityCounty(Some(
-                    Geography::County(fips_code),
-                )));
+                self.remove_itinerary_modifier(AcceptsWorkMobilityCounty(Some(Geography::County(
+                    fips_code,
+                ))));
             }
             (Modifier::CommunityMobilityReduction, Geography::State(state_code)) => {
-                self.remove_itinerary_modifier_by_property(AcceptsCommunityMobilityState(Some(
+                self.remove_itinerary_modifier(AcceptsCommunityMobilityState(Some(
                     Geography::State(state_code),
                 )));
             }
             (Modifier::CommunityMobilityReduction, Geography::County(fips_code)) => {
-                self.remove_itinerary_modifier_by_property(AcceptsCommunityMobilityCounty(Some(
+                self.remove_itinerary_modifier(AcceptsCommunityMobilityCounty(Some(
                     Geography::County(fips_code),
                 )));
             }
