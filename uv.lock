@@ -1056,6 +1056,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "calibrationtools", git = "https://github.com/CDCgov/cfa-calibration-tools.git?branch=feat%2Fcloud-runner-port" },
     { name = "calibrationtools", extras = ["azure"], git = "https://github.com/CDCgov/cfa-calibration-tools.git?branch=feat%2Fcloud-runner-port" },
     { name = "census", specifier = ">=0.8.25" },
     { name = "cfa-mrp" },

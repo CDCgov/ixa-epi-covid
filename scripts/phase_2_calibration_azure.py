@@ -208,8 +208,8 @@ def build_executor(max_autoscale_nodes: int | None = None) -> AzureBatchExecutor
         max_wait=1800.0, 
         build_image=False, 
         upload_image=False,
-        delete_job_after=False, 
-        delete_pool_after=False
+        delete_job_after=True, 
+        delete_pool_after=True
     )
     return AzureBatchExecutor(
         base_name=args.base_name,
