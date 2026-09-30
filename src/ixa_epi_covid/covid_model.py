@@ -6,7 +6,7 @@ from typing import Any
 import polars as pl
 from importation import ImportationModel, get_linelist_data
 from mrp import MRPModel
-
+from scipy.stats import poisson
 
 class CovidModel(MRPModel):
     def run(self):
@@ -130,3 +130,103 @@ class CovidModel(MRPModel):
                     f"Expected output file {fp} not found. Looked in {config_inputs['output_dir']}"
                 )
         return outputs
+    
+    def outputs_to_distance(
+        model_output: dict[str, pl.DataFrame], target_data: pl.DataFrame
+    ) -> float:
+        """
+        Calculates the weighted error between current hospitalizations, weekly incident deaths, and cumulative age-specific attack rates.
+
+        Args:
+            model_output (dict[str, pl.DataFrame]): A dictionary containing the model outputs as Polars DataFrames.
+            target_data (pl.DataFrame): The observed current hospitalizations, weekly incident deaths and age-specific attack rates.
+        Returns:
+            float: The calculated distance.
+        """
+        def poisson_lhood(model, data):
+            return -poisson.logpmf(data, model + 1e-6)
+        deaths = (
+            model_output["aggregated_deaths_report"]
+        )
+        print(model_output)
+        hosp = (
+            model_output["current_hospitalizations_report"]
+        )
+        ar_039 = (
+            model_output["attack_rate_report"]
+            .filter(pl.col("age_group") == "Age0To39")
+            .filter(pl.col("t_upper") == 120)
+        )
+        ar_4059 = (
+            model_output["attack_rate_report"]
+            .filter(pl.col("age_group") == "Age40To59")
+            .filter(pl.col("t_upper") == 120)
+        )
+        ar_60plus = (
+            model_output["attack_rate_report"]
+            .filter(pl.col("age_group") == "Age60Plus")
+            .filter(pl.col("t_upper") == 120)
+        )
+        target_deaths = target_data.filter(pl.col("data_type") == "deaths")
+        target_hosp = target_data.filter(pl.col("data_type") == "hospitalizations")
+        target_ar_039 = target_data.filter(pl.col("data_type") == "Age0To39AR")
+        target_ar_4059 = target_data.filter(pl.col("data_type") == "Age40To59AR")
+        target_ar_60plus = target_data.filter(pl.col("data_type") == "Age60PlusAR")
+
+        joint_deaths = (
+            deaths.select(pl.col(["t_upper", "deaths"]))
+            .join(
+                target_deaths.select(pl.col(["t_upper", "count"])),
+                on="t_upper",
+                how="right",
+            )
+            .with_columns(pl.col("deaths").fill_null(strategy="zero"))
+        .with_columns(
+            pl.struct(["deaths", "count"])
+            .map_elements(
+                lambda x: poisson_lhood(x["deaths"], x["count"]),
+                return_dtype=pl.Float64,
+            )
+            .alias("negloglikelihood")
+        )
+        )
+
+        joint_hosp = (
+            hosp.select(pl.col(["t_upper", "current_hospitalizations"]))
+            .join(
+                target_hosp.select(pl.col(["t_upper", "count"])),
+                on="t_upper",
+                how="right",
+            )
+            .with_columns(pl.col("current_hospitalizations").fill_null(strategy="zero"))
+        .with_columns(
+            pl.struct(["current_hospitalizations", "count"])
+            .map_elements(
+                lambda x: poisson_lhood(x["current_hospitalizations"], x["count"]),
+                return_dtype=pl.Float64,
+            )
+            .alias("negloglikelihood")
+        )
+        )
+        def ar_difference(model_ar: pl.DataFrame, target_ar: pl.DataFrame) -> float:
+            model_value = (
+            model_ar.select(pl.col("attack_rate")).item()
+            if model_ar.height > 0
+            else 0.0
+            )
+            target_lower = target_ar.select(pl.col("lower")).item()
+            target_upper = target_ar.select(pl.col("upper")).item()
+            sigma = (target_upper - target_lower) / 3.92
+            target_value = target_ar.select(pl.col("count")).item()
+            return float(((model_value - target_value) ** 2)/(2 * sigma ** 2))
+
+        ar_diff_039 = ar_difference(ar_039, target_ar_039)
+        ar_diff_4059 = ar_difference(ar_4059, target_ar_4059)
+        ar_diff_60plus = ar_difference(ar_60plus, target_ar_60plus)
+        ar_distance = ar_diff_039 + ar_diff_4059 + ar_diff_60plus
+
+        deaths_distance = joint_deaths["negloglikelihood"].mean()
+        hosp_distance = joint_hosp["negloglikelihood"].mean()
+        print(f"Deaths distance: {deaths_distance}, Hospitalizations distance: {hosp_distance}, Attack rate distance: {ar_distance}")
+        return float(deaths_distance + hosp_distance + ar_distance)
+

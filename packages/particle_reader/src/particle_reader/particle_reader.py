@@ -119,7 +119,6 @@ class ParticleReader:
             name_key = {}
             for param_name in self.particle_param_names:
                 found_match_count = 0
-
                 for flat_name in flat_names.keys():
                     if flat_name == param_name:
                         name_key.update({param_name: flat_name})

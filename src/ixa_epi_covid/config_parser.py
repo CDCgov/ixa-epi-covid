@@ -1,10 +1,54 @@
 import json
+import os
 from pathlib import Path
 from typing import Any
 
+from calibrationtools import IndependentKernels, MultivariateNormalKernel, Particle, SeedKernel
+import numpy as np
+from particle_reader import ParticleReader
 import yaml
 from mrp.api import apply_dict_overrides
 
+class ParticlesToParams:
+    """Turn a particle into model parameters with a unique output subdir.
+
+    A class rather than a closure so the sampler's callables stay pickleable and
+    can cross the Azure Batch worker boundary.
+    """
+
+    def __init__(self, reader: ParticleReader):
+        self.reader = reader
+
+    def __call__(self, particle: Particle) -> dict[str, Any]:
+        particle_params = self.reader.read_particle(particle=particle)
+        # Make particle-specific output directory and update the output path in the parameters accordingly
+        simulations_dir = Path(
+            particle_params["config_inputs"]["output_dir"], "simulations"
+        )
+        # Count existing directories in simulations_dir
+        if not simulations_dir.exists():
+            dir_count = 0
+        else:
+            dir_count = len(os.walk(simulations_dir).__next__()[1])
+        output_dir = Path(
+            simulations_dir,
+            ".".join(
+                [
+                    str(dir_count),
+                    str(
+                        particle_params["ixa_inputs"]["epimodel.GlobalParams"][
+                            "seed"
+                        ]
+                    ),
+                ]
+            ),
+        )
+        output_dir.mkdir(parents=True, exist_ok=False)
+
+        updated_params = update_epimodel_output_dir(
+            particle_params, output_dir
+        )
+        return updated_params
 
 class CovidModelConfig:
     """
@@ -34,6 +78,11 @@ class CovidModelConfig:
 
         if ixa_overrides:
             self.update_ixa_params(ixa_overrides)
+
+        self.priors: dict[dict, dict] = {}
+        self.perturbation_kernel = None
+        self.mrp_defaults: dict[str, Any] = {}
+        self.particles_to_params: ParticlesToParams | None = None
 
         # Set attributes from config for easy access
         for k in self.config.keys():
@@ -107,6 +156,31 @@ class CovidModelConfig:
             raise ValueError(
                 f"Missing required keys in config: {missing_keys}"
             )
+    def set_reader(self):
+        particle_param_names = list(self.priors["priors"].keys()) + ["seed"]
+        print(f"Setting up ParticleReader with particle_param_names: {particle_param_names}")
+        self.reader = ParticleReader(
+            particle_param_names=particle_param_names,
+            default_params=self.mrp_defaults,
+        )
+        self.particles_to_params = ParticlesToParams(self.reader)
+
+    def set_mrp_defaults(self, output_dir: str | Path, outputs_to_read: list[str]):
+        self.mrp_defaults = self.get_mrp_defaults_for_output(
+            output_dir=output_dir, outputs_to_read=outputs_to_read
+        )
+
+    def set_priors(self, priors_file: str | Path):
+        with open(priors_file, "r") as f:
+            self.priors = json.load(f)
+    
+    def set_perturbation_kernel(self):
+        self.perturbation_kernel = IndependentKernels(
+    [
+        MultivariateNormalKernel(list(self.priors["priors"].keys())),
+        SeedKernel("seed"),
+    ]
+)
 
 
 def update_epimodel_output_dir(
@@ -136,3 +210,5 @@ def update_epimodel_output_dir(
         },
     )
     return params
+
+
