@@ -46,6 +46,10 @@ experiments/**/simulations/
 !input/people_test.csv
 !input/symptom_delay_median_iqr.csv
 !tests/data/*
+!experiments/phase2/input/default_params.json
+!experiments/phase2/input/people_test.csv
+!experiments/phase2/input/priors.json
+!experiments/phase2/input/prod-smc-config.yaml
 
 
 #####
