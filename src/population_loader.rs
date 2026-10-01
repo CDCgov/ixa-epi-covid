@@ -8,7 +8,7 @@ use crate::error::ModelError;
 use crate::parameters::ContextParametersExt;
 use crate::pop_reader::{
     PersonRecord,
-    archive::{PersonRecordIterator, set_data_path},
+    archive::{PersonRecordIterator},
 };
 use crate::setting_code::SettingCode;
 use crate::settings::{ContextSettingExt, SETTING_COUNT, SettingCategory};
@@ -112,12 +112,13 @@ fn load_synth_population(
     context: &mut Context,
     synth_input_file: PathBuf,
 ) -> Result<(), ModelError> {
-    set_data_path(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
-
+    // set_data_path(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
+    println!("Loading synthetic population from file: {:?}", synth_input_file);
     let records = PersonRecordIterator::from_path(synth_input_file)?;
     for record in records {
         create_person_from_record(context, record?)?;
     }
+    println!("Finished loading synthetic population");
     Ok(())
 }
 

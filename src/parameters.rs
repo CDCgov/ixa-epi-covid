@@ -394,6 +394,9 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
     ordered_attack_rate_age_groups.sort();
     let _ =
         context.set_global_property_value(AttackRateAgeGroupsParam, ordered_attack_rate_age_groups);
+    println!("params initialized");
+    let params = context.get_params();
+    println!("{:?}", params);
     Ok(())
 }
 

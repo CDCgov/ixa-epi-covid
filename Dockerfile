@@ -18,7 +18,9 @@ COPY src ./src
 COPY scripts ./scripts
 COPY packages/importation ./packages/importation
 COPY packages/particle_reader ./packages/particle_reader
-
+RUN mkdir -p ./experiments/phase2/calibration/azure
+RUN mkdir -p ./experiments/phase2/input
+COPY input/people_test.csv ./experiments/phase2/input/people_test.csv
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*

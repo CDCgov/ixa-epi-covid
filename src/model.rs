@@ -29,23 +29,23 @@ pub fn initialize_model(
     );
     context.set_start_time(-1000.);
     settings::init(context)?;
-    info!("Settings initialized");
+    println!("Settings initialized");
     population_loader::init(context, synth_population_override)?;
-    info!("Population loaded");
+    println!("Population loaded");
     symptom_status_manager::init(context)?;
-    info!("Symptom status manager initialized");
+    println!("Symptom status manager initialized");
     infection_propagation_loop::init(context)?;
-    info!("Infection propagation loop initialized");
+    println!("Infection propagation loop initialized");
     infection_importation::init(context)?;
-    info!("Infection importation initialized");
+    println!("Infection importation initialized");
     school_calendar::init(context);
-    info!("School calendar initialized");
+    println!("School calendar initialized");
     intervention_manager::init(context)?;
-    info!("School closure initialized");
+    println!("School closure initialized");
     reports::init(context)?;
-    info!("Reports initialized");
+    println!("Reports initialized");
     abort_run::init(context);
-    info!("Setup complete");
+    println!("Setup complete");
 
     Ok(())
 }

@@ -8,6 +8,43 @@ from importation import ImportationModel, get_linelist_data
 from mrp import MRPModel
 from scipy.stats import poisson
 
+from pathlib import Path
+# Or Path("/app") for a specific directory
+
+FOLDERS_TO_PRINT = [
+    Path("/app/experiments"),
+    Path("/app/scripts"),
+]
+
+IGNORED_DIRECTORIES = {".venv"}
+
+def print_tree(directory, prefix=""):
+    try:
+        entries = sorted(
+            (
+                entry for entry in directory.iterdir()
+                if not (
+                    entry.is_dir()
+                    and entry.name in IGNORED_DIRECTORIES
+                )
+            ),
+            key=lambda p: (p.is_file(), p.name.lower())
+        )
+    except PermissionError:
+        print(prefix + "[permission denied]")
+        return
+
+    for index, entry in enumerate(entries):
+        is_last = index == len(entries) - 1
+        connector = "└── " if is_last else "├── "
+        print(prefix + connector + entry.name)
+
+        if entry.is_dir():
+            extension = "    " if is_last else "│   "
+            print_tree(entry, prefix + extension)
+
+
+
 class CovidModel(MRPModel):
     def run(self):
         pass
@@ -17,15 +54,20 @@ class CovidModel(MRPModel):
         ixa_inputs = model_inputs["ixa_inputs"]
         config_inputs = model_inputs["config_inputs"]
         importation_inputs = model_inputs["importation_inputs"]
-
+        config_inputs["output_dir"] = f"./{config_inputs['output_dir']}"
         # Write the ixa inputs to the specified file location so that downstream errors can be re-tried
-        input_file_path = Path(config_inputs["output_dir"], "input.json")
+        input_file_path = Path("./", config_inputs["output_dir"], "input.json")
+        print(input_file_path)
+        print(str(input_file_path))
         ixa_inputs["epimodel.GlobalParams"]["seed"] = int(
             ixa_inputs["epimodel.GlobalParams"]["seed"]
         )
+        ixa_inputs["epimodel.GlobalParams"]["imported_cases_timeseries"]["filename"] = f"./{ixa_inputs['epimodel.GlobalParams']['imported_cases_timeseries']['filename']}"
+        ixa_inputs["epimodel.GlobalParams"]["synth_population_file"] = f"./{ixa_inputs['epimodel.GlobalParams']['synth_population_file']}"
         with open(input_file_path, "w") as f:
             json.dump(ixa_inputs, f, indent=4)
-
+        print("ixa inputs")
+        print(ixa_inputs)
         ## Generate the importation time series from relevant ixa parameters --------------
         # Calculate the probability that an inidivdual will die given that they are symptomatic
         # This calculation assumes that individuals are evenly distributed by age group
@@ -95,19 +137,32 @@ class CovidModel(MRPModel):
         cmd = [
             config_inputs["exe_file"],
             "--config",
-            str(input_file_path),
+            "./" + str(input_file_path),
             "--output",
             config_inputs["output_dir"],
             "--force-overwrite",
             "--no-stats",
         ]
-
+        import os
         try:
+            print("Working directory:", os.getcwd())
+            print("Files:", os.listdir("."))
+            print(f"CONFIG OUTPUTS {config_inputs}")
+            for folder in FOLDERS_TO_PRINT:
+                print(f"\n{folder}")
+                print_tree(folder)
+            
+            print("files in directory")
+            subprocess.run(["pwd"])
+            subprocess.run(["ls", "-l"])
+            print(f"files in {str(config_inputs["output_dir"])}")
+            subprocess.run(["ls", "-l", str(config_inputs["output_dir"])])
             subprocess.run(cmd, capture_output=True, check=True)
         except subprocess.CalledProcessError as e:
             print("Error running the ixa model:")
             print("Command:", " ".join(cmd))
             print("Return code:", e.returncode)
+            print("Standard output:", e.stdout)
             print("Standard error:", e.stderr)
             raise e
 

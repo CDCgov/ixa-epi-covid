@@ -208,8 +208,8 @@ def build_executor(max_autoscale_nodes: int | None = None) -> AzureBatchExecutor
         max_wait=1800.0, 
         build_image=False, 
         upload_image=False,
-        delete_job_after=True, 
-        delete_pool_after=True
+        delete_job_after=False, 
+        delete_pool_after=False
     )
     return AzureBatchExecutor(
         base_name=args.base_name,
@@ -238,49 +238,6 @@ def build_executor(max_autoscale_nodes: int | None = None) -> AzureBatchExecutor
 # Create the priors and perturbation kernels -----------------------------------------------
 
 PRIORS_FILE = "experiments/phase2/input/priors.json"
-# with open(PRIORS_FILE, "r") as f:
-#     priors = json.load(f)
-
-# P: dict[dict, dict] = priors
-
-
-# Model Particle Reader setup -------------------------------------------------------------
-# reader = ParticleReader(
-#     particle_param_names=list(P["priors"].keys()) + ["seed"],
-#     default_params=mrp_defaults,
-# )   
-# def particles_to_params(
-#     particle: Particle, reader: ParticleReader = reader
-# ):
-#     particle_params = reader.read_particle(particle=particle)
-#     # Make particle-specific output directory and update the output path in the parameters accordingly
-#     simulations_dir = Path(
-#         particle_params["config_inputs"]["output_dir"], "simulations"
-#     )
-#     # Count existing directories in simulations_dir
-#     if not simulations_dir.exists():
-#         dir_count = 0
-#     else:
-#         dir_count = len(os.walk(simulations_dir).__next__()[1])
-#     output_dir = Path(
-#         simulations_dir,
-#         ".".join(
-#             [
-#                 str(dir_count),
-#                 str(
-#                     particle_params["ixa_inputs"]["epimodel.GlobalParams"][
-#                         "seed"
-#                     ]
-#                 ),
-#             ]
-#         ),
-#     )
-#     output_dir.mkdir(parents=True, exist_ok=False)
-
-#     updated_params = update_epimodel_output_dir(
-#         particle_params, output_dir
-#     )
-#     return updated_params
 
 def main(
     config_file: CovidModelConfig ,
@@ -395,12 +352,7 @@ parser.add_argument(
     default="experiments/phase2/calibration/output",
     help="Path to the output directory where results will be saved.",
 )
-# parser.add_argument(
-#     "--max-workers",
-#     type=int,
-#     default=2,
-#     help="The maximum number of worker processes to use for parallel execution.",
-# )
+
 
 
 if __name__ == "__main__":
