@@ -19,6 +19,8 @@ COPY scripts ./scripts
 COPY packages/importation ./packages/importation
 COPY packages/particle_reader ./packages/particle_reader
 
+RUN mkdir output
+
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*

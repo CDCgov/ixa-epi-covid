@@ -110,9 +110,12 @@ fn load_importation_timeseries(context: &mut Context) -> Result<(), ModelError> 
         imported_cases_timeseries,
         ..
     } = context.get_params();
+    println!("READING IMPORTED CASES: {:?}", imported_cases_timeseries);
     if imported_cases_timeseries.include {
         if let Some(filename) = &imported_cases_timeseries.filename {
+            let fi_name = filename.clone();
             read_importation_schedule(context, filename.clone())?;
+            println!("DONE READING IMPORTED CASES: {:?}", fi_name);
         } else {
             return Err(ModelError::ModelError(
                 "Importation from file is turned on but no filename was provided.".to_string(),

@@ -128,7 +128,10 @@ pub fn init(
     let _span = open_span("load_synth_population");
     let file = synth_population_override
         .unwrap_or_else(|| context.get_params().synth_population_file.clone());
+    let synth_file = file.clone();
+    println!("READING SYNTH POPULATION: {:?}", file);
     load_synth_population(context, file)?;
+    println!("DONE READING SYNTH POPULATION: {:?}", synth_file);
     Ok(())
 }
 
