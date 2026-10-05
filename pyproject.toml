@@ -21,7 +21,8 @@ dependencies = [
     "us>=3.2.0",
     "cfa-mrp",
     "calibrationtools",
-    "calibrationtools[azure]"
+    "calibrationtools[azure]",
+    "cfa-cloudops",
 ]
 
 [build-system]

@@ -39,13 +39,17 @@ class CovidModel(MRPModel):
 
     @staticmethod
     def run_in_docker(
-            cmd_args: list[str], mount_dir: Path,
+            cmd_args: list[str],
+            mount_output_dir: Path,
+            mount_input_dir: Path,
             container_mount: str = "/app",
             container_output: str = "output",
+            container_input: str = "input",
     ) -> subprocess.CompletedProcess:
         docker_cmd = [
             "docker", "run", "--rm",
-            "-v", f"{mount_dir.resolve()}:{container_mount}/{container_output}",
+            "-v", f"{mount_output_dir.resolve()}:{container_mount}/{container_output}",
+            "-v", f"{mount_input_dir.resolve()}:{container_mount}/{container_input}",
             "-w", container_mount,
             "ixa-epi-covid:latest",
             "./target/release/ixa-epi-covid",
@@ -140,7 +144,13 @@ class CovidModel(MRPModel):
 
 
         try:
-            CovidModel.run_in_docker(cmd_args, mount_dir=Path(config_inputs["output_dir"]))
+            CovidModel.run_in_docker(
+                cmd_args,
+                mount_output_dir=Path(config_inputs["output_dir"]),
+                mount_input_dir=Path(config_inputs["input_dir"]),
+                container_output = "output",
+                container_input = "input"
+            )
         except subprocess.CalledProcessError as e:
             print("Error running the ixa model:")
             print("Command:", " ".join(cmd_args))
@@ -169,9 +179,6 @@ class CovidModel(MRPModel):
         return outputs
 
 
-# 2. Define parameters for azure
-# 3. priors, particles to params, outputs to distance
-# 4. Run experiment
 
 config = {
     "exe_file": "./target/release/ixa-epi-covid",
@@ -185,6 +192,7 @@ config = {
     "use_env_synth_pop_file": True,
     "ixa_default_params_file": "./experiments/phase2/input/default_params.json",
     "output_dir": "output",
+    "input_dir": "input",
     "outputs_to_read": ["aggregated_deaths_report",
                         "current_hospitalizations_report",
                         "attack_rate_report"]
@@ -199,7 +207,7 @@ importation_inputs = {
 }
 with open(config['ixa_default_params_file'], "r") as f:
     ixa_defaults = json.load(f)
-ixa_defaults["epimodel.GlobalParams"]["synth_population_file"] = "output/people_test.csv"
+ixa_defaults["epimodel.GlobalParams"]["synth_population_file"] = "input/people_test.csv"
 ixa_defaults["epimodel.GlobalParams"]["imported_cases_timeseries"]["filename"] = "output/importation_test.csv"
 
 # THE FILES ARE READ FROM A BLOB STORAGE. PROBABLY. 
@@ -218,3 +226,6 @@ covid_model.simulate(model_test_inputs)
 # -[ ] Run an experiment in the cloud, without calibration.
 # -[ ] Run ABC-SMC in the cloud
 # -[ ] Tidy up this script
+# 2. Define parameters for azure
+# 3. priors, particles to params, outputs to distance
+# 4. Run experiment

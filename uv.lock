@@ -1038,6 +1038,7 @@ source = { editable = "." }
 dependencies = [
     { name = "calibrationtools", extra = ["azure"] },
     { name = "census" },
+    { name = "cfa-cloudops" },
     { name = "cfa-mrp" },
     { name = "dotenv" },
     { name = "jupyter" },
@@ -1059,6 +1060,7 @@ requires-dist = [
     { name = "calibrationtools", git = "https://github.com/CDCgov/cfa-calibration-tools.git?branch=feat%2Fcloud-runner-port" },
     { name = "calibrationtools", extras = ["azure"], git = "https://github.com/CDCgov/cfa-calibration-tools.git?branch=feat%2Fcloud-runner-port" },
     { name = "census", specifier = ">=0.8.25" },
+    { name = "cfa-cloudops", git = "https://github.com/CDCgov/cfa-cloudops.git" },
     { name = "cfa-mrp" },
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "jupyter", specifier = ">=1.1.1" },
