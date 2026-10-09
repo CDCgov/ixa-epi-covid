@@ -29,6 +29,7 @@ from typing import Any
 
 from importation import ImportationModel, get_linelist_data
 from mrp import MRPModel
+from cfa.cloudops import CloudClient
 
 
 # Steps for calibration
@@ -47,7 +48,7 @@ class CovidModel(MRPModel):
             container_input: str = "input",
     ) -> subprocess.CompletedProcess:
         docker_cmd = [
-            "docker", "run", "--rm",
+            "podman", "run", "--rm",
             "-v", f"{mount_output_dir.resolve()}:{container_mount}/{container_output}",
             "-v", f"{mount_input_dir.resolve()}:{container_mount}/{container_input}",
             "-w", container_mount,
@@ -195,7 +196,9 @@ config = {
     "input_dir": "input",
     "outputs_to_read": ["aggregated_deaths_report",
                         "current_hospitalizations_report",
-                        "attack_rate_report"]
+                        "attack_rate_report"],
+    "blob_container_input_name": "gce-test-input",
+    "blob_container_output_name": "gce-test-output",
 }
 
 importation_inputs = {
@@ -221,8 +224,44 @@ covid_model = CovidModel()
 covid_model.simulate(model_test_inputs)
 
 
+# Create a pool to run the calibration
+cc = CloudClient()
+cc.create_pool(
+    pool_name="gce_ixa_test_pool",
+    container_image_name="ixa-epi-covid:latest",
+    mounts=[
+        {"source": config['blob_container_input_name'], "target": "input"},
+        {"source": config["blob_container_output_name"], "target": "output"}
+    ],
+    autoscale=True,
+    max_autoscale_nodes=10,
+    cache_blobfuse=False,
+)
+# Create job
+cc.create_job(
+    job_name="test-ixa-epi-covid",
+    pool_name="gce_ixa_test_pool",
+    save_logs_to_blob=config["blob_container_output_name"],
+    logs_folder="logs",
+    mark_complete_after_tasks_run=True,
+    task_retries=1,
+)
+# Create tasks
+cc.add_task(
+    job_name="test-ixa-epi-covid",
+    command_line = "echo 'hello, world'"
+)
+# Gather outputs
+cc.monitor_job(
+    job_name="test-ixa-epi-covid",
+    timeout = 60,
+    download_task_output=True,
+)
+cc.delete_job(job_name="test-ixa-epi-covid")
+
+
 ## TODO:
-# -[ ] Shared input files should go into a blob container, given that people_test.csv is small, we can test with copying it to the container
+# -[x] Shared input files should go into a blob container, given that people_test.csv is small, we can test with copying it to the container
 # -[ ] Run an experiment in the cloud, without calibration.
 # -[ ] Run ABC-SMC in the cloud
 # -[ ] Tidy up this script

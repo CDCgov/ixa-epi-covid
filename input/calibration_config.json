@@ -1,0 +1,16 @@
+{
+  "exe_file": "./target/release/ixa-epi-covid",
+  "force_overwrite": true,
+  "ixa_default_params_file": "./experiments/phase2/input/default_params.json",
+  "output_dir": "output",
+  "input_dir": "input",
+  "outputs_to_read": ["aggregated_deaths_report",
+    "current_hospitalizations_report",
+    "attack_rate_report"],
+  "pool_name":"gce_ixa_calibration_test",
+  "blob_container_input_name": "gce-test-input",
+  "blob_container_output_name": "gce-test-output",
+  "repo_name": "ixa-epi-covid-test",
+  "tag": "latest",
+  "dockerfile": "Dockerfile"
+}
