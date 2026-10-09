@@ -28,7 +28,7 @@ def build_command_str_with_args(cmd_args: list[str]) -> list[str]:
     for c in cmd_args:
         cmd_str = (
             "sh -c 'set -eux; "
-            f"printf \"%s\\n\" \"hello, world\" > /{c}; "
+            f"printf \"%s\\n\" \"hello, world\" > /{c}'"
         )
         command_out.append(cmd_str)
     return command_out
