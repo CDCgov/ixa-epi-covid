@@ -71,7 +71,7 @@ def setup_blob_containers(
     print(client.list_blob_files(output_container))
 
 ## Setup-----------    
-os.load_dotenv()
+load_dotenv()
 cc = CloudClient()
 with open("input/calibration_config.json", "r") as file:
     config = json.load(file)
