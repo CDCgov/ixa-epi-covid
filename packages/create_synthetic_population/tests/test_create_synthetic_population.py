@@ -272,7 +272,10 @@ class TestSamplePopulation:
 
     def test_workers_get_workplaces(self, pop_df):
         workers = pop_df[pop_df["WRK"].astype(str) == "1"]
-        assert workers["workplace_id"].notna().all()
+
+        assert (
+            workers["workplace_id"].notna() | workers["school_id"].notna()
+        ).all()
 
     def test_students_get_schools(self, pop_df):
         students = pop_df[pop_df["SCH"].astype(str).isin(["2", "3"])]

@@ -307,10 +307,21 @@ def sample_population(
     synth_pop_df["workplace_id"] = pd.array(
         [pd.NA] * len(synth_pop_df), dtype="object"
     )
+
+    # Assign some workers as teachers to schools instead of workplaces
     if n_workers > 0:
-        synth_pop_df.loc[wrk_mask, "workplace_id"] = rng.choice(
-            workplace_ids, size=n_workers
+        teacher_fraction = 0.0256  # ~2.56% of workers are teachers in schools
+        n_teachers = max(1, int(n_workers * teacher_fraction))
+        worker_indices = np.where(wrk_mask)[0]
+        teacher_indices = rng.choice(
+            worker_indices, size=n_teachers, replace=False
         )
+        regular_worker_indices = np.setdiff1d(worker_indices, teacher_indices)
+
+        if len(regular_worker_indices) > 0:
+            synth_pop_df.loc[regular_worker_indices, "workplace_id"] = (
+                rng.choice(workplace_ids, size=len(regular_worker_indices))
+            )
 
     # Vectorized school assignment
     sch_mask = synth_pop_df["SCH"].astype(str).isin(["2", "3"])
@@ -321,6 +332,17 @@ def sample_population(
     if n_students > 0:
         synth_pop_df.loc[sch_mask, "school_id"] = rng.choice(
             school_ids, size=n_students
+        )
+
+    # Assign teachers to schools
+    if n_workers > 0:
+        teacher_indices = rng.choice(
+            worker_indices,
+            size=min(n_teachers, len(worker_indices)),
+            replace=False,
+        )
+        synth_pop_df.loc[teacher_indices, "school_id"] = rng.choice(
+            school_ids, size=len(teacher_indices)
         )
 
     elapsed = time.time() - start_time

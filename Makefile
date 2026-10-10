@@ -19,7 +19,7 @@ synthetic-population:
 
 # Run synthetic population generator tests
 test-syn-pop:
-	uv run pytest scripts/test_create_synthetic_population.py
+	uv run pytest packages/create_synthetic_population/tests/test_create_synthetic_population.py
 
 # Remove generated synthetic population CSVs. Optionally narrow with STATE and/or SIZE.
 clean-synthetic-population:
@@ -27,7 +27,7 @@ clean-synthetic-population:
 	rm -f input/synth_pop_region_$(CLEAN_STATE_PATTERN)_$(CLEAN_SIZE_PATTERN).csv
 
 input/synth_pop_people_%.csv:
-	uv run scripts/create_synthetic_population.py --state $(shell echo "$*" | sed 's/_.*//')  --size $(shell echo "$*" | sed 's/^[A-Z]*_//')
+	uv run packages/create_synthetic_population/src/create_synthetic_population/run.py --state $(shell echo "$*" | sed 's/_.*//')  --size $(shell echo "$*" | sed 's/^[A-Z]*_//')
 
 # Run the model with a synthetic population (e.g., make run SIZE=1_000_000)
 # Generates the population file if it doesn't exist.
