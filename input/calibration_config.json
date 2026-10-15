@@ -1,5 +1,6 @@
 {
   "exe_file": "./target/release/ixa-epi-covid",
+  "experiment_name": "postcalibration_sweep",
   "force_overwrite": true,
   "ixa_default_params_file": "./experiments/phase2/input/default_params.json",
   "output_dir": "output",
@@ -12,5 +13,8 @@
   "blob_container_output_name": "gce-test-output",
   "repo_name": "ixa-epi-covid-test",
   "tag": "latest",
-  "dockerfile": "Dockerfile"
+  "dockerfile": "Dockerfile",
+  "state": "Indiana",
+  "year": 2020,
+  "symptomatic_reporting_prob": 0.7
 }

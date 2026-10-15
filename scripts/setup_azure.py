@@ -66,7 +66,11 @@ def setup_blob_containers(
 ):
     client.create_blob_container(input_container)
     client.create_blob_container(output_container)
-    client.upload_files(files_to_send, container_name=blob_container_name)
+    client.upload_files(
+        files=files_to_send_to_input,
+        container_name=input_container,
+        local_root_dir="input",
+    )
     print(client.list_blob_files(input_container))
     print(client.list_blob_files(output_container))
 
@@ -75,7 +79,7 @@ load_dotenv()
 cc = CloudClient()
 with open("input/calibration_config.json", "r") as file:
     config = json.load(file)
-files_to_send = ["./input/in.csv", "input/people_test.csv"]
+files_to_send = ["in.csv", "people_test.csv", "importation_test.csv"]
 
 setup_blob_containers(
     client= cc,

@@ -21,6 +21,7 @@ fn main() {
             let synth_population_override = custom.and_then(|c| c.synth_population);
 
             let &Params { seed, max_time, .. } = context.get_params();
+            println!("Parameters read: {max_time}");
             initialize_model(context, seed, max_time, synth_population_override)
                 .expect("Model initialization failed");
 

@@ -30,7 +30,30 @@ from typing import Any
 from importation import ImportationModel, get_linelist_data
 from mrp import MRPModel
 from cfa.cloudops import CloudClient
+import copy
 
+#========================#
+# functions ------------
+#========================#
+def fill_in_tasks(
+        command_vec:list[str],
+        mounts: list[dict[str, Any]],
+        container_name: str
+) -> list[dict[str, Any]]:
+    tasks_result:list[dict[str, Any]] = []
+    for c_str in command_vec:
+        tmp_cmd_dict = {
+            "command_line": c_str,
+            "mounts": mounts, 
+            "full_container_name": container_name,
+        }
+        tasks_result.append(copy.deepcopy(tmp_cmd_dict))
+    return tasks_result
+
+
+#========================#
+# Classes-------------
+#========================#
 
 # Steps for calibration
 # 1. Define MRP model
@@ -43,7 +66,7 @@ class CovidModel(MRPModel):
             cmd_args: list[str],
             mount_output_dir: Path,
             mount_input_dir: Path,
-            container_mount: str = "/app",
+            container_mount: str = "/",
             container_output: str = "output",
             container_input: str = "input",
     ) -> subprocess.CompletedProcess:
@@ -62,6 +85,26 @@ class CovidModel(MRPModel):
             print("STDOUT:", e.stdout.decode())
             print("STDERR:", e.stderr.decode())
             raise
+
+    @staticmethod
+    def build_docker_cmd_str(
+            cmd_args: list[str],
+            mount_output_dir: Path,
+            mount_input_dir: Path,
+            container_mount: str = "/app",
+            container_output: str = "output",
+            container_input: str = "input",
+            exec_path: str = "./target/release/ixa-epi-covid",
+            repo_name: str = "ixa-epi-covid-test",
+            tag: str = "latest",
+    ) -> str:
+        docker_cmd = [
+            exec_path,
+            *cmd_args,
+        ]
+        docker_str = " ".join(docker_cmd)
+        #docker_cmd_str = f"sh -c 'set -eux; {docker_str}'"
+        return docker_str
 
     @staticmethod
     def simulate_imports(
@@ -113,16 +156,15 @@ class CovidModel(MRPModel):
         )
 
         # Store timeseries at appropriate location accessible to ixa
-        timeseries_data.write_csv(importation_filename["filename"])
+        timeseries_data.write_csv(ixa_inputs["epimodel.GlobalParams"]["imported_cases_timeseries"]["filename"])
 
     @staticmethod
-    def simulate(model_inputs: dict[str, Any]) -> pl.DataFrame:
-        ixa_inputs = model_inputs["ixa_inputs"]
+    def simulate(model_inputs: dict[str, Any]) -> str:
+        ixa_inputs = copy.deepcopy(x=model_inputs["ixa_inputs"])
         config_inputs = model_inputs["config_inputs"]
         importation_inputs = model_inputs["importation_inputs"]
-        docker_prefix_dir = "/app"
         # Write command to call the ixa model binaries
-        input_file_path = Path(config_inputs["output_dir"], "input.json")
+        input_file_path = Path(config_inputs["input_dir"], "input_1.json")
         ixa_inputs["epimodel.GlobalParams"]["seed"] = int(
             ixa_inputs["epimodel.GlobalParams"]["seed"]
         )
@@ -130,76 +172,88 @@ class CovidModel(MRPModel):
         CovidModel.simulate_imports(ixa_inputs, importation_inputs)
         pop_file = ixa_inputs["epimodel.GlobalParams"]["synth_population_file"]
         imports_file = ixa_inputs["epimodel.GlobalParams"]["imported_cases_timeseries"]["filename"]
-        ixa_inputs["epimodel.GlobalParams"]["synth_population_file"] = f"{docker_prefix_dir}/{pop_file}"
-        ixa_inputs["epimodel.GlobalParams"]["imported_cases_timeseries"]["filename"] = f"{docker_prefix_dir}/{imports_file}"
+        input_mount = f"/{config_inputs['input_dir']}"
+        ixa_inputs["epimodel.GlobalParams"]["synth_population_file"] = (
+            f"{input_mount}/{Path(pop_file).name}"
+        )
+        ixa_inputs["epimodel.GlobalParams"]["imported_cases_timeseries"]["filename"] = (
+            f"{input_mount}/{Path(imports_file).name}"
+        )
         
         with open(input_file_path, "w") as f:
             json.dump(ixa_inputs, f, indent=4)
 
         cmd_args = [
-            "--config", str(input_file_path),
-            "--output", config_inputs["output_dir"],
+            "--config", f"/{config_inputs['input_dir']}/{input_file_path.name}",
+            "--output", f"/{config_inputs['output_dir']}",
             "--force-overwrite",
-            "--no-stats",
+            ##"--no-stats",
         ]
 
-
-        try:
-            CovidModel.run_in_docker(
+        docker_str = CovidModel.build_docker_cmd_str(
                 cmd_args,
-                mount_output_dir=Path(config_inputs["output_dir"]),
-                mount_input_dir=Path(config_inputs["input_dir"]),
+                mount_output_dir=config_inputs["output_dir"],
+                mount_input_dir=config_inputs["input_dir"],
                 container_output = "output",
                 container_input = "input"
             )
-        except subprocess.CalledProcessError as e:
-            print("Error running the ixa model:")
-            print("Command:", " ".join(cmd_args))
-            print("Return code:", e.returncode)
-            print("Standard error:", e.stderr)
-            raise e
+        return docker_str
+        # try:
+        #     CovidModel.run_in_docker(
+        #         cmd_args,
+        #         mount_output_dir=Path(config_inputs["output_dir"]),
+        #         mount_input_dir=Path(config_inputs["input_dir"]),
+        #         container_output = "output",
+        #         container_input = "input"
+        #     )
+        # except subprocess.CalledProcessError as e:
+        #     print("Error running the ixa model:")
+        #     print("Command:", " ".join(cmd_args))
+        #     print("Return code:", e.returncode)
+        #     print("Standard error:", e.stderr)
+        #     raise e
 
         # Read the incidence report from the location and return as a DataFrame
-        outputs = {}
-        for output in config_inputs["outputs_to_read"]:
-            fp = ixa_inputs["epimodel.GlobalParams"][output]["filename"]
-            if Path(config_inputs["output_dir"], fp).exists():
-                outputs.update(
-                    {
-                        output: pl.read_csv(
-                            Path(config_inputs["output_dir"], fp)
-                        )
-                    }
-                )
-            elif Path(fp).exists():
-                outputs.update({output: pl.read_csv(Path(fp))})
-            else:
-                raise FileNotFoundError(
-                    f"Expected output file {fp} not found. Looked in {config_inputs['output_dir']}"
-                )
-        return outputs
+        #outputs = {}
+        #for output in config_inputs["outputs_to_read"]:
+        #     fp = ixa_inputs["epimodel.GlobalParams"][output]["filename"]
+        #     if Path(config_inputs["output_dir"], fp).exists():
+        #         outputs.update(
+        #             {
+        #                 output: pl.read_csv(
+        #                     Path(config_inputs["output_dir"], fp)
+        #                 )
+        #             }
+        #         )
+        #     elif Path(fp).exists():
+        #         outputs.update({output: pl.read_csv(Path(fp))})
+        #     else:
+        #         raise FileNotFoundError(
+        #             f"Expected output file {fp} not found. Looked in {config_inputs['output_dir']}"
+        #         )
+        # return outputs
 
 
+#========================#
+# Setup-------------
+#========================#
+_ = load_dotenv()
+with open("input/calibration_config.json", "r") as file:
+    config = json.load(file)
+    
+full_image_container_name = f"{
+os.getenv('AZURE_CONTAINER_REGISTRY_ACCOUNT')
+}.azurecr.io/{config["repo_name"]}:{config["tag"]}"
+pool_input_dir = "input_gce"
+pool_output_dir = "output_gce"
+test_job_name = "ixa-epi-covid-job-test"
 
-config = {
-    "exe_file": "./target/release/ixa-epi-covid",
-    "force_overwrite": True,
-    "state": "Indiana",
-    "year": 2020,
-    "symptomatic_reporting_prob": 0.5,
-    "priors_file": "./experiments/phase2/input/priors.json",
-    "generation_particle_count": 3,
-    "tolerance_values": [10000000.0],
-    "use_env_synth_pop_file": True,
-    "ixa_default_params_file": "./experiments/phase2/input/default_params.json",
-    "output_dir": "output",
-    "input_dir": "input",
-    "outputs_to_read": ["aggregated_deaths_report",
-                        "current_hospitalizations_report",
-                        "attack_rate_report"],
-    "blob_container_input_name": "gce-test-input",
-    "blob_container_output_name": "gce-test-output",
-}
+
+with open(config['ixa_default_params_file'], "r") as f:
+    ixa_defaults = json.load(f)
+
+ixa_defaults["epimodel.GlobalParams"]["synth_population_file"] = "input/people_test.csv"
+ixa_defaults["epimodel.GlobalParams"]["imported_cases_timeseries"]["filename"] = "input/importation_test.csv"
 
 importation_inputs = {
     "state": config["state"],
@@ -208,11 +262,6 @@ importation_inputs = {
         "symptomatic_reporting_prob"
     ],
 }
-with open(config['ixa_default_params_file'], "r") as f:
-    ixa_defaults = json.load(f)
-ixa_defaults["epimodel.GlobalParams"]["synth_population_file"] = "input/people_test.csv"
-ixa_defaults["epimodel.GlobalParams"]["imported_cases_timeseries"]["filename"] = "output/importation_test.csv"
-
 # THE FILES ARE READ FROM A BLOB STORAGE. PROBABLY. 
 model_test_inputs = {
     "ixa_inputs": ixa_defaults,
@@ -220,44 +269,80 @@ model_test_inputs = {
     "importation_inputs": importation_inputs
 }
 
+task_mounts = [
+    {
+        "source": pool_output_dir,
+        "target": config["output_dir"]
+    },
+    {
+        "source": pool_input_dir,
+        "target": config["input_dir"]
+    }]
+
+
+#==========================#
+# Submit jobs---------
+#==========================#
 covid_model = CovidModel()
-covid_model.simulate(model_test_inputs)
+task_cmd_str = covid_model.simulate(model_test_inputs)
 
-
-# Create a pool to run the calibration
 cc = CloudClient()
 cc.create_pool(
-    pool_name="gce_ixa_test_pool",
-    container_image_name="ixa-epi-covid:latest",
+    pool_name=config["pool_name"],
+    container_image_name=full_image_container_name,
     mounts=[
-        {"source": config['blob_container_input_name'], "target": "input"},
-        {"source": config["blob_container_output_name"], "target": "output"}
+        {"source": config['blob_container_input_name'], "target": pool_input_dir},
+        {"source": config["blob_container_output_name"], "target": pool_output_dir}
     ],
     autoscale=True,
     max_autoscale_nodes=10,
     cache_blobfuse=False,
 )
+
+
+cc.upload_files(
+    files=["input_1.json"],
+    container_name=config["blob_container_input_name"],
+    local_root_dir=config["input_dir"],
+)
+                
 # Create job
 cc.create_job(
-    job_name="test-ixa-epi-covid",
-    pool_name="gce_ixa_test_pool",
+    job_name=test_job_name,
+    pool_name=config["pool_name"],
     save_logs_to_blob=config["blob_container_output_name"],
     logs_folder="logs",
     mark_complete_after_tasks_run=True,
     task_retries=1,
 )
-# Create tasks
-cc.add_task(
-    job_name="test-ixa-epi-covid",
-    command_line = "echo 'hello, world'"
+
+list_cmd = (
+    "sh -c 'set -eux; "
+    f"ls /{config["input_dir"]}'"
 )
-# Gather outputs
-cc.monitor_job(
-    job_name="test-ixa-epi-covid",
+                
+task_list = fill_in_tasks(
+    command_vec=[list_cmd, task_cmd_str],
+    mounts=task_mounts,
+    container_name=full_image_container_name)
+
+task_out = cc.add_task_collection(
+    tasks = task_list,
+    job_name=test_job_name
+)
+
+
+# Monitor job progress
+a = cc.monitor_job(
+    job_name=test_job_name,
     timeout = 60,
     download_task_output=True,
 )
-cc.delete_job(job_name="test-ixa-epi-covid")
+
+print(task_out)
+
+# Delete job
+cc.delete_job(job_name=test_job_name)
 
 
 ## TODO:
