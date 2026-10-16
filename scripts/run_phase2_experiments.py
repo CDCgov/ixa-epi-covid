@@ -126,7 +126,7 @@ _ = cc.blob_service_client.get_blob_client(
 
 
 cc.upload_files(
-    files=["input_1.json"],
+    files=["./input/calibration_config.json", "input_1.json"],
     container_name=config["blob_container_input_name"],
     local_root_dir=config["input_dir"],
 )

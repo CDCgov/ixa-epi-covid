@@ -128,9 +128,14 @@ class CovidModel(MRPModel):
     def simulate(model_inputs: dict[str, Any]) -> str:
         ixa_inputs = copy.deepcopy(x=model_inputs["ixa_inputs"])
         config_inputs = model_inputs["config_inputs"]
+        sim_id = config_inputs["sim_id"]
+        experiment_name = config_inputs["experiment_name"]
         importation_inputs = model_inputs["importation_inputs"]
+        
         # Write command to call the ixa model binaries
-        input_file_path = Path(config_inputs["input_dir"], "input_1.json")
+        input_file_path_dir = Path(experiment_name, f"{sim_id}")
+        input_file_path_dir.mkdir()
+        input_file_path = input_file_path_dir / Path(f"input_{sim_id}.json")
         ixa_inputs["epimodel.GlobalParams"]["seed"] = int(
             ixa_inputs["epimodel.GlobalParams"]["seed"]
         )
@@ -166,9 +171,35 @@ class CovidModel(MRPModel):
         result = subprocess.run(docker_str, capture_output=True, check=True)
         return docker_str
 
-def main():
+def main(config_file):
+    with open(config_file, "r") as file:
+        config = json.load(file)
+
+    experiment_name = config["experiment_name"]
+    config["sim_id"] = 1
+    pool_input_dir = "input_gce"
+    pool_output_dir = "output_gce"
+    
+    with open(config['ixa_default_params_file'], "r") as f:
+        ixa_defaults = json.load(f)
+
+    importation_inputs = {
+        "state": config["state"],
+        "year": config["year"],
+        "symptomatic_reporting_prob": config[
+            "symptomatic_reporting_prob"
+        ],
+    }
+
+    model_test_inputs = {
+        "ixa_inputs": ixa_defaults,
+        "config_inputs": config,
+        "importation_inputs": importation_inputs
+    }
+
     covid_model = CovidModel()
     task_cmd_str = covid_model.simulate(model_test_inputs)
+    print(task_cmd_str)
 
 if __name__ == "__main__":
-    main()
+    main("/input/calibration_config.json")
