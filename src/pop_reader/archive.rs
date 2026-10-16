@@ -206,14 +206,16 @@ impl LineIterator {
     /// data path is a zip archive, `file_path` is the name of the file inside the archive.
     fn from_path(file_path: PathBuf) -> Result<Self, PopulationReaderError> {
         let path = get_data_path();
-
+        println!("Opening file {:?} relative to data path {:?}", file_path, path);
         if path
             .extension()
             .and_then(|ext| ext.to_str())
             .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"))
-        {
+        {   
+            println!("went down the zip path");
             Ok(Self::Zip(ZipLineSource::from_path(path, file_path)?))
         } else {
+            println!("opening file {:?}", path.join(file_path.clone()));
             let file = File::open(path.join(file_path)).map_err(PopulationReaderError::Io)?;
             Ok(Self::File(FileLineSource::from_file(file)))
         }

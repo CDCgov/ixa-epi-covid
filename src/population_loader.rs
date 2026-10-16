@@ -6,12 +6,15 @@ use std::path::PathBuf;
 
 use crate::error::ModelError;
 use crate::parameters::ContextParametersExt;
+use crate::pop_reader::archive::set_data_path;
 use crate::pop_reader::{
     PersonRecord,
     archive::{PersonRecordIterator},
 };
 use crate::setting_code::SettingCode;
 use crate::settings::{ContextSettingExt, SETTING_COUNT, SettingCategory};
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 
 define_entity!(Person);
 
@@ -113,7 +116,26 @@ fn load_synth_population(
     synth_input_file: PathBuf,
 ) -> Result<(), ModelError> {
     // set_data_path(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
+    set_data_path(PathBuf::new());
     println!("Loading synthetic population from file: {:?}", synth_input_file);
+    {
+
+        let file = File::open(&synth_input_file).map_err(|e| {
+            ModelError::ModelError(format!(
+                "failed to open {:?}: {}",
+                synth_input_file, e
+            ))
+        })?;
+        for line in BufReader::new(file).lines() {
+            let line = line.map_err(|e| {
+                ModelError::ModelError(format!(
+                    "failed to read {:?}: {}",
+                    synth_input_file, e
+                ))
+            })?;
+            println!("{}", line);
+        }
+    }
     let records = PersonRecordIterator::from_path(synth_input_file)?;
     for record in records {
         create_person_from_record(context, record?)?;
