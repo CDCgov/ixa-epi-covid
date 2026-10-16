@@ -49,6 +49,12 @@ You can also override the population file directly via CLI with `--synth-populat
 cargo run --release -- -c input/input.json -o output --synth-population path/to/population.csv
 ```
 
+Relative population paths (from `--synth-population` or `synth_population_file` in the config) are resolved against the data path, which defaults to the current working directory. Use `--data-path` to point at a different directory or a zip archive of the dataset, for example when the binary runs outside the repository:
+
+```bash
+cargo run --release -- -c input/input.json -o output --data-path /mnt/data --synth-population people.csv
+```
+
 ### Profiling
 
 `make profile` runs the model under [samply](https://github.com/mstange/samply), which opens the Firefox Profiler with a call tree and flame graph. Press `Ctrl+C` to stop early — samply will still capture the profile. You can also `Ctrl+C` any `make run-*` target to kill the simulation early.
