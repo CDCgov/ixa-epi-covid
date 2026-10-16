@@ -106,9 +106,9 @@ const READER_CAPACITY: usize = 256 * 1024;
 /// The number of fields in each record: age, homeId, schoolId, workplaceId.
 const EXPECTED_FIELD_COUNT: usize = 4;
 
-/// Default data path. By default this points at the root of a local unzipped dataset.
+/// Default data path, pointing at the root of a local unzipped dataset. The CLI overrides this
+/// with `--data-path` (or the working directory) before loading a population.
 const DEFAULT_DATA_PATH: &str = "../CDC/data/ASPR_Synthetic_Population";
-// ToDo: Get the data path from an environment variable.
 static DATA_PATH: Lazy<RwLock<PathBuf>> =
     Lazy::new(|| RwLock::new(PathBuf::from(DEFAULT_DATA_PATH)));
 
