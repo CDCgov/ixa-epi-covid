@@ -9,8 +9,6 @@ use crate::parameters::ContextParametersExt;
 use crate::pop_reader::{PersonRecord, archive::PersonRecordIterator};
 use crate::setting_code::SettingCode;
 use crate::settings::{ContextSettingExt, SETTING_COUNT, SettingCategory};
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 
 define_entity!(Person);
 

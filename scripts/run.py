@@ -3,21 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import os
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
-import os
-from pathlib import Path
-
 import numpy as np
-from numpy.random import default_rng
-from mrp import Environment, MRPModel
-
-from calibrationtools.azure_batch_executor import AzureBatchExecutor
 from calibrationtools import (
     CalibrationScenario,
     CalibrationStudy,
 )
+from calibrationtools.azure_batch_executor import AzureBatchExecutor
 from calibrationtools.perturbation_kernel import (
     IndependentKernels,
     NormalKernel,
@@ -26,7 +22,8 @@ from calibrationtools.perturbation_kernel import (
 from calibrationtools.sampler import ABCSampler
 from calibrationtools.variance_adapter import AdaptIdentityVariance
 from dotenv import load_dotenv
-import os
+from mrp import Environment, MRPModel
+from numpy.random import default_rng
 
 # import os
 # from pathlib import Path
@@ -52,6 +49,7 @@ import os
 #     repr(os.getenv("AZURE_TENANT_ID"))
 # )
 # print("authority:", repr(os.getenv("AZURE_AUTHORITY_HOST")))
+
 
 class Binom_BP_Model(MRPModel):
     def run(self):
@@ -307,6 +305,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     return 0
 
+
 if __name__ == "__main__":
     raise SystemExit(main())
-

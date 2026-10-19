@@ -1,15 +1,17 @@
 import argparse
-from datetime import date
 import json
 import os
 import pickle
 import shutil
 import timeit
 import warnings
+from datetime import date
 from pathlib import Path
 
 import create_synthetic_population.run as create_synthetic_population
+import numpy as np
 import polars as pl
+import requests
 from calibrationtools import (
     ABCSampler,
     AdaptMultivariateNormalVariance,
@@ -20,22 +22,23 @@ from calibrationtools import (
 )
 from dotenv import load_dotenv
 from particle_reader import ParticleReader
-import requests
 from requests.exceptions import HTTPError
+from scipy.stats import poisson
 from us import states
-import numpy as np
 
 from ixa_epi_covid import (
     CovidModel,
     CovidModelConfig,
     update_epimodel_output_dir,
 )
-from scipy.stats import poisson
 
 input_dir = Path("input")
 output_dir = Path("output")
 
-HOSPITALIZATION_API_URL = "https://healthdata.gov/api/v3/views/g62h-syeh/query.json"
+HOSPITALIZATION_API_URL = (
+    "https://healthdata.gov/api/v3/views/g62h-syeh/query.json"
+)
+
 
 def apply_dtypes(df, dtypes):
     """
@@ -48,31 +51,29 @@ def apply_dtypes(df, dtypes):
     ]
     return df.with_columns(casts) if casts else df
 
+
 def load_hospitalization_data():
     """
     Load hospitalization data from the CDC API.
     """
-    params = {
-            "query": "SELECT * WHERE `state` = 'IN'"
-        }
+    params = {"query": "SELECT * WHERE `state` = 'IN'"}
     response = requests.get(HOSPITALIZATION_API_URL, params=params, timeout=60)
     response.raise_for_status()
     df = pl.DataFrame(response.json())
     HOSPITALIZATION_DTYPES = {
-    "state": pl.String,
-    "date": pl.String,
+        "state": pl.String,
+        "date": pl.String,
         **{
             column: pl.Float64
             for column in df.columns
             if column not in {"state", "date"}
         },
     }
-    
+
     df = apply_dtypes(df, HOSPITALIZATION_DTYPES)
-    df = df.with_columns(
-            pl.col("date").str.to_date("%Y-%m-%dT%H:%M:%S%.3f")
-        )
+    df = df.with_columns(pl.col("date").str.to_date("%Y-%m-%dT%H:%M:%S%.3f"))
     return df
+
 
 # -----------------------
 # Hospitalization data
@@ -85,7 +86,9 @@ hosp_data = (
         .dt.total_days()
         .cast(pl.Float64)
         .alias("t_upper"),
-        pl.col("inpatient_beds_used_covid").cast(pl.Float64).alias("inpatient_beds_used_covid"),
+        pl.col("inpatient_beds_used_covid")
+        .cast(pl.Float64)
+        .alias("inpatient_beds_used_covid"),
     )
     .sort("t_upper")
 )
@@ -99,16 +102,19 @@ death_data = (
     pl.read_csv(
         input_dir / "COVID_Deaths_Data.csv",
         try_parse_dates=True,
-        infer_schema=False
+        infer_schema=False,
     )
     .filter(pl.col("state") == "IN")
     .select(["end_date", "new_deaths"])
     .with_columns(
-        (pl.col("end_date").str.strptime(pl.Date, "%m/%d/%Y") - pl.lit(date(2020, 1, 1)))
+        (
+            pl.col("end_date").str.strptime(pl.Date, "%m/%d/%Y")
+            - pl.lit(date(2020, 1, 1))
+        )
         .dt.total_days()
         .cast(pl.Float64)
         .alias("t_upper"),
-        pl.col("new_deaths").cast(pl.Float64).alias("new_deaths")
+        pl.col("new_deaths").cast(pl.Float64).alias("new_deaths"),
     )
     .sort("t_upper")
 )
@@ -126,7 +132,13 @@ attack_rate_data = pl.DataFrame(
         "upper": [0.043, 0.05, 0.024],
         "data_type": ["Age0To39AR", "Age40To59AR", "Age60PlusAR"],
     },
-    schema={"t_upper": pl.Float64, "count": pl.Float64, "lower": pl.Float64, "upper": pl.Float64, "data_type": pl.String},
+    schema={
+        "t_upper": pl.Float64,
+        "count": pl.Float64,
+        "lower": pl.Float64,
+        "upper": pl.Float64,
+        "data_type": pl.String,
+    },
 )
 
 target_data = pl.concat(
@@ -135,8 +147,12 @@ target_data = pl.concat(
             pl.col("t_upper").cast(pl.Float64),
             pl.col("count").cast(pl.Float64),
             pl.col("data_type").cast(pl.String),
-            pl.col("lower").cast(pl.Float64) if "lower" in df.columns else pl.lit(None).cast(pl.Float64).alias("lower"),
-            pl.col("upper").cast(pl.Float64) if "upper" in df.columns else pl.lit(None).cast(pl.Float64).alias("upper"),
+            pl.col("lower").cast(pl.Float64)
+            if "lower" in df.columns
+            else pl.lit(None).cast(pl.Float64).alias("lower"),
+            pl.col("upper").cast(pl.Float64)
+            if "upper" in df.columns
+            else pl.lit(None).cast(pl.Float64).alias("upper"),
         )
         for df in (hosp_data, death_data, attack_rate_data)
     ],
@@ -147,9 +163,7 @@ target_data = pl.concat(
 TARGET_DATA = target_data
 
 
-def get_synth_pop_file(
-    config: CovidModelConfig
-) -> str:
+def get_synth_pop_file(config: CovidModelConfig) -> str:
     """
     Obtain the file name of the synthetic population to be used during the calibration routine
     Create the file if it does not exist or throw an error if the file cannot be created
@@ -214,7 +228,11 @@ def main(
     # Generate MRP defaults ------------------------------------
     mrp_defaults = config.get_mrp_defaults_for_output(
         output_dir,
-        outputs_to_read=["aggregated_deaths_report", "current_hospitalizations_report", "attack_rate_report"],
+        outputs_to_read=[
+            "aggregated_deaths_report",
+            "current_hospitalizations_report",
+            "attack_rate_report",
+        ],
     )
     # Make the output directory -----------------------------------------------------------------
     # Use the default output directory in config inputs as the base output directory for all outputs
@@ -296,15 +314,13 @@ def main(
         Returns:
             float: The calculated distance.
         """
+
         def poisson_lhood(model, data):
             return -poisson.logpmf(data, model + 1e-6)
-        deaths = (
-            model_output["aggregated_deaths_report"]
-        )
+
+        deaths = model_output["aggregated_deaths_report"]
         print(model_output)
-        hosp = (
-            model_output["current_hospitalizations_report"]
-        )
+        hosp = model_output["current_hospitalizations_report"]
         ar_039 = (
             model_output["attack_rate_report"]
             .filter(pl.col("age_group") == "Age0To39")
@@ -321,10 +337,16 @@ def main(
             .filter(pl.col("t_upper") == 120)
         )
         target_deaths = target_data.filter(pl.col("data_type") == "deaths")
-        target_hosp = target_data.filter(pl.col("data_type") == "hospitalizations")
+        target_hosp = target_data.filter(
+            pl.col("data_type") == "hospitalizations"
+        )
         target_ar_039 = target_data.filter(pl.col("data_type") == "Age0To39AR")
-        target_ar_4059 = target_data.filter(pl.col("data_type") == "Age40To59AR")
-        target_ar_60plus = target_data.filter(pl.col("data_type") == "Age60PlusAR")
+        target_ar_4059 = target_data.filter(
+            pl.col("data_type") == "Age40To59AR"
+        )
+        target_ar_60plus = target_data.filter(
+            pl.col("data_type") == "Age60PlusAR"
+        )
 
         joint_deaths = (
             deaths.select(pl.col(["t_upper", "deaths"]))
@@ -334,14 +356,14 @@ def main(
                 how="right",
             )
             .with_columns(pl.col("deaths").fill_null(strategy="zero"))
-        .with_columns(
-            pl.struct(["deaths", "count"])
-            .map_elements(
-                lambda x: poisson_lhood(x["deaths"], x["count"]),
-                return_dtype=pl.Float64,
+            .with_columns(
+                pl.struct(["deaths", "count"])
+                .map_elements(
+                    lambda x: poisson_lhood(x["deaths"], x["count"]),
+                    return_dtype=pl.Float64,
+                )
+                .alias("negloglikelihood")
             )
-            .alias("negloglikelihood")
-        )
         )
 
         joint_hosp = (
@@ -351,27 +373,34 @@ def main(
                 on="t_upper",
                 how="right",
             )
-            .with_columns(pl.col("current_hospitalizations").fill_null(strategy="zero"))
-        .with_columns(
-            pl.struct(["current_hospitalizations", "count"])
-            .map_elements(
-                lambda x: poisson_lhood(x["current_hospitalizations"], x["count"]),
-                return_dtype=pl.Float64,
+            .with_columns(
+                pl.col("current_hospitalizations").fill_null(strategy="zero")
             )
-            .alias("negloglikelihood")
+            .with_columns(
+                pl.struct(["current_hospitalizations", "count"])
+                .map_elements(
+                    lambda x: poisson_lhood(
+                        x["current_hospitalizations"], x["count"]
+                    ),
+                    return_dtype=pl.Float64,
+                )
+                .alias("negloglikelihood")
+            )
         )
-        )
-        def ar_difference(model_ar: pl.DataFrame, target_ar: pl.DataFrame) -> float:
+
+        def ar_difference(
+            model_ar: pl.DataFrame, target_ar: pl.DataFrame
+        ) -> float:
             model_value = (
-            model_ar.select(pl.col("attack_rate")).item()
-            if model_ar.height > 0
-            else 0.0
+                model_ar.select(pl.col("attack_rate")).item()
+                if model_ar.height > 0
+                else 0.0
             )
             target_lower = target_ar.select(pl.col("lower")).item()
             target_upper = target_ar.select(pl.col("upper")).item()
             sigma = (target_upper - target_lower) / 3.92
             target_value = target_ar.select(pl.col("count")).item()
-            return float(((model_value - target_value) ** 2)/(2 * sigma ** 2))
+            return float(((model_value - target_value) ** 2) / (2 * sigma**2))
 
         ar_diff_039 = ar_difference(ar_039, target_ar_039)
         ar_diff_4059 = ar_difference(ar_4059, target_ar_4059)
@@ -380,10 +409,10 @@ def main(
 
         deaths_distance = joint_deaths["negloglikelihood"].mean()
         hosp_distance = joint_hosp["negloglikelihood"].mean()
-        print(f"Deaths distance: {deaths_distance}, Hospitalizations distance: {hosp_distance}, Attack rate distance: {ar_distance}")
+        print(
+            f"Deaths distance: {deaths_distance}, Hospitalizations distance: {hosp_distance}, Attack rate distance: {ar_distance}"
+        )
         return float(deaths_distance + hosp_distance + ar_distance)
-
-        
 
     # Initialize the model calibration routine -------------------------------------------------------
 
@@ -462,8 +491,8 @@ parser.add_argument(
     default=2,
     help="The maximum number of worker processes to use for parallel execution.",
 )
-	# uv run cargo build -r
-	# uv run python ./scripts/phase_2_calibration.py -c ./experiments/phase2/input/prod-smc-config.yaml -o ./experiments/phase2/calibration/test --max-workers 2
+# uv run cargo build -r
+# uv run python ./scripts/phase_2_calibration.py -c ./experiments/phase2/input/prod-smc-config.yaml -o ./experiments/phase2/calibration/test --max-workers 2
 
 
 if __name__ == "__main__":

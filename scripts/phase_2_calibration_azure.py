@@ -1,15 +1,16 @@
 import argparse
-from datetime import date
 import json
 import os
 import pickle
 import shutil
 import timeit
 import warnings
+from datetime import date
 from pathlib import Path
-from calibrationtools.azure_batch_executor import AzureBatchExecutor
 
+import numpy as np
 import polars as pl
+import requests
 from calibrationtools import (
     ABCSampler,
     AdaptMultivariateNormalVariance,
@@ -18,25 +19,26 @@ from calibrationtools import (
     Particle,
     SeedKernel,
 )
+from calibrationtools.azure_batch_executor import AzureBatchExecutor
 from dotenv import load_dotenv
-import requests
-from requests.exceptions import HTTPError
-from us import states
-import numpy as np
 from particle_reader import ParticleReader
+from requests.exceptions import HTTPError
+from scipy.stats import poisson
+from us import states
 
 from ixa_epi_covid import (
     CovidModel,
     CovidModelConfig,
     update_epimodel_output_dir,
 )
-from scipy.stats import poisson
-
 
 input_dir = Path("input")
 output_dir = Path("output")
 
-HOSPITALIZATION_API_URL = "https://healthdata.gov/api/v3/views/g62h-syeh/query.json"
+HOSPITALIZATION_API_URL = (
+    "https://healthdata.gov/api/v3/views/g62h-syeh/query.json"
+)
+
 
 def apply_dtypes(df, dtypes):
     """
@@ -49,31 +51,29 @@ def apply_dtypes(df, dtypes):
     ]
     return df.with_columns(casts) if casts else df
 
+
 def load_hospitalization_data():
     """
     Load hospitalization data from the CDC API.
     """
-    params = {
-            "query": "SELECT * WHERE `state` = 'IN'"
-        }
+    params = {"query": "SELECT * WHERE `state` = 'IN'"}
     response = requests.get(HOSPITALIZATION_API_URL, params=params, timeout=60)
     response.raise_for_status()
     df = pl.DataFrame(response.json())
     HOSPITALIZATION_DTYPES = {
-    "state": pl.String,
-    "date": pl.String,
+        "state": pl.String,
+        "date": pl.String,
         **{
             column: pl.Float64
             for column in df.columns
             if column not in {"state", "date"}
         },
     }
-    
+
     df = apply_dtypes(df, HOSPITALIZATION_DTYPES)
-    df = df.with_columns(
-            pl.col("date").str.to_date("%Y-%m-%dT%H:%M:%S%.3f")
-        )
+    df = df.with_columns(pl.col("date").str.to_date("%Y-%m-%dT%H:%M:%S%.3f"))
     return df
+
 
 # -----------------------
 # Hospitalization data
@@ -86,7 +86,9 @@ hosp_data = (
         .dt.total_days()
         .cast(pl.Float64)
         .alias("t_upper"),
-        pl.col("inpatient_beds_used_covid").cast(pl.Float64).alias("inpatient_beds_used_covid"),
+        pl.col("inpatient_beds_used_covid")
+        .cast(pl.Float64)
+        .alias("inpatient_beds_used_covid"),
     )
     .sort("t_upper")
 )
@@ -100,16 +102,19 @@ death_data = (
     pl.read_csv(
         input_dir / "COVID_Deaths_Data.csv",
         try_parse_dates=True,
-        infer_schema=False
+        infer_schema=False,
     )
     .filter(pl.col("state") == "IN")
     .select(["end_date", "new_deaths"])
     .with_columns(
-        (pl.col("end_date").str.strptime(pl.Date, "%m/%d/%Y") - pl.lit(date(2020, 1, 1)))
+        (
+            pl.col("end_date").str.strptime(pl.Date, "%m/%d/%Y")
+            - pl.lit(date(2020, 1, 1))
+        )
         .dt.total_days()
         .cast(pl.Float64)
         .alias("t_upper"),
-        pl.col("new_deaths").cast(pl.Float64).alias("new_deaths")
+        pl.col("new_deaths").cast(pl.Float64).alias("new_deaths"),
     )
     .sort("t_upper")
 )
@@ -127,7 +132,13 @@ attack_rate_data = pl.DataFrame(
         "upper": [0.043, 0.05, 0.024],
         "data_type": ["Age0To39AR", "Age40To59AR", "Age60PlusAR"],
     },
-    schema={"t_upper": pl.Float64, "count": pl.Float64, "lower": pl.Float64, "upper": pl.Float64, "data_type": pl.String},
+    schema={
+        "t_upper": pl.Float64,
+        "count": pl.Float64,
+        "lower": pl.Float64,
+        "upper": pl.Float64,
+        "data_type": pl.String,
+    },
 )
 
 target_data = pl.concat(
@@ -136,8 +147,12 @@ target_data = pl.concat(
             pl.col("t_upper").cast(pl.Float64),
             pl.col("count").cast(pl.Float64),
             pl.col("data_type").cast(pl.String),
-            pl.col("lower").cast(pl.Float64) if "lower" in df.columns else pl.lit(None).cast(pl.Float64).alias("lower"),
-            pl.col("upper").cast(pl.Float64) if "upper" in df.columns else pl.lit(None).cast(pl.Float64).alias("upper"),
+            pl.col("lower").cast(pl.Float64)
+            if "lower" in df.columns
+            else pl.lit(None).cast(pl.Float64).alias("lower"),
+            pl.col("upper").cast(pl.Float64)
+            if "upper" in df.columns
+            else pl.lit(None).cast(pl.Float64).alias("upper"),
         )
         for df in (hosp_data, death_data, attack_rate_data)
     ],
@@ -148,9 +163,7 @@ target_data = pl.concat(
 TARGET_DATA = target_data
 
 
-def get_synth_pop_file(
-    config: CovidModelConfig
-) -> str:
+def get_synth_pop_file(config: CovidModelConfig) -> str:
     """
     Obtain the file name of the synthetic population to be used during the calibration routine
     Create the file if it does not exist or throw an error if the file cannot be created
@@ -190,26 +203,29 @@ def get_synth_pop_file(
             "No synthetic population file specified. Set the SYNTH_POP_FILE environment variable in the .env file to a valid synthetic population file path."
         )
 
-def build_executor(max_autoscale_nodes: int | None = None) -> AzureBatchExecutor:
+
+def build_executor(
+    max_autoscale_nodes: int | None = None,
+) -> AzureBatchExecutor:
     """Create the Azure executor configured by the smoke-test command line."""
     args = argparse.Namespace(
-        base_name='phase2-calibration', 
-        registry_server=None, 
-        image_name='ixa-epi-covid', 
-        image_tag='latest', 
-        image_dockerfile='Dockerfile', 
-        particle_count=4, 
-        chunk_size=1, 
-        max_autoscale_nodes=1, 
-        study=False, 
-        max_concurrent_scenarios=2, 
-        detail_log_dir='azure-ixa-epi-covid-study-logs', 
-        poll_interval=5.0, 
-        max_wait=1800.0, 
-        build_image=False, 
+        base_name="phase2-calibration",
+        registry_server=None,
+        image_name="ixa-epi-covid",
+        image_tag="latest",
+        image_dockerfile="Dockerfile",
+        particle_count=4,
+        chunk_size=1,
+        max_autoscale_nodes=10,
+        study=False,
+        max_concurrent_scenarios=2,
+        detail_log_dir="azure-ixa-epi-covid-study-logs",
+        poll_interval=5.0,
+        max_wait=1800.0,
+        build_image=False,
         upload_image=False,
-        delete_job_after=False, 
-        delete_pool_after=False
+        delete_job_after=False,
+        delete_pool_after=False,
     )
     return AzureBatchExecutor(
         base_name=args.base_name,
@@ -231,21 +247,21 @@ def build_executor(max_autoscale_nodes: int | None = None) -> AzureBatchExecutor
         max_wait=args.max_wait,
     )
 
-# Define the distance function ----------------------------------------------------------------
 
+# Define the distance function ----------------------------------------------------------------
 
 
 # Create the priors and perturbation kernels -----------------------------------------------
 
 PRIORS_FILE = "experiments/phase2/input/priors.json"
 
+
 def main(
-    config_file: CovidModelConfig ,
+    config_file: CovidModelConfig,
     output_dir: str | Path,
     max_workers: int = 10,
     default_population_size_dev: str = "50_000",
-):   
-
+):
     # Load environment files, defaults, and setup configurations ---------------------
     config = CovidModelConfig(
         config_file=config_file,
@@ -262,9 +278,16 @@ def main(
     config.update_ixa_params(ixa_overrides)
     config.set_priors(priors_file=PRIORS_FILE)
     config.set_perturbation_kernel()
-    config.set_mrp_defaults(output_dir=output_dir, outputs_to_read = ["aggregated_deaths_report", "current_hospitalizations_report", "aggregated_attack_rate_report"])
+    config.set_mrp_defaults(
+        output_dir=output_dir,
+        outputs_to_read=[
+            "aggregated_deaths_report",
+            "current_hospitalizations_report",
+            "attack_rate_report",
+        ],
+    )
     config.set_reader()
-    
+
     # Make the output directory -----------------------------------------------------------------
     # Use the default output directory in config inputs as the base output directory for all outputs
     # Create the output directory, handling the case where it already exists based on the force_overwrite flag
@@ -278,11 +301,13 @@ def main(
 
     Path(output_dir).mkdir(parents=True, exist_ok=False)
 
-
     # Initialize the model calibration routine -------------------------------------------------------
 
     model = CovidModel()
-
+    print(f"target data {TARGET_DATA}")
+    target_data_path = Path(output_dir, "target_data.csv")
+    TARGET_DATA.write_csv(target_data_path)
+    print(f"Target data saved to {target_data_path}")
     sampler = ABCSampler(
         generation_particle_count=config.generation_particle_count,
         tolerance_values=config.tolerance_values,
@@ -291,7 +316,7 @@ def main(
         particles_to_params=config.particles_to_params,
         variance_adapter=AdaptMultivariateNormalVariance(),
         outputs_to_distance=model.outputs_to_distance,
-        target_data=config.target_data,
+        target_data=TARGET_DATA,
         model_runner=model,
         entropy=0x2D845A9183A835EC4A777F6C7403A6D0,
     )
@@ -335,6 +360,12 @@ def main(
     ) as fp:
         pickle.dump(config, fp)
 
+    print("Projection particles")
+    model.project_particles(
+        config=config,
+        particles=results.posterior_particles.particles,
+    )
+
 
 parser = argparse.ArgumentParser(
     description="Run phase 2 calibration for ixa-epi-covid."
@@ -354,10 +385,9 @@ parser.add_argument(
 )
 
 
-
 if __name__ == "__main__":
     args = parser.parse_args()
     main(
-        config_file = args.config_file,
+        config_file=args.config_file,
         output_dir=args.output_dir,
     )

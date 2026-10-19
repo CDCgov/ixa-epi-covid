@@ -6,6 +6,7 @@ from census import Census
 from dotenv import load_dotenv
 from us import states
 
+
 def get_api_key() -> str:
     """Get the Census API key from the environment variable"""
     load_dotenv()
@@ -100,6 +101,7 @@ def get_state_proportion_population_data_source(
         pl.col("state_name") == state_name
     )["population"].item()
     return state_population / total_population
+
 
 def get_state_proportion_population_data(
     state: str, year: int | None = None, cache: bool = True

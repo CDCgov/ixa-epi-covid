@@ -1,17 +1,19 @@
-from datetime import date
 import json
-from pathlib import Path
 import subprocess
+from datetime import date
+from pathlib import Path
 
-import polars as pl
 import matplotlib.pyplot as plt
+import polars as pl
 import requests
-
 
 input_dir = Path("input")
 output_dir = Path("output")
 
-HOSPITALIZATION_API_URL = "https://healthdata.gov/api/v3/views/g62h-syeh/query.json"
+HOSPITALIZATION_API_URL = (
+    "https://healthdata.gov/api/v3/views/g62h-syeh/query.json"
+)
+
 
 def apply_dtypes(df, dtypes):
     """
@@ -24,31 +26,29 @@ def apply_dtypes(df, dtypes):
     ]
     return df.with_columns(casts) if casts else df
 
+
 def load_hospitalization_data():
     """
     Load hospitalization data from the CDC API.
     """
-    params = {
-            "query": "SELECT * WHERE `state` = 'IN'"
-        }
+    params = {"query": "SELECT * WHERE `state` = 'IN'"}
     response = requests.get(HOSPITALIZATION_API_URL, params=params, timeout=60)
     response.raise_for_status()
     df = pl.DataFrame(response.json())
     HOSPITALIZATION_DTYPES = {
-    "state": pl.String,
-    "date": pl.String,
+        "state": pl.String,
+        "date": pl.String,
         **{
             column: pl.Float64
             for column in df.columns
             if column not in {"state", "date"}
         },
     }
-    
+
     df = apply_dtypes(df, HOSPITALIZATION_DTYPES)
-    df = df.with_columns(
-            pl.col("date").str.to_date("%Y-%m-%dT%H:%M:%S%.3f")
-        )
+    df = df.with_columns(pl.col("date").str.to_date("%Y-%m-%dT%H:%M:%S%.3f"))
     return df
+
 
 # -----------------------
 # Hospitalization data
@@ -60,7 +60,9 @@ hosp_data = (
         (pl.col("date").cast(pl.Date) - pl.lit(date(2020, 1, 1)))
         .dt.total_days()
         .alias("t"),
-        pl.col("inpatient_beds_used_covid").cast(pl.Float64).alias("inpatient_beds_used_covid"),
+        pl.col("inpatient_beds_used_covid")
+        .cast(pl.Float64)
+        .alias("inpatient_beds_used_covid"),
     )
     .sort("t")
 )
@@ -70,15 +72,18 @@ death_data = (
     pl.read_csv(
         input_dir / "COVID_Deaths_Data.csv",
         try_parse_dates=True,
-        infer_schema=False
+        infer_schema=False,
     )
     .filter(pl.col("state") == "IN")
     .select(["end_date", "new_deaths"])
     .with_columns(
-        (pl.col("end_date").str.strptime(pl.Date, "%m/%d/%Y") - pl.lit(date(2020, 1, 1)))
+        (
+            pl.col("end_date").str.strptime(pl.Date, "%m/%d/%Y")
+            - pl.lit(date(2020, 1, 1))
+        )
         .dt.total_days()
         .alias("t"),
-        pl.col("new_deaths").cast(pl.Float64).alias("new_deaths")
+        pl.col("new_deaths").cast(pl.Float64).alias("new_deaths"),
     )
     .sort("t")
 )
@@ -89,25 +94,54 @@ input_path = "input/input.json"
 with open(input_path, "r", encoding="utf-8") as f:
     input_data = json.load(f)
     input_data["epimodel.GlobalParams"]["seed"] = 5555
-    input_data["epimodel.GlobalParams"]["synth_population_file"] = "input/in.csv"
+    input_data["epimodel.GlobalParams"]["synth_population_file"] = (
+        "input/in.csv"
+    )
     input_data["epimodel.GlobalParams"]["probability_mild_given_infect"] = 0.7
-    input_data["epimodel.GlobalParams"]["infectiousness_rate_fn"]["Constant"]["rate"] = 0.22
-    input_data["epimodel.GlobalParams"]["settings_properties"]["Home"]["alpha"] = 0.0
-    input_data["epimodel.GlobalParams"]["default_modifiers"]["CommunityMobilityReduction"]["community"] = [0.8, 0.0, 0.0, 0.2]
-    input_data["epimodel.GlobalParams"]["interventions"][0]["activation_time"] = 78.0 #school
-    input_data["epimodel.GlobalParams"]["interventions"][1]["activation_time"] = 83.0 #community
-    input_data["epimodel.GlobalParams"]["interventions"][2]["activation_time"] = 83.0 #workplace
-    input_data["epimodel.GlobalParams"]["interventions"][0]["acceptance_probability"] = 1.0 #school
-    input_data["epimodel.GlobalParams"]["interventions"][1]["acceptance_probability"] = 1.0 #community
-    input_data["epimodel.GlobalParams"]["interventions"][2]["acceptance_probability"] = 0.5 #workplace
+    input_data["epimodel.GlobalParams"]["infectiousness_rate_fn"]["Constant"][
+        "rate"
+    ] = 0.22
+    input_data["epimodel.GlobalParams"]["settings_properties"]["Home"][
+        "alpha"
+    ] = 0.0
+    input_data["epimodel.GlobalParams"]["default_modifiers"][
+        "CommunityMobilityReduction"
+    ]["community"] = [0.8, 0.0, 0.0, 0.2]
+    input_data["epimodel.GlobalParams"]["interventions"][0][
+        "activation_time"
+    ] = 78.0  # school
+    input_data["epimodel.GlobalParams"]["interventions"][1][
+        "activation_time"
+    ] = 83.0  # community
+    input_data["epimodel.GlobalParams"]["interventions"][2][
+        "activation_time"
+    ] = 83.0  # workplace
+    input_data["epimodel.GlobalParams"]["interventions"][0][
+        "acceptance_probability"
+    ] = 1.0  # school
+    input_data["epimodel.GlobalParams"]["interventions"][1][
+        "acceptance_probability"
+    ] = 1.0  # community
+    input_data["epimodel.GlobalParams"]["interventions"][2][
+        "acceptance_probability"
+    ] = 0.5  # workplace
     input_data["epimodel.GlobalParams"]["critical_to_dead_delay"]["mu"] = 1.5
-    input_data["epimodel.GlobalParams"]["imported_cases_timeseries"]["filename"] = "input/importation_test.csv" 
+    input_data["epimodel.GlobalParams"]["imported_cases_timeseries"][
+        "filename"
+    ] = "input/importation_test.csv"
 
     with open(input_path, "w", encoding="utf-8") as out_f:
         json.dump(input_data, out_f, indent=2)
 
 result = subprocess.run(
-    ["target/release/ixa-epi-covid", "-c", "input/input.json", "-o", "output", "-f"],
+    [
+        "target/release/ixa-epi-covid",
+        "-c",
+        "input/input.json",
+        "-o",
+        "output",
+        "-f",
+    ],
     check=True,
 )
 
@@ -144,10 +178,8 @@ col_pal = {
 fig, ax = plt.subplots()
 
 for age_group in attack_rate["age_group"].unique().to_list():
-    group = (
-        attack_rate
-        .filter(pl.col("age_group") == age_group)
-        .sort("t_upper")
+    group = attack_rate.filter(pl.col("age_group") == age_group).sort(
+        "t_upper"
     )
 
     ax.plot(

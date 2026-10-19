@@ -4,45 +4,13 @@ from pathlib import Path
 from typing import Any
 
 import polars as pl
+from calibrationtools import Particle, ParticlePopulation, ParticleRunner
 from importation import ImportationModel, get_linelist_data
 from mrp import MRPModel
+from particle_reader.particle_reader import ParticleReader
 from scipy.stats import poisson
 
-from pathlib import Path
-# Or Path("/app") for a specific directory
-
-FOLDERS_TO_PRINT = [
-    Path("/app/experiments"),
-    Path("/app/scripts"),
-]
-
-IGNORED_DIRECTORIES = {".venv"}
-
-def print_tree(directory, prefix=""):
-    try:
-        entries = sorted(
-            (
-                entry for entry in directory.iterdir()
-                if not (
-                    entry.is_dir()
-                    and entry.name in IGNORED_DIRECTORIES
-                )
-            ),
-            key=lambda p: (p.is_file(), p.name.lower())
-        )
-    except PermissionError:
-        print(prefix + "[permission denied]")
-        return
-
-    for index, entry in enumerate(entries):
-        is_last = index == len(entries) - 1
-        connector = "└── " if is_last else "├── "
-        print(prefix + connector + entry.name)
-
-        if entry.is_dir():
-            extension = "    " if is_last else "│   "
-            print_tree(entry, prefix + extension)
-
+from ixa_epi_covid.config_parser import CovidModelConfig
 
 
 class CovidModel(MRPModel):
@@ -62,8 +30,12 @@ class CovidModel(MRPModel):
         ixa_inputs["epimodel.GlobalParams"]["seed"] = int(
             ixa_inputs["epimodel.GlobalParams"]["seed"]
         )
-        ixa_inputs["epimodel.GlobalParams"]["imported_cases_timeseries"]["filename"] = f"./{ixa_inputs['epimodel.GlobalParams']['imported_cases_timeseries']['filename']}"
-        ixa_inputs["epimodel.GlobalParams"]["synth_population_file"] = f"./{ixa_inputs['epimodel.GlobalParams']['synth_population_file']}"
+        ixa_inputs["epimodel.GlobalParams"]["imported_cases_timeseries"][
+            "filename"
+        ] = f"./{ixa_inputs['epimodel.GlobalParams']['imported_cases_timeseries']['filename']}"
+        ixa_inputs["epimodel.GlobalParams"]["synth_population_file"] = (
+            f"./{ixa_inputs['epimodel.GlobalParams']['synth_population_file']}"
+        )
         with open(input_file_path, "w") as f:
             json.dump(ixa_inputs, f, indent=4)
         print("ixa inputs")
@@ -143,20 +115,7 @@ class CovidModel(MRPModel):
             "--force-overwrite",
             "--no-stats",
         ]
-        import os
         try:
-            print("Working directory:", os.getcwd())
-            print("Files:", os.listdir("."))
-            print(f"CONFIG OUTPUTS {config_inputs}")
-            for folder in FOLDERS_TO_PRINT:
-                print(f"\n{folder}")
-                print_tree(folder)
-            
-            print("files in directory")
-            subprocess.run(["pwd"])
-            subprocess.run(["ls", "-l"])
-            print(f"files in {str(config_inputs["output_dir"])}")
-            subprocess.run(["ls", "-l", str(config_inputs["output_dir"])])
             subprocess.run(cmd, capture_output=True, check=True)
         except subprocess.CalledProcessError as e:
             print("Error running the ixa model:")
@@ -184,8 +143,10 @@ class CovidModel(MRPModel):
                 raise FileNotFoundError(
                     f"Expected output file {fp} not found. Looked in {config_inputs['output_dir']}"
                 )
+        print(outputs)
         return outputs
-    
+
+    @staticmethod
     def outputs_to_distance(
         model_output: dict[str, pl.DataFrame], target_data: pl.DataFrame
     ) -> float:
@@ -198,15 +159,13 @@ class CovidModel(MRPModel):
         Returns:
             float: The calculated distance.
         """
+
         def poisson_lhood(model, data):
             return -poisson.logpmf(data, model + 1e-6)
-        deaths = (
-            model_output["aggregated_deaths_report"]
-        )
+
+        deaths = model_output["aggregated_deaths_report"]
         print(model_output)
-        hosp = (
-            model_output["current_hospitalizations_report"]
-        )
+        hosp = model_output["current_hospitalizations_report"]
         ar_039 = (
             model_output["attack_rate_report"]
             .filter(pl.col("age_group") == "Age0To39")
@@ -223,10 +182,16 @@ class CovidModel(MRPModel):
             .filter(pl.col("t_upper") == 120)
         )
         target_deaths = target_data.filter(pl.col("data_type") == "deaths")
-        target_hosp = target_data.filter(pl.col("data_type") == "hospitalizations")
+        target_hosp = target_data.filter(
+            pl.col("data_type") == "hospitalizations"
+        )
         target_ar_039 = target_data.filter(pl.col("data_type") == "Age0To39AR")
-        target_ar_4059 = target_data.filter(pl.col("data_type") == "Age40To59AR")
-        target_ar_60plus = target_data.filter(pl.col("data_type") == "Age60PlusAR")
+        target_ar_4059 = target_data.filter(
+            pl.col("data_type") == "Age40To59AR"
+        )
+        target_ar_60plus = target_data.filter(
+            pl.col("data_type") == "Age60PlusAR"
+        )
 
         joint_deaths = (
             deaths.select(pl.col(["t_upper", "deaths"]))
@@ -236,14 +201,14 @@ class CovidModel(MRPModel):
                 how="right",
             )
             .with_columns(pl.col("deaths").fill_null(strategy="zero"))
-        .with_columns(
-            pl.struct(["deaths", "count"])
-            .map_elements(
-                lambda x: poisson_lhood(x["deaths"], x["count"]),
-                return_dtype=pl.Float64,
+            .with_columns(
+                pl.struct(["deaths", "count"])
+                .map_elements(
+                    lambda x: poisson_lhood(x["deaths"], x["count"]),
+                    return_dtype=pl.Float64,
+                )
+                .alias("negloglikelihood")
             )
-            .alias("negloglikelihood")
-        )
         )
 
         joint_hosp = (
@@ -253,27 +218,34 @@ class CovidModel(MRPModel):
                 on="t_upper",
                 how="right",
             )
-            .with_columns(pl.col("current_hospitalizations").fill_null(strategy="zero"))
-        .with_columns(
-            pl.struct(["current_hospitalizations", "count"])
-            .map_elements(
-                lambda x: poisson_lhood(x["current_hospitalizations"], x["count"]),
-                return_dtype=pl.Float64,
+            .with_columns(
+                pl.col("current_hospitalizations").fill_null(strategy="zero")
             )
-            .alias("negloglikelihood")
+            .with_columns(
+                pl.struct(["current_hospitalizations", "count"])
+                .map_elements(
+                    lambda x: poisson_lhood(
+                        x["current_hospitalizations"], x["count"]
+                    ),
+                    return_dtype=pl.Float64,
+                )
+                .alias("negloglikelihood")
+            )
         )
-        )
-        def ar_difference(model_ar: pl.DataFrame, target_ar: pl.DataFrame) -> float:
+
+        def ar_difference(
+            model_ar: pl.DataFrame, target_ar: pl.DataFrame
+        ) -> float:
             model_value = (
-            model_ar.select(pl.col("attack_rate")).item()
-            if model_ar.height > 0
-            else 0.0
+                model_ar.select(pl.col("attack_rate")).item()
+                if model_ar.height > 0
+                else 0.0
             )
             target_lower = target_ar.select(pl.col("lower")).item()
             target_upper = target_ar.select(pl.col("upper")).item()
             sigma = (target_upper - target_lower) / 3.92
             target_value = target_ar.select(pl.col("count")).item()
-            return float(((model_value - target_value) ** 2)/(2 * sigma ** 2))
+            return float(((model_value - target_value) ** 2) / (2 * sigma**2))
 
         ar_diff_039 = ar_difference(ar_039, target_ar_039)
         ar_diff_4059 = ar_difference(ar_4059, target_ar_4059)
@@ -282,6 +254,33 @@ class CovidModel(MRPModel):
 
         deaths_distance = joint_deaths["negloglikelihood"].mean()
         hosp_distance = joint_hosp["negloglikelihood"].mean()
-        print(f"Deaths distance: {deaths_distance}, Hospitalizations distance: {hosp_distance}, Attack rate distance: {ar_distance}")
+        print(
+            f"Deaths distance: {deaths_distance}, Hospitalizations distance: {hosp_distance}, Attack rate distance: {ar_distance}"
+        )
         return float(deaths_distance + hosp_distance + ar_distance)
 
+    def project_particles(
+        self,
+        config: CovidModelConfig,
+        particles: ParticlePopulation | list[Particle] | pl.DataFrame,
+    ):
+        if isinstance(particles, pl.DataFrame):
+            particle_list = []
+            for row in particles.iter_rows(named=True):
+                particle_dict = {k: row[k] for k in particles.columns}
+                particle_list.append(Particle(particle_dict))
+            particles = particle_list
+        elif isinstance(particles, ParticlePopulation):
+            particles = particles.particles
+        elif not isinstance(particles, list):
+            raise ValueError(
+                f"Invalid type for particles: {type(particles)}. Must be list of Particle or polars DataFrame."
+            )
+
+        runner = ParticleRunner(
+            model=self,
+            particles_to_params=config.particles_to_params,
+            max_workers=1,
+        )
+
+        runner.run(particles)
