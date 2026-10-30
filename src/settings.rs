@@ -1,4 +1,4 @@
-use ixa::{HashMap, prelude::*};
+use ixa::{HashMap, data_structures::entity_map::EntityMap, prelude::*};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::{
@@ -35,23 +35,32 @@ pub enum SettingMembershipChange {
     Remove,
 }
 
-/// An index of settings as represented by their setting codes.
+const NOT_A_MEMBER: u32 = u32::MAX;
+
+/// An index of settings as represented by their setting codes. Each setting code gets a dense
+/// index into `active_members` and `all_counts`. Only active membership changes over a run, so for
+/// all members we keep just the count.
 #[derive(Default)]
 pub struct SettingMembership {
-    active_members: HashMap<SettingCode, Vec<PersonId>>,
-    all_members: HashMap<SettingCode, Vec<PersonId>>,
+    indices: HashMap<SettingCode, u32>,
+    active_members: Vec<Vec<PersonId>>,
+    /// Number of people in each setting by base itinerary, active or not. Only the count is needed:
+    /// it bounds the setting's multiplier when forecasting, and modifiers never grow membership.
+    all_counts: Vec<u32>,
+    /// Each person's position in their active settings' member lists, by category. A person belongs
+    /// to at most one setting per category.
+    positions: EntityMap<Person, [u32; SETTING_COUNT]>,
 }
 
 impl SettingMembership {
-    fn add_member(&mut self, setting_code: SettingCode, person_id: PersonId) {
-        let active_members = self.active_members.entry(setting_code).or_default();
-        if !active_members.contains(&person_id) {
-            active_members.push(person_id);
+    fn get_or_create_index(&mut self, setting_code: SettingCode) -> u32 {
+        let next = self.indices.len() as u32;
+        let index = *self.indices.entry(setting_code).or_insert(next);
+        if index == next {
+            self.active_members.push(Vec::new());
+            self.all_counts.push(0);
         }
-        let all_members = self.all_members.entry(setting_code).or_default();
-        if !all_members.contains(&person_id) {
-            all_members.push(person_id);
-        }
+        index
     }
 
     fn add_members(&mut self, setting_codes: &[Option<SettingCode>], person_id: PersonId) {
@@ -59,60 +68,73 @@ impl SettingMembership {
             .iter()
             .filter_map(|&setting_code| setting_code)
         {
-            self.add_member(setting_code, person_id);
+            if self.insert_active(setting_code, person_id) {
+                let index = self.indices[&setting_code];
+                self.all_counts[index as usize] += 1;
+            }
         }
     }
 
-    fn get_members(
-        &self,
-        setting_code: SettingCode,
-        selector: MembershipSelector,
-    ) -> Option<&Vec<PersonId>> {
-        match selector {
-            MembershipSelector::Active => self.active_members.get(&setting_code),
-            MembershipSelector::All => self.all_members.get(&setting_code),
+    /// Returns whether the person was newly added.
+    fn insert_active(&mut self, setting_code: SettingCode, person_id: PersonId) -> bool {
+        let category = setting_code.category();
+        let index = self.get_or_create_index(setting_code);
+        let position = &mut self
+            .positions
+            .get_or_insert(person_id, [NOT_A_MEMBER; SETTING_COUNT])[category];
+        if *position != NOT_A_MEMBER {
+            return false;
+        }
+        let members = &mut self.active_members[index as usize];
+        *position = members.len() as u32;
+        members.push(person_id);
+        true
+    }
+
+    fn remove_active(&mut self, setting_code: SettingCode, person_id: PersonId) {
+        let category = setting_code.category();
+        let Some(&index) = self.indices.get(&setting_code) else {
+            return;
+        };
+        let Some(positions) = self.positions.get_mut(person_id) else {
+            return;
+        };
+        let position = positions[category];
+        if position == NOT_A_MEMBER {
+            return;
+        }
+        let members = &mut self.active_members[index as usize];
+        // The position is per category, so it only identifies this person within the setting
+        // they are actually active in. Removing them from a different setting would corrupt it.
+        assert!(
+            members.get(position as usize) == Some(&person_id),
+            "Person {person_id} is not an active member of {setting_code:?}"
+        );
+        positions[category] = NOT_A_MEMBER;
+        members.swap_remove(position as usize);
+        if let Some(&moved) = members.get(position as usize) {
+            self.positions.get_mut(moved).unwrap()[category] = position;
         }
     }
 
-    fn remove_member(
-        &mut self,
-        setting_code: SettingCode,
-        person_id: PersonId,
-        selector: MembershipSelector,
-    ) {
-        match selector {
-            MembershipSelector::Active => {
-                self.active_members
-                    .entry(setting_code)
-                    .and_modify(|members| members.retain(|id| *id != person_id));
-            }
-            MembershipSelector::All => {
-                self.active_members
-                    .entry(setting_code)
-                    .and_modify(|members| members.retain(|id| *id != person_id));
-                self.all_members
-                    .entry(setting_code)
-                    .and_modify(|members| members.retain(|id| *id != person_id));
-            }
-        }
+    fn get_active_members(&self, setting_code: SettingCode) -> Option<&Vec<PersonId>> {
+        let index = *self.indices.get(&setting_code)?;
+        Some(&self.active_members[index as usize])
     }
 
     fn member_count(&self, setting_code: SettingCode, selector: MembershipSelector) -> usize {
+        let Some(&index) = self.indices.get(&setting_code) else {
+            return 0;
+        };
         match selector {
-            MembershipSelector::Active => self
-                .active_members
-                .get(&setting_code)
-                .map(|members| members.len())
-                .unwrap_or(0),
-            MembershipSelector::All => self
-                .all_members
-                .get(&setting_code)
-                .map(|members| members.len())
-                .unwrap_or(0),
+            MembershipSelector::Active => self.active_members[index as usize].len(),
+            MembershipSelector::All => self.all_counts[index as usize] as usize,
         }
     }
 }
 
+// Built from everyone's itinerary on first use, then kept up to date as people are added to or
+// removed from settings.
 define_data_plugin!(SettingMembershipPlugin, SettingMembership, |context| {
     let mut membership = SettingMembership::default();
     let person_iter = context.get_entity_iterator::<Person>();
@@ -333,11 +355,9 @@ pub trait ContextSettingExt:
 
     fn sample_person_from_setting(&self, setting: SettingCode) -> Result<PersonId, ModelError> {
         let membership = self.get_data(SettingMembershipPlugin);
-        let members = membership
-            .get_members(setting, MembershipSelector::Active)
-            .ok_or_else(|| {
-                ModelError::ModelError(format!("No members found for setting: {:?}", setting))
-            })?;
+        let members = membership.get_active_members(setting).ok_or_else(|| {
+            ModelError::ModelError(format!("No members found for setting: {:?}", setting))
+        })?;
         let idx = self.sample_range(SettingRng, 0..members.len());
         Ok(members[idx])
     }
@@ -424,12 +444,12 @@ pub trait ContextSettingExt:
 
     fn add_person_to_single_setting(&mut self, person: PersonId, setting_id: SettingCode) {
         let data = self.get_data_mut(SettingMembershipPlugin);
-        data.add_member(setting_id, person);
+        data.insert_active(setting_id, person);
     }
 
     fn remove_person_from_single_setting(&mut self, person_id: PersonId, setting_id: SettingCode) {
         let membership = self.get_data_mut(SettingMembershipPlugin);
-        membership.remove_member(setting_id, person_id, MembershipSelector::Active);
+        membership.remove_active(setting_id, person_id);
     }
     fn setup_itinerary_modifier<P: IndexableProperty<Person>, I: ItineraryModifier>(
         &mut self,
@@ -731,6 +751,74 @@ mod test {
         assign_person_settings(&mut context, person2, &[home_id], [1.0, 0.0, 0.0, 0.0]);
         let size = context.get_setting_size(home_id);
         assert_eq!(size, 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "is not an active member of")]
+    fn test_remove_from_wrong_setting_panics() {
+        let mut context = setup_test_context(0.0);
+        let home = SettingCode::arbitrary_home_code();
+        let other_home = SettingCode::arbitrary_home_code();
+        let community = home.extract_community();
+        let people: Vec<PersonId> = (0..2)
+            .map(|_| context.add_entity(with!(Person, Age(30))).unwrap())
+            .collect();
+        context.add_person_to_settings(people[0], Some(home), None, None, Some(community));
+        context.add_person_to_settings(people[1], Some(other_home), None, None, Some(community));
+        assert_eq!(context.get_setting_size(home), 1);
+
+        // Settings the person was never in are ignored.
+        context.remove_person_from_single_setting(people[0], SettingCode::arbitrary_home_code());
+        assert_eq!(context.get_setting_size(home), 1);
+
+        // A home the person is not in, but which has members, must not be touched.
+        context.remove_person_from_single_setting(people[0], other_home);
+    }
+
+    #[test]
+    fn test_membership_add_and_remove() {
+        let mut context = setup_test_context(0.0);
+        let home = SettingCode::arbitrary_home_code();
+        let community = home.extract_community();
+        let people: Vec<PersonId> = (0..4)
+            .map(|_| context.add_entity(with!(Person, Age(30))).unwrap())
+            .collect();
+        for &person in &people[..2] {
+            context.add_person_to_settings(person, Some(home), None, None, Some(community));
+        }
+        assert_eq!(context.get_setting_size(home), 2);
+
+        for &person in &people[2..] {
+            context.add_person_to_settings(person, Some(home), None, None, Some(community));
+        }
+        assert_eq!(
+            context
+                .get_data(SettingMembershipPlugin)
+                .get_active_members(home),
+            Some(&people)
+        );
+
+        context.remove_person_from_single_setting(people[0], home);
+        context.remove_person_from_single_setting(people[2], home);
+        assert_eq!(
+            context
+                .get_data(SettingMembershipPlugin)
+                .get_active_members(home),
+            Some(&vec![people[3], people[1]])
+        );
+        assert_eq!(
+            context.get_setting_size_internal(home, MembershipSelector::All),
+            4
+        );
+
+        context.add_person_to_single_setting(people[0], home);
+        context.add_person_to_single_setting(people[0], home);
+        assert_eq!(context.get_setting_size(home), 3);
+        assert_eq!(
+            context.get_setting_size_internal(home, MembershipSelector::All),
+            4
+        );
+        assert_eq!(context.get_setting_size(community), 4);
     }
 
     #[test]
