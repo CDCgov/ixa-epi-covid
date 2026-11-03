@@ -24,14 +24,14 @@ Derived person properties are created for each combination of modifier, geograph
 
 
 ## Triggering Interventions
-Given `activates_at` and `duration`, ixa `Triggers` are established in the `setup_intervention_triggers(Intervention)` method. These triggers emit an `InterventionEvent` which contains an `active: bool` value and a copy of the intervention struct. When the `active` is `True` the intervention has just begun and when false the intervention ends. 
+Given `activates_at` and `duration`, ixa `Triggers` are established in the `setup_intervention_triggers(Intervention)` method. These triggers emit an `InterventionEvent` which contains an `active: bool` value and a copy of the intervention struct. When the `active` is `True` the intervention has just begun and when false the intervention ends.
 
-In the method `setup_intervention_trigger_event_subscription` event subscriptions are established to listen for `InterventionEvent`s. When an active intervention event is received several steps occur that use the information in the intervention struct. 
+In the method `setup_intervention_trigger_event_subscription` event subscriptions are established to listen for `InterventionEvent`s. When an active intervention event is received several steps occur that use the information in the intervention struct.
 1. The individual level acceptance of the intervention is determined via the `set_accepts_intervention(Intervention)` method. This matches on the `(intervention.modifier, intervention.geography)` and queries the people that could be affected by the intervention. These people are stochastically determined to follow the intervention with probability `intervention.acceptance_probability`. The `AcceptsIntervention` person property is modified if the person accepts the intervention
 2. The itinerary transmission matrix is created for the corresponding `intervention.modifier`. The itinerary transition matrix is stored in the itinerary manager with a person property that is determined by matching on `(intervention.modifier, intervention.geography)`. These person properties are the derived person properties created from the `AcceptsIntervention` person property
 3. The `InterventionData` data plugin adds the intervention information and to the data structure `HashMap<(intervention.modifier, intervention.geography), bool>`.
 
-If an inactive intervention is received 
+If an inactive intervention is received
 1. The itinerary transmission matrix is removed from the itinerary manager. The removal by person property is determined by matching on `(intervention.modifier, intervention.geography)`.
 2. The `InterventionData` data plugin removes the intervention information and to the data structure `HashMap<(intervention.modifier, intervention.geography), bool>`.
 
