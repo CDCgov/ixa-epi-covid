@@ -20,7 +20,7 @@ The interventions field in the `input.json` is an array and users can define mul
 
 
 ## Person Properties
-Derived person properties are created for each combination of modifier, geography, and acceptance of the intervention. These person properties are what are registered with the itinerary manager. The person properties are dervied from a fixed length array person property `AcceptsIntervention`
+We create a fixed length array person property, `AcceptsIntervention`. It is length of the `Modifier` enum by the length of the `geography` enum. Each entry in this array is an optional geography enum value. Note the geography enum encodes the FIPS code associated with the geography type. Examples are `State(18)` and `County(18067)`. If an entry is `Some()` in this array then the person accepts that modifier for that geography level. Derived person properties are created for each combination of modifier, geography, and acceptance of the intervention by looking at each element of `AcceptsIntervention`. These person properties are what are registered with the itinerary manager.
 
 
 ## Triggering Interventions
@@ -37,4 +37,4 @@ If an inactive intervention is received
 
 
 ### Creating itinerary transition matrices
-Depending on the type of intervention and any override information, we create an itinerary transition matrix for the intervention. We assume that school closures and workplace mobility reductions impact peoples locations, and community mobility reductions impact peoples activities. We encode all geographic heirarchy into the acceptance function of the itinerary transition matrix
+Depending on the type of intervention and any override information, we create an itinerary transition matrix for the intervention. We assume that school closures and workplace mobility reductions impact peoples locations, and community mobility reductions impact peoples activities. We encode all geographic heirarchy into the acceptance function of the itinerary transition matrix.
