@@ -62,7 +62,7 @@ pub trait ContextTransmissionModifierExt: PluginContext {
         let boxed_transmission_modifier = Box::new(transmission_modifier);
 
         // Insert the boxed function into the transmission modifier map, using entry to handle unititialized keys
-        if let Some(_modifier_fxn) = self
+        if let Some(modifier_fxn) = self
             .get_data_mut(TransmissionModifierPlugin)
             .transmission_modifier_map
             .entry(infection_status)
@@ -71,7 +71,7 @@ pub trait ContextTransmissionModifierExt: PluginContext {
         {
             trace!(
                 "Overwriting existing transmission modifier function for infection status {infection_status:?} and transmission modifier {:?}",
-                TypeId::of::<T>()
+                modifier_fxn
             );
         }
     }
