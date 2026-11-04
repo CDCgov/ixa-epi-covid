@@ -18,6 +18,7 @@ pub mod school_calendar;
 mod setting_code;
 pub mod settings;
 pub mod symptom_status_manager;
+pub mod transmission_modifier_manager;
 
 pub use model::initialize_model;
 pub use parameters::ContextParametersExt;
