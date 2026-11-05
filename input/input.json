@@ -65,7 +65,7 @@
                 "prop_school_time_to_comm": 0.5
             }
         ],
-        "default_modifiers": {
+        "default_itinerary_modifiers": {
             "SchoolClosure": {
                 "school": [1.0, 0.0, 0.0, 0.0]
             },
@@ -76,13 +76,18 @@
                 "work": [1.0, 0.0, 0.0, 0.0]
             }
         },
+        "default_transmission_modifiers": {
+            "MaskMandate": {
+                "modifier": 0.9
+            }
+        },
         "interventions": [
             {
-                "modifier":"SchoolClosure",
+                "modifier":"MaskMandate",
                 "geography": {"type": "State", "code": "56"},
-                "acceptance_probability": 1.0,
+                "acceptance_probability": 0.9,
                 "activation_time": 0.0,
-                "duration": 30.0
+                "duration": 50.0
             }
         ],
         "prevalence_report": {
