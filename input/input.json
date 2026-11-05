@@ -82,7 +82,8 @@
         },
         "default_transmission_modifiers": {
             "MaskMandate": {
-                "modifier": 0.9
+                "modifier": 0.1,
+                "settings": ["Work"]
             }
         },
         "interventions": [

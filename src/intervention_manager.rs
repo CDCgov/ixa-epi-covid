@@ -1007,15 +1007,15 @@ mod test {
         context.setup_intervention_trigger_event_subscription();
 
         context.add_plan(0.0, move |context| {
-            let transmission = context.get_relative_total_transmission(p1);
+            let transmission = context.get_relative_total_transmission(p1, SettingCategory::School);
             assert_eq!(transmission, 1.0);
         });
         context.add_plan(1.5, move |context| {
-            let transmission = context.get_relative_total_transmission(p1);
+            let transmission = context.get_relative_total_transmission(p1, SettingCategory::School);
             assert_eq!(transmission, 0.9);
         });
         context.add_plan(2.5, move |context| {
-            let transmission = context.get_relative_total_transmission(p1);
+            let transmission = context.get_relative_total_transmission(p1, SettingCategory::School);
             assert_eq!(transmission, 1.0);
         });
         context.execute();

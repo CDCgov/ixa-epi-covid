@@ -9,12 +9,17 @@ use crate::{
     infectiousness_manager::InfectionStatus,
     intervention_manager::ModifierSpecification,
     itinerary_modifiers::AcceptanceFunction,
-    settings::{Person, PersonId},
+    settings::{Person, PersonId, SettingCategory},
 };
 
 pub struct ScalarTransmissionModifier {
+<<<<<<< HEAD
     pub infectiousness_multiplier: f64,
     pub susceptibility_multiplier: f64,
+=======
+    pub modifier: f64,
+    pub settings: Vec<SettingCategory>,
+>>>>>>> 47d2fc4 (setting specific tranmission modifiers)
     pub acceptance_function: Option<AcceptanceFunction>,
 }
 
@@ -68,7 +73,12 @@ impl TransmissionModifier for StoredScalarTransmissionModifier {
 pub trait TransmissionModifierStorage: std::fmt::Debug + 'static {
     /// Return the relative potential for infection (transmissiveness or susceptibility) for a person
     /// based on their infection status.
-    fn get_relative_transmission(&self, context: &Context, person_id: PersonId) -> f64;
+    fn get_relative_transmission(
+        &self,
+        context: &Context,
+        person_id: PersonId,
+        setting_category: SettingCategory,
+    ) -> f64;
 }
 
 // A type alias for the type of the transmission modifiers specified via a hashmap of person
@@ -83,7 +93,12 @@ impl<P> TransmissionModifierStorage for PersonPropertyTransmissionModifier<P>
 where
     P: IndexableProperty<Person>,
 {
-    fn get_relative_transmission(&self, context: &Context, person_id: PersonId) -> f64 {
+    fn get_relative_transmission(
+        &self,
+        context: &Context,
+        person_id: PersonId,
+        setting_category: SettingCategory,
+    ) -> f64 {
         let property_val = context.get_property::<Person, P>(person_id);
         // Return the corresponding value from the map, or 1.0 if not found
         self.transmission_modifier_map
@@ -93,8 +108,15 @@ where
                     .as_any()
                     .downcast_ref::<StoredScalarTransmissionModifier>()
                 {
+<<<<<<< HEAD
                     if scalar_modifier.accept(context, person_id) {
                         scalar_modifier.multiplier
+=======
+                    if scalar_modifier.settings.contains(&setting_category)
+                        && scalar_modifier.accept(context, person_id)
+                    {
+                        scalar_modifier.modifier
+>>>>>>> 47d2fc4 (setting specific tranmission modifiers)
                     } else {
                         1.0
                     }
@@ -260,11 +282,19 @@ pub trait ContextTransmissionModifierExt:
     /// modifier functions and evaluates them based on the person's properties. Multiplies them
     /// together to get the total relative transmission modifier for the person.
     /// Returns 1.0 if no modifiers are registered for the person's infection status.
-    fn get_relative_total_transmission(&self, person_id: PersonId) -> f64;
+    fn get_relative_total_transmission(
+        &self,
+        person_id: PersonId,
+        setting_category: SettingCategory,
+    ) -> f64;
 }
 
 impl ContextTransmissionModifierExt for Context {
-    fn get_relative_total_transmission(&self, person_id: PersonId) -> f64 {
+    fn get_relative_total_transmission(
+        &self,
+        person_id: PersonId,
+        setting_category: SettingCategory,
+    ) -> f64 {
         let infection_status = self.get_property::<Person, InfectionStatus>(person_id);
 
         let transmission_modifier_plugin = self.get_data(TransmissionModifierPlugin);
@@ -277,7 +307,11 @@ impl ContextTransmissionModifierExt for Context {
             transmission_modifier_map
                 .iter()
                 .fold(1.0, |agg, (_type_id, transmission_modifier)| {
-                    agg * transmission_modifier.get_relative_transmission(self, person_id)
+                    agg * transmission_modifier.get_relative_transmission(
+                        self,
+                        person_id,
+                        setting_category,
+                    )
                 })
         } else {
             // If the infection status is not found in the map, return 1.0
@@ -298,6 +332,7 @@ mod test {
     };
     use crate::Age;
     use crate::error::ModelError;
+    use crate::settings::SettingCategory;
     use crate::settings::{Person, PersonId};
     use crate::transmission_modifier_manager::ContextTransmissionModifierPrivateExt;
     use crate::transmission_modifier_manager::ScalarTransmissionModifier;
@@ -347,12 +382,93 @@ mod test {
         load_rate_fns(&mut context).unwrap();
 
         context
+<<<<<<< HEAD
             .register_transmission_modifier([
                 (
                     MandatoryIntervention::Partial,
                     ScalarTransmissionModifier {
                         infectiousness_multiplier: INFECTIOUS_PARTIAL,
                         susceptibility_multiplier: SUSCEPTIBLE_PARTIAL,
+=======
+            .store_transmission_modifier_values(
+                InfectionStatus::Susceptible,
+                [
+                    (
+                        MandatoryIntervention::Partial,
+                        ScalarTransmissionModifier {
+                            modifier: SUSCEPTIBLE_PARTIAL,
+                            settings: vec![
+                                SettingCategory::Home,
+                                SettingCategory::Work,
+                                SettingCategory::School,
+                                SettingCategory::Community,
+                            ],
+                            acceptance_function: None,
+                        },
+                    ),
+                    (
+                        MandatoryIntervention::Full,
+                        ScalarTransmissionModifier {
+                            modifier: 0.0,
+                            settings: vec![
+                                SettingCategory::Home,
+                                SettingCategory::Work,
+                                SettingCategory::School,
+                                SettingCategory::Community,
+                            ],
+                            acceptance_function: None,
+                        },
+                    ),
+                ],
+            )
+            .unwrap();
+        context
+            .store_transmission_modifier_values(
+                InfectionStatus::Infectious,
+                [
+                    (
+                        MandatoryIntervention::Partial,
+                        ScalarTransmissionModifier {
+                            modifier: INFECTIOUS_PARTIAL,
+                            settings: vec![
+                                SettingCategory::Home,
+                                SettingCategory::Work,
+                                SettingCategory::School,
+                                SettingCategory::Community,
+                            ],
+                            acceptance_function: None,
+                        },
+                    ),
+                    (
+                        MandatoryIntervention::Full,
+                        ScalarTransmissionModifier {
+                            modifier: 0.0,
+                            settings: vec![
+                                SettingCategory::Home,
+                                SettingCategory::Work,
+                                SettingCategory::School,
+                                SettingCategory::Community,
+                            ],
+                            acceptance_function: None,
+                        },
+                    ),
+                ],
+            )
+            .unwrap();
+        context
+            .store_transmission_modifier_values(
+                InfectionStatus::Infectious,
+                [(
+                    InfectiousnessProportion::Partial,
+                    ScalarTransmissionModifier {
+                        modifier: INFECTIOUS_PARTIAL,
+                        settings: vec![
+                            SettingCategory::Home,
+                            SettingCategory::Work,
+                            SettingCategory::School,
+                            SettingCategory::Community,
+                        ],
+>>>>>>> 47d2fc4 (setting specific tranmission modifiers)
                         acceptance_function: None,
                     },
                 ),
@@ -385,6 +501,7 @@ mod test {
         let relative_effect = 0.8;
 
         context
+<<<<<<< HEAD
             .register_transmission_modifier([
                 (
                     MandatoryIntervention::Partial,
@@ -403,6 +520,39 @@ mod test {
                     },
                 ),
             ])
+=======
+            .store_transmission_modifier_values(
+                InfectionStatus::Susceptible,
+                [
+                    (
+                        MandatoryIntervention::Partial,
+                        ScalarTransmissionModifier {
+                            modifier: relative_effect,
+                            settings: vec![
+                                SettingCategory::Home,
+                                SettingCategory::Work,
+                                SettingCategory::School,
+                                SettingCategory::Community,
+                            ],
+                            acceptance_function: None,
+                        },
+                    ),
+                    (
+                        MandatoryIntervention::Full,
+                        ScalarTransmissionModifier {
+                            modifier: 0.0,
+                            settings: vec![
+                                SettingCategory::Home,
+                                SettingCategory::Work,
+                                SettingCategory::School,
+                                SettingCategory::Community,
+                            ],
+                            acceptance_function: None,
+                        },
+                    ),
+                ],
+            )
+>>>>>>> 47d2fc4 (setting specific tranmission modifiers)
             .unwrap();
 
         // Add people with different intervention statuses
@@ -431,12 +581,12 @@ mod test {
 
         // Check that the modifier function returns the expected value
         assert_almost_eq!(
-            modifier_fn.get_relative_transmission(&context, partial_id),
+            modifier_fn.get_relative_transmission(&context, partial_id, SettingCategory::Home),
             relative_effect,
             0.0
         );
         assert_almost_eq!(
-            modifier_fn.get_relative_transmission(&context, full_id),
+            modifier_fn.get_relative_transmission(&context, full_id, SettingCategory::Home),
             0.0,
             0.0
         );
@@ -505,6 +655,7 @@ mod test {
         assert_ne!(std::any::Any::type_id(&t1), std::any::Any::type_id(&t3));
         // Store initial modifier values to be overwritten
         context
+<<<<<<< HEAD
             .register_transmission_modifier([
                 (
                     MandatoryIntervention::Partial,
@@ -523,10 +674,44 @@ mod test {
                     },
                 ),
             ])
+=======
+            .store_transmission_modifier_values(
+                InfectionStatus::Susceptible,
+                [
+                    (
+                        MandatoryIntervention::Partial,
+                        ScalarTransmissionModifier {
+                            modifier: relative_effect - 0.2,
+                            settings: vec![
+                                SettingCategory::Home,
+                                SettingCategory::Work,
+                                SettingCategory::School,
+                                SettingCategory::Community,
+                            ],
+                            acceptance_function: None,
+                        },
+                    ),
+                    (
+                        MandatoryIntervention::Full,
+                        ScalarTransmissionModifier {
+                            modifier: 0.2,
+                            settings: vec![
+                                SettingCategory::Home,
+                                SettingCategory::Work,
+                                SettingCategory::School,
+                                SettingCategory::Community,
+                            ],
+                            acceptance_function: None,
+                        },
+                    ),
+                ],
+            )
+>>>>>>> 47d2fc4 (setting specific tranmission modifiers)
             .unwrap();
 
         // Overwrite previous modifier values
         context
+<<<<<<< HEAD
             .register_transmission_modifier([
                 (
                     MandatoryIntervention::Partial,
@@ -545,6 +730,39 @@ mod test {
                     },
                 ),
             ])
+=======
+            .store_transmission_modifier_values(
+                InfectionStatus::Susceptible,
+                [
+                    (
+                        MandatoryIntervention::Partial,
+                        ScalarTransmissionModifier {
+                            settings: vec![
+                                SettingCategory::Home,
+                                SettingCategory::Work,
+                                SettingCategory::School,
+                                SettingCategory::Community,
+                            ],
+                            modifier: relative_effect,
+                            acceptance_function: None,
+                        },
+                    ),
+                    (
+                        MandatoryIntervention::Full,
+                        ScalarTransmissionModifier {
+                            settings: vec![
+                                SettingCategory::Home,
+                                SettingCategory::Work,
+                                SettingCategory::School,
+                                SettingCategory::Community,
+                            ],
+                            modifier: 0.0,
+                            acceptance_function: None,
+                        },
+                    ),
+                ],
+            )
+>>>>>>> 47d2fc4 (setting specific tranmission modifiers)
             .unwrap();
 
         // Add people with different intervention statuses
@@ -574,12 +792,12 @@ mod test {
         // Check that the modifier function returns the expected value of the overwritten registration
         // The log should also be checked here to make sure the overwrite is recorded
         assert_almost_eq!(
-            modifier_fn.get_relative_transmission(&context, partial_id),
+            modifier_fn.get_relative_transmission(&context, partial_id, SettingCategory::Home),
             relative_effect,
             0.0
         );
         assert_almost_eq!(
-            modifier_fn.get_relative_transmission(&context, full_id),
+            modifier_fn.get_relative_transmission(&context, full_id, SettingCategory::Home),
             0.0,
             0.0
         );
@@ -590,6 +808,7 @@ mod test {
         let mut context = Context::new();
 
         // Attempt to store invalid modifier values
+<<<<<<< HEAD
         let result = context.register_transmission_modifier([
             (
                 MandatoryIntervention::Partial,
@@ -608,6 +827,39 @@ mod test {
                 },
             ),
         ]);
+=======
+        let result = context.store_transmission_modifier_values(
+            InfectionStatus::Susceptible,
+            [
+                (
+                    MandatoryIntervention::Partial,
+                    ScalarTransmissionModifier {
+                        modifier: 1.2, // Invalid value
+                        settings: vec![
+                            SettingCategory::Home,
+                            SettingCategory::Work,
+                            SettingCategory::School,
+                            SettingCategory::Community,
+                        ],
+                        acceptance_function: None,
+                    },
+                ),
+                (
+                    MandatoryIntervention::Full,
+                    ScalarTransmissionModifier {
+                        modifier: 0.0,
+                        settings: vec![
+                            SettingCategory::Home,
+                            SettingCategory::Work,
+                            SettingCategory::School,
+                            SettingCategory::Community,
+                        ],
+                        acceptance_function: None,
+                    },
+                ),
+            ],
+        );
+>>>>>>> 47d2fc4 (setting specific tranmission modifiers)
 
         match result.err() {
             Some(ModelError::ModelError(msg)) => {
@@ -629,6 +881,7 @@ mod test {
         let mut context = Context::new();
 
         // Attempt to store duplicate modifier values
+<<<<<<< HEAD
         let result = context.register_transmission_modifier([
             (
                 MandatoryIntervention::Partial,
@@ -647,6 +900,39 @@ mod test {
                 },
             ), // Duplicate value
         ]);
+=======
+        let result = context.store_transmission_modifier_values(
+            InfectionStatus::Susceptible,
+            [
+                (
+                    MandatoryIntervention::Partial,
+                    ScalarTransmissionModifier {
+                        modifier: 0.8,
+                        settings: vec![
+                            SettingCategory::Home,
+                            SettingCategory::Work,
+                            SettingCategory::School,
+                            SettingCategory::Community,
+                        ],
+                        acceptance_function: None,
+                    },
+                ),
+                (
+                    MandatoryIntervention::Partial,
+                    ScalarTransmissionModifier {
+                        modifier: 0.5,
+                        settings: vec![
+                            SettingCategory::Home,
+                            SettingCategory::Work,
+                            SettingCategory::School,
+                            SettingCategory::Community,
+                        ],
+                        acceptance_function: None,
+                    },
+                ), // Duplicate value
+            ],
+        );
+>>>>>>> 47d2fc4 (setting specific tranmission modifiers)
 
         match result.err() {
             Some(ModelError::ModelError(msg)) => {
@@ -670,9 +956,18 @@ mod test {
 
     impl TransmissionModifierStorage for AgeModifier {
         #[allow(clippy::cast_precision_loss)]
-        fn get_relative_transmission(&self, context: &Context, person_id: PersonId) -> f64 {
+        fn get_relative_transmission(
+            &self,
+            context: &Context,
+            person_id: PersonId,
+            setting_category: SettingCategory,
+        ) -> f64 {
             let age = context.get_property::<Person, Age>(person_id);
-            age.0 as f64 * self.age_multiplier
+            if setting_category == SettingCategory::Home {
+                age.0 as f64 * self.age_multiplier
+            } else {
+                1.0
+            }
         }
     }
 
@@ -699,7 +994,7 @@ mod test {
         let modifier_fn = modifier_map.get(&TypeId::of::<AgeModifier>()).unwrap();
         // Check that the modifier function returns the expected value
         assert_almost_eq!(
-            modifier_fn.get_relative_transmission(&context, aged_42),
+            modifier_fn.get_relative_transmission(&context, aged_42, SettingCategory::Home),
             0.42,
             0.0
         );
@@ -716,12 +1011,12 @@ mod test {
             .add_entity(with!(Person, MandatoryIntervention::Full, Age(30)))
             .unwrap();
         assert_almost_eq!(
-            context.get_relative_total_transmission(person_id_partial),
+            context.get_relative_total_transmission(person_id_partial, SettingCategory::Home),
             SUSCEPTIBLE_PARTIAL,
             0.0
         );
         assert_almost_eq!(
-            context.get_relative_total_transmission(person_id_full),
+            context.get_relative_total_transmission(person_id_full, SettingCategory::Home),
             0.0,
             0.0
         );
@@ -736,7 +1031,7 @@ mod test {
             .unwrap();
         context.infect_person(infectious_id, None, None);
         assert_almost_eq!(
-            context.get_relative_total_transmission(infectious_id),
+            context.get_relative_total_transmission(infectious_id, SettingCategory::Home),
             INFECTIOUS_PARTIAL,
             0.0
         );
@@ -758,7 +1053,7 @@ mod test {
         context.infect_person(person_id, None, None);
 
         assert_almost_eq!(
-            context.get_relative_total_transmission(person_id),
+            context.get_relative_total_transmission(person_id, SettingCategory::Home),
             INFECTIOUS_PARTIAL * INFECTIOUS_PARTIAL,
             0.0
         );
@@ -775,23 +1070,52 @@ mod test {
         context.infect_person(person_id, None, None);
 
         assert_almost_eq!(
-            context.get_relative_total_transmission(person_id),
+            context.get_relative_total_transmission(person_id, SettingCategory::Home),
             INFECTIOUS_PARTIAL,
             0.0
         );
 
         context.set_property(person_id, InfectiousnessProportion::Partial);
         assert_almost_eq!(
-            context.get_relative_total_transmission(person_id),
+            context.get_relative_total_transmission(person_id, SettingCategory::Home),
             INFECTIOUS_PARTIAL * INFECTIOUS_PARTIAL,
             0.0
         );
 
         context.set_property(person_id, InfectiousnessProportion::None);
         assert_almost_eq!(
-            context.get_relative_total_transmission(person_id),
+            context.get_relative_total_transmission(person_id, SettingCategory::Home),
             INFECTIOUS_PARTIAL,
             0.0
+        );
+    }
+
+    #[test]
+    fn test_get_relative_transmission_settings() {
+        let mut context = Context::new();
+
+        // Attempt to store duplicate modifier values
+        let _ = context.store_transmission_modifier_values(
+            InfectionStatus::Susceptible,
+            [(
+                MandatoryIntervention::Partial,
+                ScalarTransmissionModifier {
+                    modifier: 0.8,
+                    settings: vec![SettingCategory::Home],
+                    acceptance_function: None,
+                },
+            )],
+        );
+        let p1 = context
+            .add_entity(with!(Person, MandatoryIntervention::Partial, Age(30)))
+            .unwrap();
+        assert_eq!(
+            context.get_relative_total_transmission(p1, SettingCategory::Home),
+            0.8,
+        );
+        assert_eq!(
+            context.get_relative_total_transmission(p1, SettingCategory::Work),
+            1.0,
         );
     }
 }
