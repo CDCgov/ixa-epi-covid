@@ -226,10 +226,11 @@ pub struct ItineraryModifierSpecification {
     community: Option<[f64; SETTING_COUNT]>,
 }
 
-#[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TransmissionModifierSpecification {
     modifier: f64,
+    settings: Vec<SettingCategory>,
 }
 
 impl TransmissionModifierSpecification {
@@ -646,7 +647,6 @@ pub trait InterventionContextExt:
             let modifier_params = default_modifers
                 .get(&intervention.modifier)
                 .expect("Modifier parameters not found");
-
             let acceptance_function: Option<AcceptanceFunction> =
                 Some(Box::new(move |context, _person| {
                     match intervention.geography {
@@ -667,6 +667,7 @@ pub trait InterventionContextExt:
                 Modifier::MaskMandate => {
                     return Some(ScalarTransmissionModifier {
                         modifier: modifier_params.modifier,
+                        settings: modifier_params.settings.clone(),
                         acceptance_function,
                     });
                 }
@@ -793,7 +794,14 @@ mod test {
             ]),
             default_transmission_modifiers: HashMap::from_iter([(
                 Modifier::MaskMandate,
-                TransmissionModifierSpecification { modifier: 0.9 },
+                TransmissionModifierSpecification {
+                    modifier: 0.9,
+                    settings: vec![
+                        SettingCategory::School,
+                        SettingCategory::Work,
+                        SettingCategory::Community,
+                    ],
+                },
             )]),
             ..Default::default()
         };
@@ -986,15 +994,15 @@ mod test {
         context.setup_intervention_trigger_event_subscription();
 
         context.add_plan(0.0, move |context| {
-            let transmission = context.get_relative_total_transmission(p1);
+            let transmission = context.get_relative_total_transmission(p1, SettingCategory::School);
             assert_eq!(transmission, 1.0);
         });
         context.add_plan(1.5, move |context| {
-            let transmission = context.get_relative_total_transmission(p1);
+            let transmission = context.get_relative_total_transmission(p1, SettingCategory::School);
             assert_eq!(transmission, 0.9);
         });
         context.add_plan(2.5, move |context| {
-            let transmission = context.get_relative_total_transmission(p1);
+            let transmission = context.get_relative_total_transmission(p1, SettingCategory::School);
             assert_eq!(transmission, 1.0);
         });
         context.execute();
@@ -1127,11 +1135,25 @@ mod test {
     #[test]
     fn test_transmission_modifier_specification_validation() {
         // Valid transmission modifier specification
-        let valid_modifier = TransmissionModifierSpecification { modifier: 0.9 };
+        let valid_modifier = TransmissionModifierSpecification {
+            modifier: 0.9,
+            settings: vec![
+                SettingCategory::School,
+                SettingCategory::Work,
+                SettingCategory::Community,
+            ],
+        };
         assert!(valid_modifier.validate().is_ok());
 
         // Invalid - modifier outside [0, 1]
-        let invalid_modifier = TransmissionModifierSpecification { modifier: 1.5 };
+        let invalid_modifier = TransmissionModifierSpecification {
+            modifier: 1.5,
+            settings: vec![
+                SettingCategory::School,
+                SettingCategory::Work,
+                SettingCategory::Community,
+            ],
+        };
         assert!(invalid_modifier.validate().is_err());
     }
 

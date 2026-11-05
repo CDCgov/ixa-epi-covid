@@ -146,10 +146,10 @@ pub fn infection_attempt(context: &mut Context, person_id: PersonId) -> Option<P
             InfectionStatus::Susceptible => {
                 if context.sample_bool(
                     ForecastRng,
-                    context.get_relative_total_transmission(person_id),
+                    context.get_relative_total_transmission(person_id, setting.category()),
                 ) && context.sample_bool(
                     ForecastRng,
-                    context.get_relative_total_transmission(next_contact),
+                    context.get_relative_total_transmission(next_contact, setting.category()),
                 ) {
                     increment_named_count("infection_success");
                     trace!(
