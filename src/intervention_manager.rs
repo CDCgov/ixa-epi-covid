@@ -7,6 +7,7 @@ use crate::{
     ContextParametersExt, Params,
     error::ModelError,
     geography::{GEOGRAPHY_COUNT, Geography, GeographyDiscriminants},
+    infectiousness_manager::InfectionStatus,
     itinerary_modifiers::{
         AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
     },
@@ -779,7 +780,7 @@ mod test {
                 (SettingCategory::Work, 0.25),
                 (SettingCategory::Community, 0.25),
             ]),
-            default_modifiers: HashMap::from_iter([
+            default_itinerary_modifiers: HashMap::from_iter([
                 (
                     Modifier::SchoolClosure,
                     InterventionModifierSpecification::Itinerary {

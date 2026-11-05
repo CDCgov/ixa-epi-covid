@@ -80,6 +80,11 @@
                 "susceptibility_multiplier": 0.1
             }}
         },
+        "default_transmission_modifiers": {
+            "MaskMandate": {
+                "modifier": 0.9
+            }
+        },
         "interventions": [
             {
                 "modifier":"MaskMandate",
@@ -89,7 +94,14 @@
                 "duration": 50.0
             },
             {
-                "modifier":"SchoolClosure",
+                "modifier":"MaskMandate",
+                "geography": {"type": "State", "code": "56"},
+                "acceptance_probability": 0.9,
+                "activation_time": 0.0,
+                "duration": 50.0
+            },
+            {
+                "modifier":"MaskMandate",
                 "geography": {"type": "State", "code": "56"},
                 "acceptance_probability": 0.9,
                 "activation_time": 0.0,

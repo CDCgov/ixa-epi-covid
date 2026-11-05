@@ -463,7 +463,8 @@ impl Default for Params {
             settings_properties: HashMap::new(),
             itinerary_ratios: HashMap::new(),
             school_calendar: Vec::new(),
-            default_modifiers: HashMap::new(),
+            default_itinerary_modifiers: HashMap::new(),
+            default_transmission_modifiers: HashMap::new(),
             interventions: Vec::new(),
             prevalence_report: ReportParams {
                 write: false,
