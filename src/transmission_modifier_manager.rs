@@ -317,7 +317,17 @@ mod test {
                 .into_iter()
                 .collect(),
             };
+        let t3: PersonPropertyTransmissionModifier<InfectiousnessProportion> =
+            PersonPropertyTransmissionModifier {
+                transmission_modifier_map: [
+                    (InfectiousnessProportion::Partial, relative_effect),
+                    (InfectiousnessProportion::None, 0.0),
+                ]
+                .into_iter()
+                .collect(),
+            };
         assert_eq!(std::any::Any::type_id(&t1), std::any::Any::type_id(&t2));
+        assert_ne!(std::any::Any::type_id(&t1), std::any::Any::type_id(&t3));
         // Store initial modifier values to be overwritten
         context
             .store_transmission_modifier_values(
