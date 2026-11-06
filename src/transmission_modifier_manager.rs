@@ -298,7 +298,26 @@ mod test {
     fn test_register_modifier_value_overwrite() {
         let mut context = Context::new();
         let relative_effect = 0.8;
+        let t1: PersonPropertyTransmissionModifier<MandatoryIntervention> =
+            PersonPropertyTransmissionModifier {
+                transmission_modifier_map: [
+                    (MandatoryIntervention::Partial, relative_effect - 0.2),
+                    (MandatoryIntervention::Full, 0.2),
+                ]
+                .into_iter()
+                .collect(),
+            };
 
+        let t2: PersonPropertyTransmissionModifier<MandatoryIntervention> =
+            PersonPropertyTransmissionModifier {
+                transmission_modifier_map: [
+                    (MandatoryIntervention::Partial, relative_effect),
+                    (MandatoryIntervention::Full, 0.0),
+                ]
+                .into_iter()
+                .collect(),
+            };
+        assert_eq!(std::any::Any::type_id(&t1), std::any::Any::type_id(&t2));
         // Store initial modifier values to be overwritten
         context
             .store_transmission_modifier_values(
