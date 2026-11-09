@@ -78,11 +78,14 @@
         },
         "interventions": [
             {
-                "modifier":"SchoolClosure",
+                "modifier":"CommunityMobilityReduction",
                 "geography": {"type": "State", "code": "56"},
                 "acceptance_probability": 1.0,
-                "activation_time": 0.0,
-                "duration": 30.0
+                "trigger": {
+                    "InfectionPrevalence": {
+                        "threshold": 50
+                    }
+                }
             }
         ],
         "prevalence_report": {
