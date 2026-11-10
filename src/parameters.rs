@@ -1,4 +1,4 @@
-use ixa::{HashMap, HashMapExt, HashSet, prelude::*};
+use ixa::{HashMap, HashMapExt, HashSet, HashSetExt, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::{fmt::Debug, path::PathBuf};
@@ -313,6 +313,16 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error 
             }
         }
         unique_school_calendar_modifiers.push(school_calendar_modifier.clone());
+    }
+
+    let mut default_modifier_types = HashSet::new();
+    for modifier_specification in &parameters.default_modifiers {
+        if !default_modifier_types.insert(*modifier_specification.0) {
+            return Err(Box::new(ModelError::ModelError(
+                "Duplicate default modifiers are not allowed.".to_string(),
+            )));
+        }
+        modifier_specification.1.validate()?;
     }
 
     for intervention in &parameters.interventions {

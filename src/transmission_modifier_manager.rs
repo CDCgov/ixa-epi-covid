@@ -120,7 +120,7 @@ define_data_plugin!(
 
 pub trait ContextTransmissionModifierPrivateExt: PluginContext {
     /// Register a generic transmission modifier for a specific infection status.
-    fn register_transmission_modifier_fn<T: TransmissionModifierStorage>(
+    fn insert_transmission_modifier_fn<T: TransmissionModifierStorage>(
         &mut self,
         infection_status: InfectionStatus,
         transmission_modifier: T,
@@ -157,7 +157,6 @@ pub trait ContextTransmissionModifierPrivateExt: PluginContext {
     /// Internally, this method registers a transmission modifier function that returns the float
     /// value associated the person's property value in the
     /// `relative_transmission_potential_multipliers` key.
-    #[allow(dead_code)]
     fn store_transmission_modifier_values<P, T>(
         &mut self,
         infection_status: InfectionStatus,
@@ -193,7 +192,7 @@ pub trait ContextTransmissionModifierPrivateExt: PluginContext {
         }
 
         // Register a default function to simply map floats with T::Values
-        self.register_transmission_modifier_fn(
+        self.insert_transmission_modifier_fn(
             infection_status,
             PersonPropertyTransmissionModifier {
                 transmission_modifier_map: modifier_map,
@@ -206,16 +205,16 @@ impl ContextTransmissionModifierPrivateExt for Context {}
 pub trait ContextTransmissionModifierExt:
     PluginContext + ContextTransmissionModifierPrivateExt
 {
-    fn store_transmission_modifier<P>(
+    fn register_transmission_modifier<P>(
         &mut self,
-        transmission_multiplier: impl IntoIterator<Item = (P, ScalarTransmissionModifier)>,
+        transmission_modifier: impl IntoIterator<Item = (P, ScalarTransmissionModifier)>,
     ) -> Result<(), ModelError>
     where
         P: IndexableProperty<Person>,
     {
         let mut susceptible_modifiers = Vec::new();
         let mut infectious_modifiers = Vec::new();
-        for (key, value) in transmission_multiplier {
+        for (key, value) in transmission_modifier {
             let (infectious_acceptance, susceptible_acceptance) = match value.acceptance_function {
                 Some(acceptance) => {
                     let acceptance = std::rc::Rc::new(acceptance);
@@ -348,7 +347,7 @@ mod test {
         load_rate_fns(&mut context).unwrap();
 
         context
-            .store_transmission_modifier([
+            .register_transmission_modifier([
                 (
                     MandatoryIntervention::Partial,
                     ScalarTransmissionModifier {
@@ -368,7 +367,7 @@ mod test {
             ])
             .unwrap();
         context
-            .store_transmission_modifier([(
+            .register_transmission_modifier([(
                 InfectiousnessProportion::Partial,
                 ScalarTransmissionModifier {
                     infectiousness_multiplier: INFECTIOUS_PARTIAL,
@@ -386,7 +385,7 @@ mod test {
         let relative_effect = 0.8;
 
         context
-            .store_transmission_modifier([
+            .register_transmission_modifier([
                 (
                     MandatoryIntervention::Partial,
                     ScalarTransmissionModifier {
@@ -506,7 +505,7 @@ mod test {
         assert_ne!(std::any::Any::type_id(&t1), std::any::Any::type_id(&t3));
         // Store initial modifier values to be overwritten
         context
-            .store_transmission_modifier([
+            .register_transmission_modifier([
                 (
                     MandatoryIntervention::Partial,
                     ScalarTransmissionModifier {
@@ -528,7 +527,7 @@ mod test {
 
         // Overwrite previous modifier values
         context
-            .store_transmission_modifier([
+            .register_transmission_modifier([
                 (
                     MandatoryIntervention::Partial,
                     ScalarTransmissionModifier {
@@ -591,7 +590,7 @@ mod test {
         let mut context = Context::new();
 
         // Attempt to store invalid modifier values
-        let result = context.store_transmission_modifier([
+        let result = context.register_transmission_modifier([
             (
                 MandatoryIntervention::Partial,
                 ScalarTransmissionModifier {
@@ -630,7 +629,7 @@ mod test {
         let mut context = Context::new();
 
         // Attempt to store duplicate modifier values
-        let result = context.store_transmission_modifier([
+        let result = context.register_transmission_modifier([
             (
                 MandatoryIntervention::Partial,
                 ScalarTransmissionModifier {
@@ -683,7 +682,7 @@ mod test {
         let mut context = Context::new();
         let aged_42 = context.add_entity(with!(Person, Age(42))).unwrap();
 
-        context.register_transmission_modifier_fn(
+        context.insert_transmission_modifier_fn(
             InfectionStatus::Susceptible,
             AgeModifier {
                 age_multiplier: 0.01,

@@ -274,8 +274,7 @@ impl InterventionModifierSpecification {
             _ => None,
         }
     }
-    #[allow(dead_code)]
-    fn validate(&self) -> Result<(), ModelError> {
+    pub fn validate(&self) -> Result<(), ModelError> {
         match self {
             InterventionModifierSpecification::Transmission {
                 infectiousness_multiplier,
@@ -569,7 +568,7 @@ pub trait InterventionContextExt:
                 );
             }
             (Modifier::MaskMandate, Geography::State(state_code)) => {
-                self.store_transmission_modifier([(
+                self.register_transmission_modifier([(
                     AcceptsMaskMandateState(Some(Geography::State(state_code))),
                     *modifier
                         .into_any()
@@ -579,7 +578,7 @@ pub trait InterventionContextExt:
                 .unwrap();
             }
             (Modifier::MaskMandate, Geography::County(fips_code)) => {
-                self.store_transmission_modifier([(
+                self.register_transmission_modifier([(
                     AcceptsMaskMandateCounty(Some(Geography::County(fips_code))),
                     *modifier
                         .into_any()

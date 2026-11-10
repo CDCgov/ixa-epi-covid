@@ -87,6 +87,13 @@
                 "acceptance_probability": 0.9,
                 "activation_time": 0.0,
                 "duration": 50.0
+            },
+            {
+                "modifier":"SchoolClosure",
+                "geography": {"type": "State", "code": "56"},
+                "acceptance_probability": 0.9,
+                "activation_time": 0.0,
+                "duration": 50.0
             }
         ],
         "prevalence_report": {
