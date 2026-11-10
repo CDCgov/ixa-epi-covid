@@ -7,6 +7,7 @@ use crate::{
     population_loader::PersonId,
     rate_fns::{InfectiousnessRateExt, InfectiousnessRateFn, ScaledRateFn},
     settings::{ContextSettingExt, SettingCode},
+    transmission_modifier_manager::ContextTransmissionModifierExt,
 };
 
 use crate::population_loader::Person;
@@ -143,13 +144,19 @@ pub fn infection_attempt(context: &mut Context, person_id: PersonId) -> Option<P
     {
         match context.get_property::<Person, InfectionStatus>(next_contact) {
             InfectionStatus::Susceptible => {
-                increment_named_count("infection_success");
-                trace!(
-                    "Infection attempt successful. Person {}, setting id {:?}, infecting {}",
-                    person_id, setting, next_contact
-                );
-                context.infect_person(next_contact, Some(person_id), Some(setting));
-                return Some(next_contact);
+                if context.sample_bool(
+                    ForecastRng,
+                    context.get_transmission_success_probability(person_id, next_contact),
+                ) {
+                    increment_named_count("infection_success");
+                    trace!(
+                        "Infection attempt successful. Person {}, setting id {:?}, infecting {}",
+                        person_id, setting, next_contact
+                    );
+                    context.infect_person(next_contact, Some(person_id), Some(setting));
+                    return Some(next_contact);
+                }
+                return None;
             }
             _ => return None,
         }

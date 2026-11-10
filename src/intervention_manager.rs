@@ -1,4 +1,7 @@
-use std::ops::{Index, IndexMut};
+use std::{
+    any::Any,
+    ops::{Index, IndexMut},
+};
 
 use crate::{
     ContextParametersExt, Params,
@@ -9,6 +12,7 @@ use crate::{
     },
     pop_reader::{FIPSCode, states::USState},
     settings::{ContextSettingExt, Itinerary, Person, PersonId, SETTING_COUNT, SettingCategory},
+    transmission_modifier_manager::{ContextTransmissionModifierExt, ScalarTransmissionModifier},
 };
 use ixa::{
     ExecutionPhase, HashMap, HashMapExt, IxaEvent, impl_derived_property,
@@ -167,12 +171,37 @@ impl_derived_property!(
     }
 );
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+pub struct AcceptsMaskMandateState(pub Option<Geography>);
+impl_derived_property!(
+    AcceptsMaskMandateState,
+    Person,
+    [AcceptsIntervention, HomeState],
+    [],
+    |accepts, home_state| {
+        AcceptsMaskMandateState(accepts.0[GeographyDiscriminants::State][Modifier::MaskMandate])
+    }
+);
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+pub struct AcceptsMaskMandateCounty(pub Option<Geography>);
+impl_derived_property!(
+    AcceptsMaskMandateCounty,
+    Person,
+    [AcceptsIntervention, HomeCounty],
+    [],
+    |accepts, home_county| {
+        AcceptsMaskMandateCounty(accepts.0[GeographyDiscriminants::County][Modifier::MaskMandate])
+    }
+);
+
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize, Eq, Hash, EnumCount, EnumIter)]
 #[repr(u8)]
 pub enum Modifier {
     SchoolClosure = 0,
     CommunityMobilityReduction,
     WorkplaceMobilityReduction,
+    MaskMandate,
 }
 
 impl<T> Index<Modifier> for [T; MODIFIER_COUNT] {
@@ -192,42 +221,111 @@ pub const MODIFIER_COUNT: usize = Modifier::COUNT;
 
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct ModifierSpecification {
-    home: Option<[f64; SETTING_COUNT]>,
-    school: Option<[f64; SETTING_COUNT]>,
-    work: Option<[f64; SETTING_COUNT]>,
-    community: Option<[f64; SETTING_COUNT]>,
+pub enum InterventionModifierSpecification {
+    Itinerary {
+        home: Option<[f64; SETTING_COUNT]>,
+        school: Option<[f64; SETTING_COUNT]>,
+        work: Option<[f64; SETTING_COUNT]>,
+        community: Option<[f64; SETTING_COUNT]>,
+    },
+    Transmission {
+        infectiousness_multiplier: f64,
+        susceptibility_multiplier: f64,
+    },
 }
 
-impl ModifierSpecification {
-    pub fn validate(&self) -> Result<(), ModelError> {
-        let categories = [
-            (SettingCategory::Home, self.home),
-            (SettingCategory::School, self.school),
-            (SettingCategory::Work, self.work),
-            (SettingCategory::Community, self.community),
-        ];
-        for (category, modifier) in categories.iter() {
-            if let Some(modifier) = modifier {
-                let sum: f64 = modifier.iter().sum();
-                if (sum - 1.0).abs() > 1e-6 {
-                    return Err(ModelError::ModelError(format!(
-                        "Modifier specification for {:?} does not sum to 1.0",
-                        category
-                    )));
+impl InterventionModifierSpecification {
+    fn get_transmission_multipliers(&self) -> Option<ScalarTransmissionModifier> {
+        match self {
+            InterventionModifierSpecification::Transmission {
+                infectiousness_multiplier,
+                susceptibility_multiplier,
+            } => Some(ScalarTransmissionModifier {
+                infectiousness_multiplier: *infectiousness_multiplier,
+                susceptibility_multiplier: *susceptibility_multiplier,
+                acceptance_function: None,
+            }),
+            _ => None,
+        }
+    }
+    fn get_itinerary_modifiers(&self) -> Option<[[f64; SETTING_COUNT]; SETTING_COUNT]> {
+        match self {
+            InterventionModifierSpecification::Itinerary {
+                home,
+                school,
+                work,
+                community,
+            } => {
+                let mut modifiers = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+                if let Some(home) = home {
+                    modifiers[SettingCategory::Home as usize] = *home;
                 }
-                for &value in modifier.iter() {
-                    if !(0.0..=1.0).contains(&value) {
-                        return Err(ModelError::ModelError(format!(
-                            "Modifier specification for {:?} values must be between 0 and 1",
-                            category
-                        )));
+                if let Some(school) = school {
+                    modifiers[SettingCategory::School as usize] = *school;
+                }
+                if let Some(work) = work {
+                    modifiers[SettingCategory::Work as usize] = *work;
+                }
+                if let Some(community) = community {
+                    modifiers[SettingCategory::Community as usize] = *community;
+                }
+                Some(modifiers)
+            }
+            _ => None,
+        }
+    }
+    #[allow(dead_code)]
+    fn validate(&self) -> Result<(), ModelError> {
+        match self {
+            InterventionModifierSpecification::Transmission {
+                infectiousness_multiplier,
+                susceptibility_multiplier,
+            } => {
+                if !(0.0..=1.0).contains(infectiousness_multiplier) {
+                    return Err(ModelError::ModelError(
+                        "Infectiousness multiplier must be between 0 and 1".to_string(),
+                    ));
+                }
+                if !(0.0..=1.0).contains(susceptibility_multiplier) {
+                    return Err(ModelError::ModelError(
+                        "Susceptibility multiplier must be between 0 and 1".to_string(),
+                    ));
+                }
+                Ok(())
+            }
+            InterventionModifierSpecification::Itinerary {
+                home,
+                school,
+                work,
+                community,
+            } => {
+                let categories = [
+                    (SettingCategory::Home, home),
+                    (SettingCategory::School, school),
+                    (SettingCategory::Work, work),
+                    (SettingCategory::Community, community),
+                ];
+                for (category, modifier) in categories.iter() {
+                    if let Some(values) = modifier {
+                        for &value in values.iter() {
+                            if !(0.0..=1.0).contains(&value) {
+                                return Err(ModelError::ModelError(format!(
+                                    "{:?} modifier values must be between 0 and 1",
+                                    category
+                                )));
+                            }
+                        }
                     }
                 }
+                Ok(())
             }
         }
-        Ok(())
     }
+}
+
+pub trait ModifierSpecification {
+    fn as_any(&self) -> &dyn Any;
+    fn into_any(self: Box<Self>) -> Box<dyn Any>;
 }
 
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
@@ -237,7 +335,6 @@ pub struct Intervention {
     acceptance_probability: f64,
     activation_time: f64,
     duration: Option<f64>,
-    override_modifiers: Option<ModifierSpecification>,
 }
 
 impl Intervention {
@@ -258,9 +355,6 @@ impl Intervention {
             return Err(ModelError::ModelError(
                 "Intervention duration must be positive".to_string(),
             ));
-        }
-        if let Some(overrides) = &self.override_modifiers {
-            overrides.validate()?;
         }
         Ok(())
     }
@@ -318,7 +412,12 @@ define_data_plugin!(
 );
 
 pub trait InterventionContextExt:
-    PluginContext + ContextEntitiesExt + ContextParametersExt + ContextTriggersExt + ContextSettingExt
+    PluginContext
+    + ContextEntitiesExt
+    + ContextParametersExt
+    + ContextTriggersExt
+    + ContextSettingExt
+    + ContextTransmissionModifierExt
 {
     fn setup_intervention_triggers(&mut self, intervention: Intervention) {
         let start_trigger =
@@ -384,6 +483,12 @@ pub trait InterventionContextExt:
             (Geography::County(code), Modifier::CommunityMobilityReduction) => self
                 .query_result_iterator(with!(Person, HomeCounty(Some(code))))
                 .collect(),
+            (Geography::State(code), Modifier::MaskMandate) => self
+                .query_result_iterator(with!(Person, HomeState(Some(code))))
+                .collect(),
+            (Geography::County(code), Modifier::MaskMandate) => self
+                .query_result_iterator(with!(Person, HomeCounty(Some(code))))
+                .collect(),
         };
         for person in people {
             let accepts = self.sample_bool(InterventionRng, intervention.acceptance_probability);
@@ -400,49 +505,88 @@ pub trait InterventionContextExt:
         &mut self,
         intervention: Intervention,
     ) -> Result<(), ModelError> {
-        let itinerary_modifier = self.define_intervention_itinerary_modifier(intervention);
+        let modifier: Box<dyn ModifierSpecification> =
+            self.get_modifier_specification(intervention);
         match (intervention.modifier, intervention.geography) {
             (Modifier::SchoolClosure, Geography::State(state_code)) => {
                 self.setup_itinerary_modifier(
                     AcceptsSchoolClosureState(Some(Geography::State(state_code))),
-                    itinerary_modifier,
+                    *modifier
+                        .into_any()
+                        .downcast::<ItineraryTransitionMatrix>()
+                        .expect("expected ItineraryTransitionMatrix"),
                     false,
                 );
             }
             (Modifier::SchoolClosure, Geography::County(fips_code)) => {
                 self.setup_itinerary_modifier(
                     AcceptsSchoolClosureCounty(Some(Geography::County(fips_code))),
-                    itinerary_modifier,
+                    *modifier
+                        .into_any()
+                        .downcast::<ItineraryTransitionMatrix>()
+                        .expect("expected ItineraryTransitionMatrix"),
                     false,
                 );
             }
             (Modifier::WorkplaceMobilityReduction, Geography::State(state_code)) => {
                 self.setup_itinerary_modifier(
                     AcceptsWorkMobilityState(Some(Geography::State(state_code))),
-                    itinerary_modifier,
+                    *modifier
+                        .into_any()
+                        .downcast::<ItineraryTransitionMatrix>()
+                        .expect("expected ItineraryTransitionMatrix"),
                     true,
                 );
             }
             (Modifier::WorkplaceMobilityReduction, Geography::County(fips_code)) => {
                 self.setup_itinerary_modifier(
                     AcceptsWorkMobilityCounty(Some(Geography::County(fips_code))),
-                    itinerary_modifier,
+                    *modifier
+                        .into_any()
+                        .downcast::<ItineraryTransitionMatrix>()
+                        .expect("expected ItineraryTransitionMatrix"),
                     true,
                 );
             }
             (Modifier::CommunityMobilityReduction, Geography::State(state_code)) => {
                 self.setup_itinerary_modifier(
                     AcceptsCommunityMobilityState(Some(Geography::State(state_code))),
-                    itinerary_modifier,
+                    *modifier
+                        .into_any()
+                        .downcast::<ItineraryTransitionMatrix>()
+                        .expect("expected ItineraryTransitionMatrix"),
                     true,
                 );
             }
             (Modifier::CommunityMobilityReduction, Geography::County(fips_code)) => {
                 self.setup_itinerary_modifier(
                     AcceptsCommunityMobilityCounty(Some(Geography::County(fips_code))),
-                    itinerary_modifier,
+                    *modifier
+                        .into_any()
+                        .downcast::<ItineraryTransitionMatrix>()
+                        .expect("expected ItineraryTransitionMatrix"),
                     true,
                 );
+            }
+            (Modifier::MaskMandate, Geography::State(state_code)) => {
+                self.store_transmission_modifier([(
+                    AcceptsMaskMandateState(Some(Geography::State(state_code))),
+                    *modifier
+                        .into_any()
+                        .downcast::<ScalarTransmissionModifier>()
+                        .expect("expected ScalarTransmissionModifier"),
+                )])
+                .unwrap();
+            }
+            (Modifier::MaskMandate, Geography::County(fips_code)) => {
+                self.store_transmission_modifier([(
+                    AcceptsMaskMandateCounty(Some(Geography::County(fips_code))),
+                    *modifier
+                        .into_any()
+                        .downcast::<ScalarTransmissionModifier>()
+                        .expect("expected ScalarTransmissionModifier"),
+                )])
+                .unwrap();
             }
         }
         Ok(())
@@ -482,6 +626,16 @@ pub trait InterventionContextExt:
                     Geography::County(fips_code),
                 )));
             }
+            (Modifier::MaskMandate, Geography::State(state_code)) => {
+                self.remove_itinerary_modifier(AcceptsMaskMandateState(Some(Geography::State(
+                    state_code,
+                ))));
+            }
+            (Modifier::MaskMandate, Geography::County(fips_code)) => {
+                self.remove_itinerary_modifier(AcceptsMaskMandateCounty(Some(Geography::County(
+                    fips_code,
+                ))));
+            }
         }
         Ok(())
     }
@@ -491,66 +645,75 @@ pub trait InterventionContextExt:
         data.is_intervention_active(modifier, geography)
     }
 
-    fn define_intervention_itinerary_modifier(
+    fn get_modifier_specification(
         &self,
         intervention: Intervention,
-    ) -> ItineraryTransitionMatrix {
-        let default_modifers = self.get_params().default_modifiers.clone();
-        let modifier_params = default_modifers
+    ) -> Box<dyn ModifierSpecification> {
+        let default_modifiers = self.get_params().default_modifiers.clone();
+        let modifier_spec = default_modifiers
             .get(&intervention.modifier)
             .expect("Modifier parameters not found");
-
-        let mut matrix = [[0.0; SETTING_COUNT]; SETTING_COUNT];
-
-        for (target, source) in matrix
-            .iter_mut()
-            .zip(collapse_modifier_specification(modifier_params))
-        {
-            if let Some(source) = source {
-                *target = source;
-            }
-        }
-
-        if let Some(overrides) = intervention.override_modifiers {
-            for (target, source) in matrix
-                .iter_mut()
-                .zip(collapse_modifier_specification(&overrides))
-            {
-                if let Some(source) = source {
-                    *target = source;
-                }
-            }
-        }
-
-        let acceptance_function: Option<AcceptanceFunction> =
-            Some(Box::new(move |context, _person| {
-                match intervention.geography {
-                    Geography::State(_) => context
-                        .is_intervention_active(intervention.modifier, intervention.geography),
-                    Geography::County(code) => {
-                        !context.is_intervention_active(
-                            intervention.modifier,
-                            Geography::State(code.state().unwrap()),
-                        ) && context
-                            .is_intervention_active(intervention.modifier, intervention.geography)
-                    }
-                }
-            }));
-        // Interventions have different effects on location and activity
         match intervention.modifier {
             Modifier::SchoolClosure => {
-                create_itinerary_transition_matrix(None, Some(matrix), acceptance_function)
+                let matrix = modifier_spec
+                    .get_itinerary_modifiers()
+                    .expect("Itinerary modifiers incorrectly specified");
+                Box::new(create_itinerary_transition_matrix(
+                    None,
+                    Some(matrix),
+                    Some(create_intervention_acceptance_function(intervention)),
+                ))
             }
             Modifier::WorkplaceMobilityReduction => {
-                create_itinerary_transition_matrix(None, Some(matrix), acceptance_function)
+                let matrix = modifier_spec
+                    .get_itinerary_modifiers()
+                    .expect("Itinerary modifiers incorrectly specified");
+                Box::new(create_itinerary_transition_matrix(
+                    None,
+                    Some(matrix),
+                    Some(create_intervention_acceptance_function(intervention)),
+                ))
             }
             Modifier::CommunityMobilityReduction => {
-                create_itinerary_transition_matrix(Some(matrix), None, acceptance_function)
+                let matrix = modifier_spec
+                    .get_itinerary_modifiers()
+                    .expect("Itinerary modifiers incorrectly specified");
+                Box::new(create_itinerary_transition_matrix(
+                    Some(matrix),
+                    None,
+                    Some(create_intervention_acceptance_function(intervention)),
+                ))
+            }
+            Modifier::MaskMandate => {
+                let transmission_multipliers = modifier_spec
+                    .get_transmission_multipliers()
+                    .expect("Transmission modifiers incorrectly specified");
+                Box::new(ScalarTransmissionModifier {
+                    infectiousness_multiplier: transmission_multipliers.infectiousness_multiplier,
+                    susceptibility_multiplier: transmission_multipliers.susceptibility_multiplier,
+                    acceptance_function: Some(create_intervention_acceptance_function(
+                        intervention,
+                    )),
+                })
             }
         }
     }
 }
 impl InterventionContextExt for Context {}
+
+fn create_intervention_acceptance_function(intervention: Intervention) -> AcceptanceFunction {
+    Box::new(move |context, _person| match intervention.geography {
+        Geography::State(_) => {
+            context.is_intervention_active(intervention.modifier, intervention.geography)
+        }
+        Geography::County(code) => {
+            !context.is_intervention_active(
+                intervention.modifier,
+                Geography::State(code.state().unwrap()),
+            ) && context.is_intervention_active(intervention.modifier, intervention.geography)
+        }
+    })
+}
 
 pub fn init(context: &mut Context) -> Result<(), ModelError> {
     context.index_property::<Person, SchoolState>();
@@ -567,29 +730,11 @@ pub fn init(context: &mut Context) -> Result<(), ModelError> {
     Ok(())
 }
 
-fn collapse_modifier_specification(
-    modifier_spec: &ModifierSpecification,
-) -> [Option<[f64; SETTING_COUNT]>; SETTING_COUNT] {
-    let mut matrix: [Option<[f64; SETTING_COUNT]>; SETTING_COUNT] = [None; SETTING_COUNT];
-    if let Some(home) = modifier_spec.home {
-        matrix[SettingCategory::Home] = Some(home);
-    }
-    if let Some(school) = modifier_spec.school {
-        matrix[SettingCategory::School] = Some(school);
-    }
-    if let Some(work) = modifier_spec.work {
-        matrix[SettingCategory::Work] = Some(work);
-    }
-    if let Some(community) = modifier_spec.community {
-        matrix[SettingCategory::Community] = Some(community);
-    }
-    matrix
-}
-
 #[cfg(test)]
 mod test {
     use crate::{
         Age,
+        infectiousness_manager::InfectionData,
         itinerary_manager::ContextItineraryModifierExt,
         parameters::{GlobalParams, SettingProperties},
         pop_reader::parser::parse_fips_school_id,
@@ -638,7 +783,7 @@ mod test {
             default_modifiers: HashMap::from_iter([
                 (
                     Modifier::SchoolClosure,
-                    ModifierSpecification {
+                    InterventionModifierSpecification::Itinerary {
                         home: None,
                         school: Some([1.0, 0.0, 0.0, 0.0]),
                         work: None,
@@ -647,7 +792,7 @@ mod test {
                 ),
                 (
                     Modifier::WorkplaceMobilityReduction,
-                    ModifierSpecification {
+                    InterventionModifierSpecification::Itinerary {
                         home: None,
                         school: None,
                         work: Some([1.0, 0.0, 0.0, 0.0]),
@@ -656,11 +801,18 @@ mod test {
                 ),
                 (
                     Modifier::CommunityMobilityReduction,
-                    ModifierSpecification {
+                    InterventionModifierSpecification::Itinerary {
                         home: None,
                         school: None,
                         work: None,
                         community: Some([1.0, 0.0, 0.0, 0.0]),
+                    },
+                ),
+                (
+                    Modifier::MaskMandate,
+                    InterventionModifierSpecification::Transmission {
+                        infectiousness_multiplier: 0.9,
+                        susceptibility_multiplier: 0.9,
                     },
                 ),
             ]),
@@ -687,7 +839,6 @@ mod test {
             acceptance_probability: 1.0,
             activation_time: 1.0,
             duration: Some(1.0),
-            override_modifiers: None,
         };
         let work_place_mobility_reduction = Intervention {
             modifier: Modifier::WorkplaceMobilityReduction,
@@ -695,7 +846,6 @@ mod test {
             acceptance_probability: 1.0,
             activation_time: 3.0,
             duration: Some(1.0),
-            override_modifiers: None,
         };
         let community_mobility_reduction = Intervention {
             modifier: Modifier::CommunityMobilityReduction,
@@ -703,7 +853,6 @@ mod test {
             acceptance_probability: 1.0,
             activation_time: 5.0,
             duration: Some(1.0),
-            override_modifiers: None,
         };
         context.setup_intervention_triggers(school_closure);
         context.setup_intervention_triggers(work_place_mobility_reduction);
@@ -756,7 +905,6 @@ mod test {
             acceptance_probability: 1.0,
             activation_time: 1.0,
             duration: Some(1.0),
-            override_modifiers: None,
         };
         let work_place_mobility_reduction = Intervention {
             modifier: Modifier::WorkplaceMobilityReduction,
@@ -764,7 +912,6 @@ mod test {
             acceptance_probability: 1.0,
             activation_time: 3.0,
             duration: Some(1.0),
-            override_modifiers: None,
         };
         let community_mobility_reduction = Intervention {
             modifier: Modifier::CommunityMobilityReduction,
@@ -772,7 +919,6 @@ mod test {
             acceptance_probability: 1.0,
             activation_time: 5.0,
             duration: Some(1.0),
-            override_modifiers: None,
         };
         context.setup_intervention_triggers(school_closure);
         context.setup_intervention_triggers(work_place_mobility_reduction);
@@ -819,45 +965,58 @@ mod test {
     }
 
     #[test]
-    fn test_intervention_override_modifier() {
+    fn test_intervention_setup_transmission_modification() {
         let mut context = setup();
         let school_code = make_school_id(b"16037960200002");
+        let work_code = make_work_id(b"16037960200003");
+        let home_code = make_home_id(b"16037960200004");
+        let community_code = make_community_id(b"16037960200004");
         let g1 = Geography::State(school_code.0.state().unwrap());
         let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
-        let intervention = Intervention {
-            modifier: Modifier::SchoolClosure,
+        let mask_mandate = Intervention {
+            modifier: Modifier::MaskMandate,
             geography: g1,
             acceptance_probability: 1.0,
             activation_time: 1.0,
             duration: Some(1.0),
-            override_modifiers: Some(ModifierSpecification {
-                home: None,
-                school: Some([0.5, 0.0, 0.0, 0.5]),
-                work: None,
-                community: None,
-            }),
         };
-        context.setup_intervention_triggers(intervention);
-        context.setup_intervention_trigger_event_subscription();
+
         context.set_property(
             p1,
             Itinerary {
-                setting_ids: [None, None, Some(school_code), None],
-                itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
+                setting_ids: [
+                    Some(home_code),
+                    Some(work_code),
+                    Some(school_code),
+                    Some(community_code),
+                ],
+                itinerary_ratios: [0.3, 0.2, 0.3, 0.2],
             },
         );
 
+        context.set_property::<Person, InfectionData>(
+            p1,
+            InfectionData::Infectious {
+                infection_time: 1.2,
+                infected_by: None,
+                infection_setting_id: None,
+            },
+        );
+
+        context.setup_intervention_triggers(mask_mandate);
+        context.setup_intervention_trigger_event_subscription();
+
         context.add_plan(0.0, move |context| {
-            let itinerary = context.get_itinerary(p1);
-            assert_eq!(itinerary, [0.3, 0.0, 0.5, 0.2]);
+            let transmission = context.get_relative_total_transmission(p1);
+            assert_eq!(transmission, 1.0);
         });
         context.add_plan(1.5, move |context| {
-            let itinerary = context.get_itinerary(p1);
-            assert_eq!(itinerary, [0.55, 0.0, 0.0, 0.45]);
+            let transmission = context.get_relative_total_transmission(p1);
+            assert_eq!(transmission, 0.9);
         });
-        context.add_plan(3.0, move |context| {
-            let itinerary = context.get_itinerary(p1);
-            assert_eq!(itinerary, [0.3, 0.0, 0.5, 0.2]);
+        context.add_plan(2.5, move |context| {
+            let transmission = context.get_relative_total_transmission(p1);
+            assert_eq!(transmission, 1.0);
         });
         context.execute();
     }
@@ -886,7 +1045,6 @@ mod test {
             acceptance_probability: 0.5,
             activation_time: 1.0,
             duration: Some(1.0),
-            override_modifiers: None,
         };
         context.setup_intervention_triggers(intervention);
         context.setup_intervention_trigger_event_subscription();
@@ -910,12 +1068,12 @@ mod test {
     #[test]
     fn modifier_specification_rejects_unknown_fields() {
         let values = [1.0; SETTING_COUNT];
-        let input = json!({
+        let input = json!({"Itinerary":{
             "home": values,
             "unexpected": values
-        });
+        }});
 
-        let result = serde_json::from_value::<ModifierSpecification>(input);
+        let result = serde_json::from_value::<InterventionModifierSpecification>(input);
 
         assert!(result.is_err());
 
@@ -927,22 +1085,22 @@ mod test {
     #[test]
     fn modifier_specification_accepts_known_fields() {
         let values = [1.0; SETTING_COUNT];
-        let input = json!({
+        let input = json!({"Itinerary":{
             "home": values,
             "school": null,
             "work": values,
             "community": null
-        });
+        }});
 
-        let result = serde_json::from_value::<ModifierSpecification>(input);
+        let result = serde_json::from_value::<InterventionModifierSpecification>(input);
 
         assert!(result.is_ok());
     }
 
     #[test]
-    fn test_modifier_specification_validation() {
+    fn test_itinerary_modifier_specification_validation() {
         // Valid modifier specification - all values sum to 1.0 and are in [0, 1]
-        let valid_modifier = ModifierSpecification {
+        let valid_modifier = InterventionModifierSpecification::Itinerary {
             home: Some([0.3, 0.2, 0.3, 0.2]),
             school: Some([1.0, 0.0, 0.0, 0.0]),
             work: None,
@@ -950,17 +1108,8 @@ mod test {
         };
         assert!(valid_modifier.validate().is_ok());
 
-        // Invalid - values don't sum to 1.0
-        let invalid_sum = ModifierSpecification {
-            home: Some([0.3, 0.2, 0.3, 0.1]),
-            school: None,
-            work: None,
-            community: None,
-        };
-        assert!(invalid_sum.validate().is_err());
-
         // Invalid - values outside [0, 1]
-        let invalid_range = ModifierSpecification {
+        let invalid_range = InterventionModifierSpecification::Itinerary {
             home: Some([1.5, -0.5, 0.0, 0.0]),
             school: None,
             work: None,
@@ -969,7 +1118,7 @@ mod test {
         assert!(invalid_range.validate().is_err());
 
         // Valid - all categories with valid values
-        let all_categories = ModifierSpecification {
+        let all_categories = InterventionModifierSpecification::Itinerary {
             home: Some([0.5, 0.25, 0.25, 0.0]),
             school: Some([0.0, 1.0, 0.0, 0.0]),
             work: Some([0.2, 0.3, 0.4, 0.1]),
@@ -978,13 +1127,30 @@ mod test {
         assert!(all_categories.validate().is_ok());
 
         // Valid - all None
-        let all_none = ModifierSpecification {
+        let all_none = InterventionModifierSpecification::Itinerary {
             home: None,
             school: None,
             work: None,
             community: None,
         };
         assert!(all_none.validate().is_ok());
+    }
+
+    #[test]
+    fn test_transmission_modifier_specification_validation() {
+        // Valid transmission modifier specification
+        let valid_modifier = InterventionModifierSpecification::Transmission {
+            infectiousness_multiplier: 0.9,
+            susceptibility_multiplier: 0.9,
+        };
+        assert!(valid_modifier.validate().is_ok());
+
+        // Invalid - modifier outside [0, 1]
+        let invalid_modifier = InterventionModifierSpecification::Transmission {
+            infectiousness_multiplier: 1.5,
+            susceptibility_multiplier: 1.5,
+        };
+        assert!(invalid_modifier.validate().is_err());
     }
 
     #[test]
@@ -996,12 +1162,6 @@ mod test {
             acceptance_probability: 0.95,
             activation_time: 10.0,
             duration: Some(5.0),
-            override_modifiers: Some(ModifierSpecification {
-                home: Some([0.6, 0.1, 0.2, 0.1]),
-                school: None,
-                work: None,
-                community: None,
-            }),
         };
         assert!(valid_intervention.validate().is_ok());
 
@@ -1012,7 +1172,6 @@ mod test {
             acceptance_probability: 1.5,
             activation_time: 10.0,
             duration: Some(5.0),
-            override_modifiers: None,
         };
         assert!(invalid_probability_high.validate().is_err());
 
@@ -1023,7 +1182,6 @@ mod test {
             acceptance_probability: -0.1,
             activation_time: 10.0,
             duration: Some(5.0),
-            override_modifiers: None,
         };
         assert!(invalid_probability_low.validate().is_err());
 
@@ -1034,7 +1192,6 @@ mod test {
             acceptance_probability: 0.5,
             activation_time: -1.0,
             duration: Some(5.0),
-            override_modifiers: None,
         };
         assert!(invalid_activation.validate().is_err());
 
@@ -1045,96 +1202,7 @@ mod test {
             acceptance_probability: 0.5,
             activation_time: 10.0,
             duration: Some(0.0),
-            override_modifiers: None,
         };
         assert!(invalid_duration.validate().is_err());
-
-        // Invalid - invalid override modifiers
-        let invalid_overrides = Intervention {
-            modifier: Modifier::SchoolClosure,
-            geography: Geography::State(USState::decode(1).unwrap()),
-            acceptance_probability: 0.5,
-            activation_time: 10.0,
-            duration: Some(5.0),
-            override_modifiers: Some(ModifierSpecification {
-                home: Some([0.5, 0.5, 0.5, 0.5]), // Sum is 2.0, not 1.0
-                school: None,
-                work: None,
-                community: None,
-            }),
-        };
-        assert!(invalid_overrides.validate().is_err());
-    }
-
-    #[test]
-    fn test_different_modifiers_in_different_geographies() {
-        let school_code1 = make_school_id(b"16037960200002");
-        let school_code2 = make_school_id(b"16038960200002");
-        let g1 = Geography::County(school_code1.0.state_county_code().unwrap());
-        let g2 = Geography::County(school_code2.0.state_county_code().unwrap());
-        let modifier_specification = ModifierSpecification {
-            home: None,
-            school: Some([0.5, 0.0, 0.0, 0.5]),
-            work: None,
-            community: None,
-        };
-        let intervention1 = Intervention {
-            modifier: Modifier::SchoolClosure,
-            geography: g1,
-            acceptance_probability: 1.0,
-            activation_time: 1.0,
-            duration: Some(1.0),
-            override_modifiers: None,
-        };
-        let intervention2 = Intervention {
-            modifier: Modifier::SchoolClosure,
-            geography: g2,
-            acceptance_probability: 1.0,
-            activation_time: 1.0,
-            duration: Some(1.0),
-            override_modifiers: Some(modifier_specification),
-        };
-
-        let mut context = setup();
-        let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
-        let p2 = context.add_entity(with!(Person, Age(10))).unwrap();
-        context.setup_intervention_triggers(intervention1);
-        context.setup_intervention_triggers(intervention2);
-        context.setup_intervention_trigger_event_subscription();
-        context.set_property(
-            p1,
-            Itinerary {
-                setting_ids: [None, None, Some(school_code1), None],
-                itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
-            },
-        );
-
-        context.set_property(
-            p2,
-            Itinerary {
-                setting_ids: [None, None, Some(school_code2), None],
-                itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
-            },
-        );
-
-        context.add_plan(0.0, move |context| {
-            let itinerary1 = context.get_itinerary(p1);
-            let itinerary2 = context.get_itinerary(p2);
-            assert_eq!(itinerary1, [0.3, 0.0, 0.5, 0.2]);
-            assert_eq!(itinerary2, [0.3, 0.0, 0.5, 0.2]);
-        });
-        context.add_plan(1.5, move |context| {
-            let itinerary1 = context.get_itinerary(p1);
-            let itinerary2 = context.get_itinerary(p2);
-            assert_eq!(itinerary1, [0.8, 0.0, 0.0, 0.2]);
-            assert_eq!(itinerary2, [0.55, 0.0, 0.0, 0.45]);
-        });
-        context.add_plan(3.0, move |context| {
-            let itinerary1 = context.get_itinerary(p1);
-            let itinerary2 = context.get_itinerary(p2);
-            assert_eq!(itinerary1, [0.3, 0.0, 0.5, 0.2]);
-            assert_eq!(itinerary2, [0.3, 0.0, 0.5, 0.2]);
-        });
-        context.execute();
     }
 }

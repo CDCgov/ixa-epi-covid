@@ -66,23 +66,27 @@
             }
         ],
         "default_modifiers": {
-            "SchoolClosure": {
+            "SchoolClosure": {"Itinerary":{
                 "school": [1.0, 0.0, 0.0, 0.0]
-            },
-            "CommunityMobilityReduction": {
+            }},
+            "CommunityMobilityReduction": {"Itinerary":{
                 "community": [1.0, 0.0, 0.0, 0.0]
-            },
-            "WorkplaceMobilityReduction": {
+            }},
+            "WorkplaceMobilityReduction": {"Itinerary":{
                 "work": [1.0, 0.0, 0.0, 0.0]
-            }
+            }},
+            "MaskMandate": {"Transmission": {
+                "infectiousness_multiplier": 0.1,
+                "susceptibility_multiplier": 0.1
+            }}
         },
         "interventions": [
             {
-                "modifier":"SchoolClosure",
+                "modifier":"MaskMandate",
                 "geography": {"type": "State", "code": "56"},
-                "acceptance_probability": 1.0,
+                "acceptance_probability": 0.9,
                 "activation_time": 0.0,
-                "duration": 30.0
+                "duration": 50.0
             }
         ],
         "prevalence_report": {

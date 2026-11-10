@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::any::Any;
 
 use crate::{
+    intervention_manager::ModifierSpecification,
     itinerary_manager::ItineraryModifier,
     settings::{PersonId, SETTING_COUNT},
 };
@@ -29,6 +30,15 @@ impl std::fmt::Debug for ItineraryTransitionMatrix {
                 &self.acceptance_function.is_some(),
             )
             .finish()
+    }
+}
+
+impl ModifierSpecification for ItineraryTransitionMatrix {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        self
     }
 }
 

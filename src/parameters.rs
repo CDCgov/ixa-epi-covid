@@ -5,7 +5,7 @@ use std::{fmt::Debug, path::PathBuf};
 
 use crate::error::ModelError;
 use crate::infection_importation::ImportCasesFromFile;
-use crate::intervention_manager::{Intervention, Modifier, ModifierSpecification};
+use crate::intervention_manager::{Intervention, InterventionModifierSpecification, Modifier};
 use crate::reports::ReportParams;
 use crate::school_calendar::{SchoolCalendarModifier, SchoolCalendarModifierType};
 use crate::settings::SettingCategory;
@@ -95,7 +95,7 @@ pub struct Params {
     /// Vector of modifiers that impacting school itineraries
     pub school_calendar: Vec<SchoolCalendarModifier>,
     /// Parameters defining default itinerary modifiers
-    pub default_modifiers: HashMap<Modifier, ModifierSpecification>,
+    pub default_modifiers: HashMap<Modifier, InterventionModifierSpecification>,
     /// Parameters defining interventions
     pub interventions: Vec<Intervention>,
     /// Prevalence report with a period and name required
@@ -315,9 +315,29 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error 
         unique_school_calendar_modifiers.push(school_calendar_modifier.clone());
     }
 
-    for value in parameters.default_modifiers.values() {
-        value.validate()?;
-    }
+    // for (key, value) in &parameters.default_itinerary_modifiers {
+    //     if key == &Modifier::MaskMandate {
+    //         return Err(Box::new(ModelError::ModelError(
+    //             "MaskMandate is not allowed as a default itinerary modifier".to_string(),
+    //         )));
+    //     }
+    //     value.validate()?;
+    // }
+
+    // for (key, value) in &parameters.default_transmission_modifiers {
+    //     if matches!(
+    //         key,
+    //         Modifier::SchoolClosure
+    //             | Modifier::CommunityMobilityReduction
+    //             | Modifier::WorkplaceMobilityReduction
+    //     ) {
+    //         return Err(Box::new(ModelError::ModelError(
+    //                 "SchoolClosure, CommunityMobilityReduction and WorkplaceMobilityReduction are not allowed as default transmission modifiers"
+    //                     .to_string(),
+    //             )));
+    //     }
+    //     value.validate()?;
+    // }
 
     for intervention in &parameters.interventions {
         intervention.validate()?;
