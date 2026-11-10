@@ -235,7 +235,7 @@ pub enum InterventionModifierSpecification {
 }
 
 impl InterventionModifierSpecification {
-    fn get_transmission_multipliers(&self) -> Option<ScalarTransmissionModifier> {
+    fn get_transmission_modifier(&self) -> Option<ScalarTransmissionModifier> {
         match self {
             InterventionModifierSpecification::Transmission {
                 infectiousness_multiplier,
@@ -248,7 +248,7 @@ impl InterventionModifierSpecification {
             _ => None,
         }
     }
-    fn get_itinerary_modifiers(&self) -> Option<[[f64; SETTING_COUNT]; SETTING_COUNT]> {
+    fn get_itinerary_modifier(&self) -> Option<[[f64; SETTING_COUNT]; SETTING_COUNT]> {
         match self {
             InterventionModifierSpecification::Itinerary {
                 home,
@@ -656,7 +656,7 @@ pub trait InterventionContextExt:
         match intervention.modifier {
             Modifier::SchoolClosure => {
                 let matrix = modifier_spec
-                    .get_itinerary_modifiers()
+                    .get_itinerary_modifier()
                     .expect("Itinerary modifiers incorrectly specified");
                 Box::new(create_itinerary_transition_matrix(
                     None,
@@ -666,7 +666,7 @@ pub trait InterventionContextExt:
             }
             Modifier::WorkplaceMobilityReduction => {
                 let matrix = modifier_spec
-                    .get_itinerary_modifiers()
+                    .get_itinerary_modifier()
                     .expect("Itinerary modifiers incorrectly specified");
                 Box::new(create_itinerary_transition_matrix(
                     None,
@@ -676,7 +676,7 @@ pub trait InterventionContextExt:
             }
             Modifier::CommunityMobilityReduction => {
                 let matrix = modifier_spec
-                    .get_itinerary_modifiers()
+                    .get_itinerary_modifier()
                     .expect("Itinerary modifiers incorrectly specified");
                 Box::new(create_itinerary_transition_matrix(
                     Some(matrix),
@@ -686,7 +686,7 @@ pub trait InterventionContextExt:
             }
             Modifier::MaskMandate => {
                 let transmission_multipliers = modifier_spec
-                    .get_transmission_multipliers()
+                    .get_transmission_modifier()
                     .expect("Transmission modifiers incorrectly specified");
                 Box::new(ScalarTransmissionModifier {
                     infectiousness_multiplier: transmission_multipliers.infectiousness_multiplier,
