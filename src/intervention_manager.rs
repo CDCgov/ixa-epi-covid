@@ -7,7 +7,6 @@ use crate::{
     ContextParametersExt, Params,
     error::ModelError,
     geography::{GEOGRAPHY_COUNT, Geography, GeographyDiscriminants},
-    infectiousness_manager::InfectionStatus,
     itinerary_modifiers::{
         AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
     },
@@ -220,7 +219,7 @@ impl<T> IndexMut<Modifier> for [T; MODIFIER_COUNT] {
 
 pub const MODIFIER_COUNT: usize = Modifier::COUNT;
 
-#[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub enum InterventionModifierSpecification {
     Itinerary {
@@ -232,6 +231,7 @@ pub enum InterventionModifierSpecification {
     Transmission {
         infectiousness_multiplier: f64,
         susceptibility_multiplier: f64,
+        settings: Vec<SettingCategory>,
     },
 }
 
@@ -241,9 +241,11 @@ impl InterventionModifierSpecification {
             InterventionModifierSpecification::Transmission {
                 infectiousness_multiplier,
                 susceptibility_multiplier,
+                settings,
             } => Some(ScalarTransmissionModifier {
                 infectiousness_multiplier: *infectiousness_multiplier,
                 susceptibility_multiplier: *susceptibility_multiplier,
+                settings: settings.clone(),
                 acceptance_function: None,
             }),
             _ => None,
@@ -280,6 +282,7 @@ impl InterventionModifierSpecification {
             InterventionModifierSpecification::Transmission {
                 infectiousness_multiplier,
                 susceptibility_multiplier,
+                settings,
             } => {
                 if !(0.0..=1.0).contains(infectiousness_multiplier) {
                     return Err(ModelError::ModelError(
@@ -289,6 +292,11 @@ impl InterventionModifierSpecification {
                 if !(0.0..=1.0).contains(susceptibility_multiplier) {
                     return Err(ModelError::ModelError(
                         "Susceptibility multiplier must be between 0 and 1".to_string(),
+                    ));
+                }
+                if settings.is_empty() {
+                    return Err(ModelError::ModelError(
+                        "Settings must not be empty".to_string(),
                     ));
                 }
                 Ok(())
@@ -691,6 +699,7 @@ pub trait InterventionContextExt:
                 Box::new(ScalarTransmissionModifier {
                     infectiousness_multiplier: transmission_multipliers.infectiousness_multiplier,
                     susceptibility_multiplier: transmission_multipliers.susceptibility_multiplier,
+                    settings: transmission_multipliers.settings.clone(),
                     acceptance_function: Some(create_intervention_acceptance_function(
                         intervention,
                     )),
@@ -780,7 +789,7 @@ mod test {
                 (SettingCategory::Work, 0.25),
                 (SettingCategory::Community, 0.25),
             ]),
-            default_itinerary_modifiers: HashMap::from_iter([
+            default_modifiers: HashMap::from_iter([
                 (
                     Modifier::SchoolClosure,
                     InterventionModifierSpecification::Itinerary {
@@ -813,6 +822,12 @@ mod test {
                     InterventionModifierSpecification::Transmission {
                         infectiousness_multiplier: 0.9,
                         susceptibility_multiplier: 0.9,
+                        settings: vec![
+                            SettingCategory::Home,
+                            SettingCategory::Work,
+                            SettingCategory::School,
+                            SettingCategory::Community,
+                        ],
                     },
                 ),
             ]),
@@ -1142,6 +1157,12 @@ mod test {
         let valid_modifier = InterventionModifierSpecification::Transmission {
             infectiousness_multiplier: 0.9,
             susceptibility_multiplier: 0.9,
+            settings: vec![
+                SettingCategory::Home,
+                SettingCategory::Work,
+                SettingCategory::School,
+                SettingCategory::Community,
+            ],
         };
         assert!(valid_modifier.validate().is_ok());
 
@@ -1149,8 +1170,21 @@ mod test {
         let invalid_modifier = InterventionModifierSpecification::Transmission {
             infectiousness_multiplier: 1.5,
             susceptibility_multiplier: 1.5,
+            settings: vec![
+                SettingCategory::Home,
+                SettingCategory::Work,
+                SettingCategory::School,
+                SettingCategory::Community,
+            ],
         };
         assert!(invalid_modifier.validate().is_err());
+
+        let no_settings = InterventionModifierSpecification::Transmission {
+            infectiousness_multiplier: 0.9,
+            susceptibility_multiplier: 0.9,
+            settings: vec![],
+        };
+        assert!(no_settings.validate().is_err());
     }
 
     #[test]

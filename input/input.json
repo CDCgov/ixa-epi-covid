@@ -77,14 +77,9 @@
             }},
             "MaskMandate": {"Transmission": {
                 "infectiousness_multiplier": 0.1,
-                "susceptibility_multiplier": 0.1
+                "susceptibility_multiplier": 0.1,
+                "settings": ["Work", "School", "Community"]
             }}
-        },
-        "default_transmission_modifiers": {
-            "MaskMandate": {
-                "modifier": 0.1,
-                "settings": ["Work"]
-            }
         },
         "interventions": [
             {
@@ -95,17 +90,10 @@
                 "duration": 50.0
             },
             {
-                "modifier":"MaskMandate",
+                "modifier":"SchoolClosure",
                 "geography": {"type": "State", "code": "56"},
                 "acceptance_probability": 0.9,
-                "activation_time": 0.0,
-                "duration": 50.0
-            },
-            {
-                "modifier":"MaskMandate",
-                "geography": {"type": "State", "code": "56"},
-                "acceptance_probability": 0.9,
-                "activation_time": 0.0,
+                "activation_time": 50.0,
                 "duration": 50.0
             }
         ],

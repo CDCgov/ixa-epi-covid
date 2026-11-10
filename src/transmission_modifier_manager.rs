@@ -15,6 +15,7 @@ use crate::{
 pub struct ScalarTransmissionModifier {
     pub infectiousness_multiplier: f64,
     pub susceptibility_multiplier: f64,
+    pub settings: Vec<SettingCategory>,
     pub acceptance_function: Option<AcceptanceFunction>,
 }
 
@@ -29,6 +30,7 @@ impl ModifierSpecification for ScalarTransmissionModifier {
 
 struct StoredScalarTransmissionModifier {
     pub multiplier: f64,
+    pub settings: Vec<SettingCategory>,
     pub acceptance_function: Option<AcceptanceFunction>,
 }
 
@@ -106,7 +108,7 @@ where
                     if scalar_modifier.settings.contains(&setting_category)
                         && scalar_modifier.accept(context, person_id)
                     {
-                        scalar_modifier.modifier
+                        scalar_modifier.multiplier
                     } else {
                         1.0
                     }
@@ -244,10 +246,12 @@ pub trait ContextTransmissionModifierExt:
             };
             let relative_infectious_multiplier = StoredScalarTransmissionModifier {
                 multiplier: value.infectiousness_multiplier,
+                settings: value.settings.clone(),
                 acceptance_function: infectious_acceptance,
             };
             let relative_susceptibility_multiplier = StoredScalarTransmissionModifier {
                 multiplier: value.susceptibility_multiplier,
+                settings: value.settings,
                 acceptance_function: susceptible_acceptance,
             };
             infectious_modifiers.push((key, relative_infectious_multiplier));
@@ -262,9 +266,14 @@ pub trait ContextTransmissionModifierExt:
         Ok(())
     }
 
-    fn get_transmission_success_probability(&self, infector: PersonId, infectee: PersonId) -> f64 {
-        self.get_relative_total_transmission(infector)
-            * self.get_relative_total_transmission(infectee)
+    fn get_transmission_success_probability(
+        &self,
+        infector: PersonId,
+        infectee: PersonId,
+        setting_category: SettingCategory,
+    ) -> f64 {
+        self.get_relative_total_transmission(infector, setting_category)
+            * self.get_relative_total_transmission(infectee, setting_category)
     }
 
     /// Get the relative potential for infection (infectiousness or susceptibility) for a person
@@ -378,12 +387,12 @@ mod test {
                     ScalarTransmissionModifier {
                         infectiousness_multiplier: INFECTIOUS_PARTIAL,
                         susceptibility_multiplier: SUSCEPTIBLE_PARTIAL,
-                            settings: vec![
-                                SettingCategory::Home,
-                                SettingCategory::Work,
-                                SettingCategory::School,
-                                SettingCategory::Community,
-                            ],
+                        settings: vec![
+                            SettingCategory::Home,
+                            SettingCategory::Work,
+                            SettingCategory::School,
+                            SettingCategory::Community,
+                        ],
                         acceptance_function: None,
                     },
                 ),
@@ -392,12 +401,12 @@ mod test {
                     ScalarTransmissionModifier {
                         infectiousness_multiplier: 0.0,
                         susceptibility_multiplier: 0.0,
-                            settings: vec![
-                                SettingCategory::Home,
-                                SettingCategory::Work,
-                                SettingCategory::School,
-                                SettingCategory::Community,
-                            ],
+                        settings: vec![
+                            SettingCategory::Home,
+                            SettingCategory::Work,
+                            SettingCategory::School,
+                            SettingCategory::Community,
+                        ],
                         acceptance_function: None,
                     },
                 ),
@@ -409,6 +418,12 @@ mod test {
                 ScalarTransmissionModifier {
                     infectiousness_multiplier: INFECTIOUS_PARTIAL,
                     susceptibility_multiplier: 0.0,
+                    settings: vec![
+                        SettingCategory::Home,
+                        SettingCategory::Work,
+                        SettingCategory::School,
+                        SettingCategory::Community,
+                    ],
                     acceptance_function: None,
                 },
             )])
@@ -428,6 +443,12 @@ mod test {
                     ScalarTransmissionModifier {
                         infectiousness_multiplier: 0.0,
                         susceptibility_multiplier: relative_effect,
+                        settings: vec![
+                            SettingCategory::Home,
+                            SettingCategory::Work,
+                            SettingCategory::School,
+                            SettingCategory::Community,
+                        ],
                         acceptance_function: None,
                     },
                 ),
@@ -436,6 +457,12 @@ mod test {
                     ScalarTransmissionModifier {
                         infectiousness_multiplier: 0.0,
                         susceptibility_multiplier: 0.0,
+                        settings: vec![
+                            SettingCategory::Home,
+                            SettingCategory::Work,
+                            SettingCategory::School,
+                            SettingCategory::Community,
+                        ],
                         acceptance_function: None,
                     },
                 ),
@@ -495,6 +522,12 @@ mod test {
                         k,
                         Box::new(StoredScalarTransmissionModifier {
                             multiplier: m,
+                            settings: vec![
+                                SettingCategory::Home,
+                                SettingCategory::Work,
+                                SettingCategory::School,
+                                SettingCategory::Community,
+                            ],
                             acceptance_function: None,
                         }) as Box<dyn TransmissionModifier>,
                     )
@@ -514,6 +547,12 @@ mod test {
                         k,
                         Box::new(StoredScalarTransmissionModifier {
                             multiplier: m,
+                            settings: vec![
+                                SettingCategory::Home,
+                                SettingCategory::Work,
+                                SettingCategory::School,
+                                SettingCategory::Community,
+                            ],
                             acceptance_function: None,
                         }) as Box<dyn TransmissionModifier>,
                     )
@@ -532,6 +571,12 @@ mod test {
                         k,
                         Box::new(StoredScalarTransmissionModifier {
                             multiplier: m,
+                            settings: vec![
+                                SettingCategory::Home,
+                                SettingCategory::Work,
+                                SettingCategory::School,
+                                SettingCategory::Community,
+                            ],
                             acceptance_function: None,
                         }) as Box<dyn TransmissionModifier>,
                     )
@@ -548,6 +593,12 @@ mod test {
                     ScalarTransmissionModifier {
                         infectiousness_multiplier: 0.0,
                         susceptibility_multiplier: relative_effect - 0.2,
+                        settings: vec![
+                            SettingCategory::Home,
+                            SettingCategory::Work,
+                            SettingCategory::School,
+                            SettingCategory::Community,
+                        ],
                         acceptance_function: None,
                     },
                 ),
@@ -556,6 +607,12 @@ mod test {
                     ScalarTransmissionModifier {
                         infectiousness_multiplier: 0.0,
                         susceptibility_multiplier: 0.2,
+                        settings: vec![
+                            SettingCategory::Home,
+                            SettingCategory::Work,
+                            SettingCategory::School,
+                            SettingCategory::Community,
+                        ],
                         acceptance_function: None,
                     },
                 ),
@@ -570,6 +627,12 @@ mod test {
                     ScalarTransmissionModifier {
                         infectiousness_multiplier: 0.0,
                         susceptibility_multiplier: relative_effect,
+                        settings: vec![
+                            SettingCategory::Home,
+                            SettingCategory::Work,
+                            SettingCategory::School,
+                            SettingCategory::Community,
+                        ],
                         acceptance_function: None,
                     },
                 ),
@@ -578,6 +641,12 @@ mod test {
                     ScalarTransmissionModifier {
                         infectiousness_multiplier: 0.0,
                         susceptibility_multiplier: 0.0,
+                        settings: vec![
+                            SettingCategory::Home,
+                            SettingCategory::Work,
+                            SettingCategory::School,
+                            SettingCategory::Community,
+                        ],
                         acceptance_function: None,
                     },
                 ),
@@ -633,6 +702,12 @@ mod test {
                 ScalarTransmissionModifier {
                     infectiousness_multiplier: 1.2, // Invalid value
                     susceptibility_multiplier: 0.0,
+                    settings: vec![
+                        SettingCategory::Home,
+                        SettingCategory::Work,
+                        SettingCategory::School,
+                        SettingCategory::Community,
+                    ],
                     acceptance_function: None,
                 },
             ),
@@ -641,6 +716,12 @@ mod test {
                 ScalarTransmissionModifier {
                     infectiousness_multiplier: 0.0,
                     susceptibility_multiplier: 0.0,
+                    settings: vec![
+                        SettingCategory::Home,
+                        SettingCategory::Work,
+                        SettingCategory::School,
+                        SettingCategory::Community,
+                    ],
                     acceptance_function: None,
                 },
             ),
@@ -672,6 +753,12 @@ mod test {
                 ScalarTransmissionModifier {
                     infectiousness_multiplier: 0.0,
                     susceptibility_multiplier: 0.8,
+                    settings: vec![
+                        SettingCategory::Home,
+                        SettingCategory::Work,
+                        SettingCategory::School,
+                        SettingCategory::Community,
+                    ],
                     acceptance_function: None,
                 },
             ),
@@ -680,6 +767,12 @@ mod test {
                 ScalarTransmissionModifier {
                     infectiousness_multiplier: 0.0,
                     susceptibility_multiplier: 0.5,
+                    settings: vec![
+                        SettingCategory::Home,
+                        SettingCategory::Work,
+                        SettingCategory::School,
+                        SettingCategory::Community,
+                    ],
                     acceptance_function: None,
                 },
             ), // Duplicate value
@@ -846,17 +939,17 @@ mod test {
         let mut context = Context::new();
 
         // Attempt to store duplicate modifier values
-        let _ = context.store_transmission_modifier_values(
-            InfectionStatus::Susceptible,
-            [(
+        context
+            .register_transmission_modifier([(
                 MandatoryIntervention::Partial,
                 ScalarTransmissionModifier {
-                    modifier: 0.8,
+                    infectiousness_multiplier: 0.0, // Invalid value
+                    susceptibility_multiplier: 0.8,
                     settings: vec![SettingCategory::Home],
                     acceptance_function: None,
                 },
-            )],
-        );
+            )])
+            .unwrap();
         let p1 = context
             .add_entity(with!(Person, MandatoryIntervention::Partial, Age(30)))
             .unwrap();
