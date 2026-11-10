@@ -302,6 +302,8 @@ mod test {
     use crate::settings::{Person, PersonId};
     use crate::transmission_modifier_manager::ContextTransmissionModifierPrivateExt;
     use crate::transmission_modifier_manager::ScalarTransmissionModifier;
+    use crate::transmission_modifier_manager::StoredScalarTransmissionModifier;
+    use crate::transmission_modifier_manager::TransmissionModifier;
     use crate::{
         infectiousness_manager::{InfectionContextExt, InfectionStatus},
         parameters::{ContextParametersExt, GlobalParams, Params},
@@ -452,6 +454,15 @@ mod test {
                     (MandatoryIntervention::Full, 0.2),
                 ]
                 .into_iter()
+                .map(|(k, m)| {
+                    (
+                        k,
+                        Box::new(StoredScalarTransmissionModifier {
+                            multiplier: m,
+                            acceptance_function: None,
+                        }) as Box<dyn TransmissionModifier>,
+                    )
+                })
                 .collect(),
             };
 
@@ -462,6 +473,15 @@ mod test {
                     (MandatoryIntervention::Full, 0.0),
                 ]
                 .into_iter()
+                .map(|(k, m)| {
+                    (
+                        k,
+                        Box::new(StoredScalarTransmissionModifier {
+                            multiplier: m,
+                            acceptance_function: None,
+                        }) as Box<dyn TransmissionModifier>,
+                    )
+                })
                 .collect(),
             };
         let t3: PersonPropertyTransmissionModifier<InfectiousnessProportion> =
@@ -471,6 +491,15 @@ mod test {
                     (InfectiousnessProportion::None, 0.0),
                 ]
                 .into_iter()
+                .map(|(k, m)| {
+                    (
+                        k,
+                        Box::new(StoredScalarTransmissionModifier {
+                            multiplier: m,
+                            acceptance_function: None,
+                        }) as Box<dyn TransmissionModifier>,
+                    )
+                })
                 .collect(),
             };
         assert_eq!(std::any::Any::type_id(&t1), std::any::Any::type_id(&t2));
