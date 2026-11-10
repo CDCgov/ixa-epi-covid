@@ -1,16 +1,71 @@
 use ixa::prelude::*;
-use std::{any::TypeId, collections::HashMap};
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+};
 
 use crate::{
     error::ModelError,
     infectiousness_manager::InfectionStatus,
+    intervention_manager::ModifierSpecification,
+    itinerary_modifiers::AcceptanceFunction,
     settings::{Person, PersonId},
 };
+
+pub struct ScalarTransmissionModifier {
+    pub infectiousness_multiplier: f64,
+    pub susceptibility_multiplier: f64,
+    pub acceptance_function: Option<AcceptanceFunction>,
+}
+
+impl ModifierSpecification for ScalarTransmissionModifier {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        self
+    }
+}
+
+struct StoredScalarTransmissionModifier {
+    pub multiplier: f64,
+    pub acceptance_function: Option<AcceptanceFunction>,
+}
+
+impl std::fmt::Debug for StoredScalarTransmissionModifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StoredScalarTransmissionModifier")
+            .field("multiplier", &self.multiplier)
+            .field(
+                "has_acceptance_function",
+                &self.acceptance_function.is_some(),
+            )
+            .finish()
+    }
+}
+
+pub trait TransmissionModifier: std::fmt::Debug + 'static {
+    fn as_any(&self) -> &dyn Any;
+    fn accept(&self, _context: &Context, _person_id: PersonId) -> bool {
+        true
+    }
+}
+
+impl TransmissionModifier for StoredScalarTransmissionModifier {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn accept(&self, context: &Context, person_id: PersonId) -> bool {
+        self.acceptance_function
+            .as_ref()
+            .is_none_or(|acceptance| acceptance(context, person_id))
+    }
+}
 
 /// Defines a transmission modifier that is used to modify the transmissiveness or susceptibility
 /// of a person based on their infection status.
 // We require `Debug` for easy logging of the trait so the user can see what is happening.
-pub trait TransmissionModifier: std::fmt::Debug + 'static {
+pub trait TransmissionModifierStorage: std::fmt::Debug + 'static {
     /// Return the relative potential for infection (transmissiveness or susceptibility) for a person
     /// based on their infection status.
     fn get_relative_transmission(&self, context: &Context, person_id: PersonId) -> f64;
@@ -21,27 +76,40 @@ pub trait TransmissionModifier: std::fmt::Debug + 'static {
 #[derive(Debug)]
 struct PersonPropertyTransmissionModifier<P> {
     // Use fully qualified syntax for the associated type because type aliases do not have type checking
-    transmission_modifier_map: HashMap<P, f64>,
+    transmission_modifier_map: HashMap<P, Box<dyn TransmissionModifier>>,
 }
 
-impl<P> TransmissionModifier for PersonPropertyTransmissionModifier<P>
+impl<P> TransmissionModifierStorage for PersonPropertyTransmissionModifier<P>
 where
     P: IndexableProperty<Person>,
 {
     fn get_relative_transmission(&self, context: &Context, person_id: PersonId) -> f64 {
         let property_val = context.get_property::<Person, P>(person_id);
         // Return the corresponding value from the map, or 1.0 if not found
-        *self
-            .transmission_modifier_map
+        self.transmission_modifier_map
             .get(&property_val)
-            .unwrap_or(&1.0)
+            .map(move |boxed| {
+                if let Some(scalar_modifier) = boxed
+                    .as_any()
+                    .downcast_ref::<StoredScalarTransmissionModifier>()
+                {
+                    if scalar_modifier.accept(context, person_id) {
+                        scalar_modifier.multiplier
+                    } else {
+                        1.0
+                    }
+                } else {
+                    1.0
+                }
+            })
+            .unwrap_or(1.0)
     }
 }
 
 #[derive(Default)]
 struct TransmissionModifierContainer {
     transmission_modifier_map:
-        HashMap<InfectionStatus, HashMap<TypeId, Box<dyn TransmissionModifier>>>,
+        HashMap<InfectionStatus, HashMap<TypeId, Box<dyn TransmissionModifierStorage>>>,
 }
 
 define_data_plugin!(
@@ -50,9 +118,9 @@ define_data_plugin!(
     TransmissionModifierContainer::default()
 );
 
-pub trait ContextTransmissionModifierExt: PluginContext {
+pub trait ContextTransmissionModifierPrivateExt: PluginContext {
     /// Register a generic transmission modifier for a specific infection status.
-    fn register_transmission_modifier_fn<T: TransmissionModifier>(
+    fn insert_transmission_modifier_fn<T: TransmissionModifierStorage>(
         &mut self,
         infection_status: InfectionStatus,
         transmission_modifier: T,
@@ -77,7 +145,7 @@ pub trait ContextTransmissionModifierExt: PluginContext {
     }
 
     /// Register a transmission modifier that depends solely on the value of one person property.
-    /// The function accepts a relative transmission potential key, which is a slice of tuples that
+    /// The function accepts a relative transmission potential key, which is an owned iterable of tuples that
     /// associate values of a specified person property with the relativ etransmission potential of
     /// a person with that property value. All floats declared in this fashion must be between zero
     /// and one and represent the proportion of infectiousness or susceptiblity remaining if a
@@ -89,43 +157,102 @@ pub trait ContextTransmissionModifierExt: PluginContext {
     /// Internally, this method registers a transmission modifier function that returns the float
     /// value associated the person's property value in the
     /// `relative_transmission_potential_multipliers` key.
-    #[allow(dead_code)]
-    fn store_transmission_modifier_values<P>(
+    fn store_transmission_modifier_values<P, T>(
         &mut self,
         infection_status: InfectionStatus,
-        relative_transmission_potential_multipliers: &[(P, f64)],
+        relative_transmission_potential_multipliers: impl IntoIterator<Item = (P, T)>,
     ) -> Result<(), ModelError>
     where
         P: IndexableProperty<Person>,
+        T: TransmissionModifier,
     {
         // Convert modifiers to HashMap
-        let mut modifier_map = HashMap::new();
-        for &(key, value) in relative_transmission_potential_multipliers.iter() {
-            if !(0.0..=1.0).contains(&value) {
-                return Err(ModelError::ModelError(
-                    "Scalar modifier values stored must be between 0.0 and 1.0. ".to_string()
-                        + &format!("Value {value} for {key:?} is not."),
-                ));
+        let mut modifier_map: HashMap<P, Box<dyn TransmissionModifier>> = HashMap::new();
+        for (key, value) in relative_transmission_potential_multipliers {
+            if let Some(scalar) = value
+                .as_any()
+                .downcast_ref::<StoredScalarTransmissionModifier>()
+                && !(0.0..=1.0).contains(&scalar.multiplier)
+            {
+                return Err(ModelError::ModelError(format!(
+                    "Scalar modifier values stored must be between 0.0 and 1.0. Value {} for {key:?} is not.",
+                    scalar.multiplier
+                )));
             }
-
-            if let Some(old_value) = modifier_map.insert(key, value) {
+            if let Some(old_value) = modifier_map.get(&key) {
                 return Err(ModelError::ModelError(
                     "Duplicate values provided in modifier key ".to_string()
                         + &format!(
-                            "Values {old_value} and {value} were both attempted to be registered to key {key:?}"
+                            "Values {:?} and {:?} were both attempted to be registered to key {key:?}",
+                            old_value, value
                         ),
                 ));
             }
+            modifier_map.insert(key, Box::new(value));
         }
 
         // Register a default function to simply map floats with T::Values
-        self.register_transmission_modifier_fn(
+        self.insert_transmission_modifier_fn(
             infection_status,
             PersonPropertyTransmissionModifier {
                 transmission_modifier_map: modifier_map,
             },
         );
         Ok(())
+    }
+}
+impl ContextTransmissionModifierPrivateExt for Context {}
+pub trait ContextTransmissionModifierExt:
+    PluginContext + ContextTransmissionModifierPrivateExt
+{
+    fn register_transmission_modifier<P>(
+        &mut self,
+        transmission_modifier: impl IntoIterator<Item = (P, ScalarTransmissionModifier)>,
+    ) -> Result<(), ModelError>
+    where
+        P: IndexableProperty<Person>,
+    {
+        let mut susceptible_modifiers = Vec::new();
+        let mut infectious_modifiers = Vec::new();
+        for (key, value) in transmission_modifier {
+            let (infectious_acceptance, susceptible_acceptance) = match value.acceptance_function {
+                Some(acceptance) => {
+                    let acceptance = std::rc::Rc::new(acceptance);
+                    let infectious_acceptance = std::rc::Rc::clone(&acceptance);
+                    (
+                        Some(Box::new(move |context: &Context, person_id: PersonId| {
+                            infectious_acceptance(context, person_id)
+                        }) as AcceptanceFunction),
+                        Some(Box::new(move |context: &Context, person_id: PersonId| {
+                            acceptance(context, person_id)
+                        }) as AcceptanceFunction),
+                    )
+                }
+                None => (None, None),
+            };
+            let relative_infectious_multiplier = StoredScalarTransmissionModifier {
+                multiplier: value.infectiousness_multiplier,
+                acceptance_function: infectious_acceptance,
+            };
+            let relative_susceptibility_multiplier = StoredScalarTransmissionModifier {
+                multiplier: value.susceptibility_multiplier,
+                acceptance_function: susceptible_acceptance,
+            };
+            infectious_modifiers.push((key, relative_infectious_multiplier));
+            susceptible_modifiers.push((key, relative_susceptibility_multiplier));
+        }
+        self.store_transmission_modifier_values(InfectionStatus::Infectious, infectious_modifiers)?;
+        self.store_transmission_modifier_values(
+            InfectionStatus::Susceptible,
+            susceptible_modifiers,
+        )?;
+
+        Ok(())
+    }
+
+    fn get_transmission_success_probability(&self, infector: PersonId, infectee: PersonId) -> f64 {
+        self.get_relative_total_transmission(infector)
+            * self.get_relative_total_transmission(infectee)
     }
 
     /// Get the relative potential for infection (infectiousness or susceptibility) for a person
@@ -166,12 +293,16 @@ mod test {
     use serde::{Deserialize, Serialize};
 
     use super::{
-        ContextTransmissionModifierExt, PersonPropertyTransmissionModifier, TransmissionModifier,
-        TransmissionModifierPlugin,
+        ContextTransmissionModifierExt, PersonPropertyTransmissionModifier,
+        TransmissionModifierPlugin, TransmissionModifierStorage,
     };
     use crate::Age;
     use crate::error::ModelError;
     use crate::settings::{Person, PersonId};
+    use crate::transmission_modifier_manager::ContextTransmissionModifierPrivateExt;
+    use crate::transmission_modifier_manager::ScalarTransmissionModifier;
+    use crate::transmission_modifier_manager::StoredScalarTransmissionModifier;
+    use crate::transmission_modifier_manager::TransmissionModifier;
     use crate::{
         infectiousness_manager::{InfectionContextExt, InfectionStatus},
         parameters::{ContextParametersExt, GlobalParams, Params},
@@ -216,28 +347,34 @@ mod test {
         load_rate_fns(&mut context).unwrap();
 
         context
-            .store_transmission_modifier_values(
-                InfectionStatus::Susceptible,
-                &[
-                    (MandatoryIntervention::Partial, SUSCEPTIBLE_PARTIAL),
-                    (MandatoryIntervention::Full, 0.0),
-                ],
-            )
+            .register_transmission_modifier([
+                (
+                    MandatoryIntervention::Partial,
+                    ScalarTransmissionModifier {
+                        infectiousness_multiplier: INFECTIOUS_PARTIAL,
+                        susceptibility_multiplier: SUSCEPTIBLE_PARTIAL,
+                        acceptance_function: None,
+                    },
+                ),
+                (
+                    MandatoryIntervention::Full,
+                    ScalarTransmissionModifier {
+                        infectiousness_multiplier: 0.0,
+                        susceptibility_multiplier: 0.0,
+                        acceptance_function: None,
+                    },
+                ),
+            ])
             .unwrap();
         context
-            .store_transmission_modifier_values(
-                InfectionStatus::Infectious,
-                &[
-                    (MandatoryIntervention::Partial, INFECTIOUS_PARTIAL),
-                    (MandatoryIntervention::Full, 0.0),
-                ],
-            )
-            .unwrap();
-        context
-            .store_transmission_modifier_values(
-                InfectionStatus::Infectious,
-                &[(InfectiousnessProportion::Partial, INFECTIOUS_PARTIAL)],
-            )
+            .register_transmission_modifier([(
+                InfectiousnessProportion::Partial,
+                ScalarTransmissionModifier {
+                    infectiousness_multiplier: INFECTIOUS_PARTIAL,
+                    susceptibility_multiplier: 0.0,
+                    acceptance_function: None,
+                },
+            )])
             .unwrap();
         context
     }
@@ -248,13 +385,24 @@ mod test {
         let relative_effect = 0.8;
 
         context
-            .store_transmission_modifier_values(
-                InfectionStatus::Susceptible,
-                &[
-                    (MandatoryIntervention::Partial, relative_effect),
-                    (MandatoryIntervention::Full, 0.0),
-                ],
-            )
+            .register_transmission_modifier([
+                (
+                    MandatoryIntervention::Partial,
+                    ScalarTransmissionModifier {
+                        infectiousness_multiplier: 0.0,
+                        susceptibility_multiplier: relative_effect,
+                        acceptance_function: None,
+                    },
+                ),
+                (
+                    MandatoryIntervention::Full,
+                    ScalarTransmissionModifier {
+                        infectiousness_multiplier: 0.0,
+                        susceptibility_multiplier: 0.0,
+                        acceptance_function: None,
+                    },
+                ),
+            ])
             .unwrap();
 
         // Add people with different intervention statuses
@@ -271,7 +419,7 @@ mod test {
             .transmission_modifier_map
             .get(&InfectionStatus::Susceptible)
             .unwrap();
-
+        println!("{:?}", modifier_map);
         // Check that the modifier map contains the expected values
         assert_eq!(modifier_map.len(), 1);
 
@@ -305,6 +453,15 @@ mod test {
                     (MandatoryIntervention::Full, 0.2),
                 ]
                 .into_iter()
+                .map(|(k, m)| {
+                    (
+                        k,
+                        Box::new(StoredScalarTransmissionModifier {
+                            multiplier: m,
+                            acceptance_function: None,
+                        }) as Box<dyn TransmissionModifier>,
+                    )
+                })
                 .collect(),
             };
 
@@ -315,6 +472,15 @@ mod test {
                     (MandatoryIntervention::Full, 0.0),
                 ]
                 .into_iter()
+                .map(|(k, m)| {
+                    (
+                        k,
+                        Box::new(StoredScalarTransmissionModifier {
+                            multiplier: m,
+                            acceptance_function: None,
+                        }) as Box<dyn TransmissionModifier>,
+                    )
+                })
                 .collect(),
             };
         let t3: PersonPropertyTransmissionModifier<InfectiousnessProportion> =
@@ -324,30 +490,61 @@ mod test {
                     (InfectiousnessProportion::None, 0.0),
                 ]
                 .into_iter()
+                .map(|(k, m)| {
+                    (
+                        k,
+                        Box::new(StoredScalarTransmissionModifier {
+                            multiplier: m,
+                            acceptance_function: None,
+                        }) as Box<dyn TransmissionModifier>,
+                    )
+                })
                 .collect(),
             };
         assert_eq!(std::any::Any::type_id(&t1), std::any::Any::type_id(&t2));
         assert_ne!(std::any::Any::type_id(&t1), std::any::Any::type_id(&t3));
         // Store initial modifier values to be overwritten
         context
-            .store_transmission_modifier_values(
-                InfectionStatus::Susceptible,
-                &[
-                    (MandatoryIntervention::Partial, relative_effect - 0.2),
-                    (MandatoryIntervention::Full, 0.2),
-                ],
-            )
+            .register_transmission_modifier([
+                (
+                    MandatoryIntervention::Partial,
+                    ScalarTransmissionModifier {
+                        infectiousness_multiplier: 0.0,
+                        susceptibility_multiplier: relative_effect - 0.2,
+                        acceptance_function: None,
+                    },
+                ),
+                (
+                    MandatoryIntervention::Full,
+                    ScalarTransmissionModifier {
+                        infectiousness_multiplier: 0.0,
+                        susceptibility_multiplier: 0.2,
+                        acceptance_function: None,
+                    },
+                ),
+            ])
             .unwrap();
 
         // Overwrite previous modifier values
         context
-            .store_transmission_modifier_values(
-                InfectionStatus::Susceptible,
-                &[
-                    (MandatoryIntervention::Partial, relative_effect),
-                    (MandatoryIntervention::Full, 0.0),
-                ],
-            )
+            .register_transmission_modifier([
+                (
+                    MandatoryIntervention::Partial,
+                    ScalarTransmissionModifier {
+                        infectiousness_multiplier: 0.0,
+                        susceptibility_multiplier: relative_effect,
+                        acceptance_function: None,
+                    },
+                ),
+                (
+                    MandatoryIntervention::Full,
+                    ScalarTransmissionModifier {
+                        infectiousness_multiplier: 0.0,
+                        susceptibility_multiplier: 0.0,
+                        acceptance_function: None,
+                    },
+                ),
+            ])
             .unwrap();
 
         // Add people with different intervention statuses
@@ -393,13 +590,24 @@ mod test {
         let mut context = Context::new();
 
         // Attempt to store invalid modifier values
-        let result = context.store_transmission_modifier_values(
-            InfectionStatus::Susceptible,
-            &[
-                (MandatoryIntervention::Partial, 1.2), // Invalid value
-                (MandatoryIntervention::Full, 0.0),
-            ],
-        );
+        let result = context.register_transmission_modifier([
+            (
+                MandatoryIntervention::Partial,
+                ScalarTransmissionModifier {
+                    infectiousness_multiplier: 1.2, // Invalid value
+                    susceptibility_multiplier: 0.0,
+                    acceptance_function: None,
+                },
+            ),
+            (
+                MandatoryIntervention::Full,
+                ScalarTransmissionModifier {
+                    infectiousness_multiplier: 0.0,
+                    susceptibility_multiplier: 0.0,
+                    acceptance_function: None,
+                },
+            ),
+        ]);
 
         match result.err() {
             Some(ModelError::ModelError(msg)) => {
@@ -421,19 +629,30 @@ mod test {
         let mut context = Context::new();
 
         // Attempt to store duplicate modifier values
-        let result = context.store_transmission_modifier_values(
-            InfectionStatus::Susceptible,
-            &[
-                (MandatoryIntervention::Partial, 0.8),
-                (MandatoryIntervention::Partial, 0.5), // Duplicate value
-            ],
-        );
+        let result = context.register_transmission_modifier([
+            (
+                MandatoryIntervention::Partial,
+                ScalarTransmissionModifier {
+                    infectiousness_multiplier: 0.0,
+                    susceptibility_multiplier: 0.8,
+                    acceptance_function: None,
+                },
+            ),
+            (
+                MandatoryIntervention::Partial,
+                ScalarTransmissionModifier {
+                    infectiousness_multiplier: 0.0,
+                    susceptibility_multiplier: 0.5,
+                    acceptance_function: None,
+                },
+            ), // Duplicate value
+        ]);
 
         match result.err() {
             Some(ModelError::ModelError(msg)) => {
                 assert_eq!(
                     msg,
-                    "Duplicate values provided in modifier key Values 0.8 and 0.5 were both attempted to be registered to key Partial"
+                    "Duplicate values provided in modifier key Values StoredScalarTransmissionModifier { multiplier: 0.0, has_acceptance_function: false } and StoredScalarTransmissionModifier { multiplier: 0.0, has_acceptance_function: false } were both attempted to be registered to key Partial"
                 );
             }
             Some(ue) => panic!(
@@ -449,7 +668,7 @@ mod test {
         age_multiplier: f64,
     }
 
-    impl TransmissionModifier for AgeModifier {
+    impl TransmissionModifierStorage for AgeModifier {
         #[allow(clippy::cast_precision_loss)]
         fn get_relative_transmission(&self, context: &Context, person_id: PersonId) -> f64 {
             let age = context.get_property::<Person, Age>(person_id);
@@ -463,7 +682,7 @@ mod test {
         let mut context = Context::new();
         let aged_42 = context.add_entity(with!(Person, Age(42))).unwrap();
 
-        context.register_transmission_modifier_fn(
+        context.insert_transmission_modifier_fn(
             InfectionStatus::Susceptible,
             AgeModifier {
                 age_multiplier: 0.01,
