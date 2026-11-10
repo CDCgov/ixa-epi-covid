@@ -337,7 +337,9 @@ pub trait ContextSettingExt:
     }
 
     fn sample_person_from_setting(&self, setting: SettingCode) -> Result<PersonId, ModelError> {
+        // println!("Sampling person from setting: {:?} {:?} at time {}", setting, setting.category(), self.get_current_time());
         let membership = self.get_data(SettingMembershipPlugin);
+        // println!("membership: {:?}", membership.get_active_member(setting));
         let members = membership.get_active_member(setting).ok_or_else(|| {
             ModelError::ModelError(format!("No members found for setting: {:?}", setting))
         })?;
@@ -353,6 +355,7 @@ pub trait ContextSettingExt:
         if self.get_active_setting_size_internal(setting) == 1 {
             return Ok(None);
         }
+        // println!("Itinerary for person {} {:?}", person_id, self.get_itinerary(person_id));
         loop {
             let sampled_person = self.sample_person_from_setting(setting)?;
             if sampled_person != person_id {
@@ -365,6 +368,7 @@ pub trait ContextSettingExt:
         let active_settings = self
             .get_active_settings_for_person_internal(person_id)
             .unwrap();
+        // println!("Active settings for person {}: {:?}", person_id, active_settings);
         let mut weights_vec = vec![];
         for setting in active_settings.iter() {
             let ratio = setting.1;
@@ -480,6 +484,7 @@ pub trait ContextSettingExt:
         for person_id in remaining_people {
             for setting_id in self.determine_setting_membership_removal(person_id, person_property)
             {
+                // println!("Removing person {} from setting {:?}", person_id, setting_id);
                 self.remove_person_from_single_setting(person_id, setting_id);
             }
         }

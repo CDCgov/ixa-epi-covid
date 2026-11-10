@@ -160,6 +160,8 @@ impl ContextItineraryModifierExt for Context {
             .into_iter()
             .filter(|modifier| modifier.accept(self, person_id));
 
+        // println!("modifiers for person {}: {:?}", person_id, modifiers);
+
         let Some(first) = modifiers.next() else {
             return base_itinerary;
         };

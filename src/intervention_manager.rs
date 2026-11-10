@@ -206,13 +206,6 @@ impl ModifierSpecification {
         ];
         for (category, modifier) in categories.iter() {
             if let Some(modifier) = modifier {
-                let sum: f64 = modifier.iter().sum();
-                if (sum - 1.0).abs() > 1e-6 {
-                    return Err(ModelError::ModelError(format!(
-                        "Modifier specification for {:?} does not sum to 1.0",
-                        category
-                    )));
-                }
                 for &value in modifier.iter() {
                     if !(0.0..=1.0).contains(&value) {
                         return Err(ModelError::ModelError(format!(
@@ -345,6 +338,8 @@ pub trait InterventionContextExt:
 
     fn setup_intervention_trigger_event_subscription(&mut self) {
         self.subscribe_to_event(move |context, event: InterventionEvent| {
+            println!("Received intervention event: {:?} {:?}", event.active, event.intervention);
+            println!("{}", context.get_current_time());
             if event.active {
                 context.set_accepts_intervention(event.intervention);
                 context
