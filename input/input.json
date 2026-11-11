@@ -77,7 +77,8 @@
             }},
             "MaskMandate": {"Transmission": {
                 "infectiousness_multiplier": 0.1,
-                "susceptibility_multiplier": 0.1
+                "susceptibility_multiplier": 0.1,
+                "settings": ["Work", "School", "Community"]
             }}
         },
         "interventions": [
@@ -92,7 +93,7 @@
                 "modifier":"SchoolClosure",
                 "geography": {"type": "State", "code": "56"},
                 "acceptance_probability": 0.9,
-                "activation_time": 0.0,
+                "activation_time": 50.0,
                 "duration": 50.0
             }
         ],
