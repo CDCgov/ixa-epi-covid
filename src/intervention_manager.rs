@@ -214,6 +214,12 @@ impl ModifierSpecification {
                         )));
                     }
                 }
+                if modifier.iter().sum::<f64>() > 1.0 {
+                    return Err(ModelError::ModelError(format!(
+                        "Modifier specification for {:?} values must sum to no more than 1",
+                        category
+                    )));
+                }
             }
         }
         Ok(())
@@ -338,7 +344,10 @@ pub trait InterventionContextExt:
 
     fn setup_intervention_trigger_event_subscription(&mut self) {
         self.subscribe_to_event(move |context, event: InterventionEvent| {
-            println!("Received intervention event: {:?} {:?}", event.active, event.intervention);
+            println!(
+                "Received intervention event: {:?} {:?}",
+                event.active, event.intervention
+            );
             println!("{}", context.get_current_time());
             if event.active {
                 context.set_accepts_intervention(event.intervention);
@@ -963,7 +972,7 @@ mod test {
 
         // Invalid - values don't sum to 1.0
         let invalid_sum = ModifierSpecification {
-            home: Some([0.3, 0.2, 0.3, 0.1]),
+            home: Some([0.3, 0.2, 0.3, 0.4]),
             school: None,
             work: None,
             community: None,

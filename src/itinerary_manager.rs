@@ -16,12 +16,12 @@ pub trait ItineraryModifier: std::fmt::Debug + 'static {
     fn accept(&self, _context: &Context, _person_id: PersonId) -> bool {
         true
     }
+    fn eq_modifier(&self, other: &dyn ItineraryModifier) -> bool;
 }
 
-// This is implemented for testing
 impl PartialEq for dyn ItineraryModifier {
     fn eq(&self, other: &Self) -> bool {
-        self.as_any().type_id() == other.as_any().type_id()
+        self.eq_modifier(other)
     }
 }
 
@@ -167,6 +167,8 @@ impl ContextItineraryModifierExt for Context {
         };
 
         let Some(second) = modifiers.next() else {
+            // println!("first modifier: {:?}", first);
+            // println!("Exiting here");
             return first.apply(&base_itinerary);
         };
 
@@ -185,6 +187,10 @@ impl ContextItineraryModifierExt for Context {
         P: IndexableProperty<Person>,
     {
         let mut modifiers = self.get_itinerary_modifiers(person_id);
+        println!(
+            "All modifiers for person {} before removing previous property: {:?}",
+            person_id, modifiers
+        );
         let data = self.get_data(ItineraryModifierPlugin);
         let previous_modifiers = data
             .itinerary_modifier_map
@@ -195,6 +201,14 @@ impl ContextItineraryModifierExt for Context {
                     .downcast_ref::<PersonPropertyItineraryModifier<P>>()
             })
             .and_then(|modifier_map| modifier_map.itinerary_modifier_map.get(&previous_property));
+        println!(
+            "modifiers before filtering for person {}: {:?}",
+            person_id, modifiers
+        );
+        println!(
+            "Previous modifiers for person {}: {:?}",
+            person_id, previous_modifiers
+        );
         if let Some(previous_modifiers) = previous_modifiers {
             modifiers.retain(|modifier| {
                 !previous_modifiers
@@ -202,6 +216,10 @@ impl ContextItineraryModifierExt for Context {
                     .any(|prev| prev.as_ref() == *modifier)
             });
         }
+        println!(
+            "Modifiers after removing previous property for person {}: {:?}",
+            person_id, modifiers
+        );
         let mut modifiers = modifiers
             .into_iter()
             .filter(|modifier| modifier.accept(self, person_id));
@@ -230,6 +248,7 @@ impl ContextItineraryModifierExt for Context {
 mod test {
     use super::*;
     use crate::Age;
+    use crate::infectiousness_manager::{InfectionContextExt, InfectionStatus};
     use crate::itinerary_modifiers::{
         AcceptanceFunction, ItineraryTransitionMatrix, assert_same_matrix,
         create_itinerary_transition_matrix,
@@ -613,5 +632,60 @@ mod test {
         context.add_plan_with_phase(20.0, ixa::Context::shutdown, ExecutionPhase::Last);
         context.execute();
         assert_eq!(context.get_itinerary(p1), [0.5, 0.0, 0.4, 0.1]);
+    }
+
+    #[test]
+    fn test_get_itinerary_without_property() {
+        let mut context = setup();
+        let p1 = context.add_entity(with!(Person, Age(11))).unwrap();
+
+        context.set_property(
+            p1,
+            Itinerary {
+                setting_ids: [None, None, None, None],
+                itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
+            },
+        );
+
+        let modifier_one_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.5, 0.0, 0.0, 0.5],
+            [0.0, 0.0, 0.0, 0.0],
+        ];
+        let acceptance: AcceptanceFunction =
+            Box::new(move |context, _person| context.get_current_time() > 5.0);
+        let modifier_one =
+            create_itinerary_transition_matrix(Some(modifier_one_matrix), None, Some(acceptance));
+        context.register_itinerary_modifier(Age(11), modifier_one);
+
+        let modifier_two_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+        ];
+        let acceptance_two: AcceptanceFunction = Box::new(move |context, _person| {
+            context.get_current_time() < 10.0 && context.get_current_time() > 7.0
+        });
+        let modifier_two = create_itinerary_transition_matrix(
+            Some(modifier_two_matrix),
+            None,
+            Some(acceptance_two),
+        );
+        context.register_itinerary_modifier(InfectionStatus::Infectious, modifier_two);
+
+        context.add_plan(6.0, move |context| {
+            assert_eq!(context.get_itinerary(p1), [0.55, 0.0, 0.0, 0.45]);
+            context.infect_person(p1, None, None);
+        });
+        context.add_plan(8.0, move |context| {
+            assert_eq!(context.get_itinerary(p1), [1.0, 0.0, 0.0, 0.0]);
+            assert_eq!(
+                context.get_itinerary_without_property(p1, InfectionStatus::Infectious),
+                [0.55, 0.0, 0.0, 0.45]
+            );
+        });
+        context.execute();
     }
 }

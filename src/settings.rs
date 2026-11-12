@@ -340,6 +340,7 @@ pub trait ContextSettingExt:
         // println!("Sampling person from setting: {:?} {:?} at time {}", setting, setting.category(), self.get_current_time());
         let membership = self.get_data(SettingMembershipPlugin);
         // println!("membership: {:?}", membership.get_active_member(setting));
+        // println!("all members: {:?}", membership.all_member_count(setting));
         let members = membership.get_active_member(setting).ok_or_else(|| {
             ModelError::ModelError(format!("No members found for setting: {:?}", setting))
         })?;
@@ -484,7 +485,10 @@ pub trait ContextSettingExt:
         for person_id in remaining_people {
             for setting_id in self.determine_setting_membership_removal(person_id, person_property)
             {
-                // println!("Removing person {} from setting {:?}", person_id, setting_id);
+                println!(
+                    "Removing person {} from setting {:?} due to property {:?}",
+                    person_id, setting_id, person_property
+                );
                 self.remove_person_from_single_setting(person_id, setting_id);
             }
         }
@@ -531,7 +535,18 @@ pub trait ContextSettingExt:
         let is_changed: fn(f64, f64) -> bool =
             |old: f64, modified: f64| modified == 0.0 && old > 0.0;
         let old = self.get_itinerary_without_property(person_id, person_property);
+        print!(
+            "Old itinerary at time {} for person {}: {:?} with property {:?}",
+            self.get_current_time(),
+            person_id,
+            old,
+            person_property
+        );
         let modified = self.get_itinerary(person_id);
+        println!(
+            "Modified itinerary for person {}: {:?}",
+            person_id, modified
+        );
 
         old.iter()
             .zip(modified.iter())
