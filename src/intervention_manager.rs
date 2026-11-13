@@ -9,12 +9,9 @@ use crate::{
     },
     pop_reader::{FIPSCode, states::USState},
     settings::{ContextSettingExt, Itinerary, Person, PersonId, SETTING_COUNT, SettingCategory},
+    triggers::{ContextCustomTriggerExt, CustomTrigger},
 };
-use ixa::{
-    ExecutionPhase, HashMap, HashMapExt, IxaEvent, impl_derived_property,
-    prelude::*,
-    triggers::{ContextTriggersExt, TimeTrigger, TriggerCriterion},
-};
+use ixa::{HashMap, HashMapExt, IxaEvent, impl_derived_property, prelude::*};
 use serde::{Deserialize, Serialize};
 use strum::{EnumCount, EnumIter};
 
@@ -235,8 +232,7 @@ pub struct Intervention {
     modifier: Modifier,
     geography: Geography,
     acceptance_probability: f64,
-    activation_time: f64,
-    duration: Option<f64>,
+    trigger: CustomTrigger,
     override_modifiers: Option<ModifierSpecification>,
 }
 
@@ -247,32 +243,41 @@ impl Intervention {
                 "Intervention acceptance probability must be between 0 and 1".to_string(),
             ));
         }
-        if self.activation_time < 0.0 {
-            return Err(ModelError::ModelError(
-                "Intervention activation time must be non-negative".to_string(),
-            ));
-        }
-        if let Some(duration) = self.duration
-            && duration <= 0.0
-        {
-            return Err(ModelError::ModelError(
-                "Intervention duration must be positive".to_string(),
-            ));
-        }
+        self.trigger.validate()?;
         if let Some(overrides) = &self.override_modifiers {
             overrides.validate()?;
         }
         Ok(())
     }
+
     pub fn validate_overlap(&self, other: &Intervention) -> Result<(), ModelError> {
         if self.modifier == other.modifier && self.geography == other.geography {
-            let self_end_time = self.activation_time + self.duration.unwrap_or(f64::INFINITY);
-            let other_end_time = other.activation_time + other.duration.unwrap_or(f64::INFINITY);
-            if (self.activation_time < other_end_time) && (other.activation_time < self_end_time) {
-                return Err(ModelError::ModelError(format!(
-                    "Interventions {:?} and {:?} overlap in time and geography",
-                    self, other
-                )));
+            match (self.trigger, other.trigger) {
+                (
+                    CustomTrigger::Time {
+                        start_time: start_a,
+                        duration: dur_a,
+                    },
+                    CustomTrigger::Time {
+                        start_time: start_b,
+                        duration: dur_b,
+                    },
+                ) => {
+                    let end_a = start_a + dur_a;
+                    let end_b = start_b + dur_b;
+                    if start_a < end_b && start_b < end_a {
+                        return Err(ModelError::ModelError(format!(
+                            "Interventions {:?} and {:?} overlap in time and geography",
+                            self, other
+                        )));
+                    }
+                }
+                _ => {
+                    return Err(ModelError::ModelError(format!(
+                        "Interventions {:?} and {:?} overlap in geography and may overlap in time",
+                        self, other
+                    )));
+                }
             }
         }
         Ok(())
@@ -318,29 +323,24 @@ define_data_plugin!(
 );
 
 pub trait InterventionContextExt:
-    PluginContext + ContextEntitiesExt + ContextParametersExt + ContextTriggersExt + ContextSettingExt
+    PluginContext
+    + ContextEntitiesExt
+    + ContextParametersExt
+    + ContextSettingExt
+    + ContextCustomTriggerExt
 {
     fn setup_intervention_triggers(&mut self, intervention: Intervention) {
-        let start_trigger =
-            TimeTrigger::at_phase(intervention.activation_time, ExecutionPhase::Last).emit_value(
-                InterventionEvent {
-                    active: true,
-                    intervention,
-                },
-            );
-        self.register_trigger(start_trigger);
-
-        if let Some(duration) = intervention.duration {
-            let end_trigger = TimeTrigger::at_phase(
-                intervention.activation_time + duration,
-                ExecutionPhase::Last,
-            )
-            .emit_value(InterventionEvent {
+        self.set_custom_trigger(
+            intervention.trigger,
+            InterventionEvent {
+                active: true,
+                intervention,
+            },
+            InterventionEvent {
                 active: false,
                 intervention,
-            });
-            self.register_trigger(end_trigger);
-        }
+            },
+        );
     }
 
     fn setup_intervention_trigger_event_subscription(&mut self) {
@@ -595,7 +595,7 @@ mod test {
         pop_reader::parser::parse_fips_school_id,
         settings::SettingCode,
     };
-    use ixa::{HashMap, assert_almost_eq};
+    use ixa::{ExecutionPhase, HashMap, assert_almost_eq};
     use serde_json::json;
     use std::{cell::RefCell, panic, rc::Rc};
 
@@ -685,24 +685,30 @@ mod test {
             modifier: Modifier::SchoolClosure,
             geography: g1,
             acceptance_probability: 1.0,
-            activation_time: 1.0,
-            duration: Some(1.0),
+            trigger: CustomTrigger::Time {
+                start_time: 1.0,
+                duration: 1.0,
+            },
             override_modifiers: None,
         };
         let work_place_mobility_reduction = Intervention {
             modifier: Modifier::WorkplaceMobilityReduction,
             geography: g1,
             acceptance_probability: 1.0,
-            activation_time: 3.0,
-            duration: Some(1.0),
+            trigger: CustomTrigger::Time {
+                start_time: 3.0,
+                duration: 1.0,
+            },
             override_modifiers: None,
         };
         let community_mobility_reduction = Intervention {
             modifier: Modifier::CommunityMobilityReduction,
             geography: g1,
             acceptance_probability: 1.0,
-            activation_time: 5.0,
-            duration: Some(1.0),
+            trigger: CustomTrigger::Time {
+                start_time: 5.0,
+                duration: 1.0,
+            },
             override_modifiers: None,
         };
         context.setup_intervention_triggers(school_closure);
@@ -754,24 +760,30 @@ mod test {
             modifier: Modifier::SchoolClosure,
             geography: g1,
             acceptance_probability: 1.0,
-            activation_time: 1.0,
-            duration: Some(1.0),
+            trigger: CustomTrigger::Time {
+                start_time: 1.0,
+                duration: 1.0,
+            },
             override_modifiers: None,
         };
         let work_place_mobility_reduction = Intervention {
             modifier: Modifier::WorkplaceMobilityReduction,
             geography: g1,
             acceptance_probability: 1.0,
-            activation_time: 3.0,
-            duration: Some(1.0),
+            trigger: CustomTrigger::Time {
+                start_time: 3.0,
+                duration: 1.0,
+            },
             override_modifiers: None,
         };
         let community_mobility_reduction = Intervention {
             modifier: Modifier::CommunityMobilityReduction,
             geography: g1,
             acceptance_probability: 1.0,
-            activation_time: 5.0,
-            duration: Some(1.0),
+            trigger: CustomTrigger::Time {
+                start_time: 5.0,
+                duration: 1.0,
+            },
             override_modifiers: None,
         };
         context.setup_intervention_triggers(school_closure);
@@ -828,8 +840,10 @@ mod test {
             modifier: Modifier::SchoolClosure,
             geography: g1,
             acceptance_probability: 1.0,
-            activation_time: 1.0,
-            duration: Some(1.0),
+            trigger: CustomTrigger::Time {
+                start_time: 1.0,
+                duration: 1.0,
+            },
             override_modifiers: Some(ModifierSpecification {
                 home: None,
                 school: Some([0.5, 0.0, 0.0, 0.5]),
@@ -884,8 +898,10 @@ mod test {
             modifier: Modifier::SchoolClosure,
             geography: g1,
             acceptance_probability: 0.5,
-            activation_time: 1.0,
-            duration: Some(1.0),
+            trigger: CustomTrigger::Time {
+                start_time: 1.0,
+                duration: 1.0,
+            },
             override_modifiers: None,
         };
         context.setup_intervention_triggers(intervention);
@@ -994,8 +1010,10 @@ mod test {
             modifier: Modifier::SchoolClosure,
             geography: Geography::State(USState::decode(1).unwrap()),
             acceptance_probability: 0.95,
-            activation_time: 10.0,
-            duration: Some(5.0),
+            trigger: CustomTrigger::Time {
+                start_time: 10.0,
+                duration: 5.0,
+            },
             override_modifiers: Some(ModifierSpecification {
                 home: Some([0.6, 0.1, 0.2, 0.1]),
                 school: None,
@@ -1010,8 +1028,10 @@ mod test {
             modifier: Modifier::SchoolClosure,
             geography: Geography::State(USState::decode(1).unwrap()),
             acceptance_probability: 1.5,
-            activation_time: 10.0,
-            duration: Some(5.0),
+            trigger: CustomTrigger::Time {
+                start_time: 10.0,
+                duration: 5.0,
+            },
             override_modifiers: None,
         };
         assert!(invalid_probability_high.validate().is_err());
@@ -1021,8 +1041,10 @@ mod test {
             modifier: Modifier::SchoolClosure,
             geography: Geography::State(USState::decode(1).unwrap()),
             acceptance_probability: -0.1,
-            activation_time: 10.0,
-            duration: Some(5.0),
+            trigger: CustomTrigger::Time {
+                start_time: 10.0,
+                duration: 5.0,
+            },
             override_modifiers: None,
         };
         assert!(invalid_probability_low.validate().is_err());
@@ -1032,8 +1054,10 @@ mod test {
             modifier: Modifier::SchoolClosure,
             geography: Geography::State(USState::decode(1).unwrap()),
             acceptance_probability: 0.5,
-            activation_time: -1.0,
-            duration: Some(5.0),
+            trigger: CustomTrigger::Time {
+                start_time: -1.0,
+                duration: 5.0,
+            },
             override_modifiers: None,
         };
         assert!(invalid_activation.validate().is_err());
@@ -1043,8 +1067,10 @@ mod test {
             modifier: Modifier::SchoolClosure,
             geography: Geography::State(USState::decode(1).unwrap()),
             acceptance_probability: 0.5,
-            activation_time: 10.0,
-            duration: Some(0.0),
+            trigger: CustomTrigger::Time {
+                start_time: 10.0,
+                duration: 0.0,
+            },
             override_modifiers: None,
         };
         assert!(invalid_duration.validate().is_err());
@@ -1054,8 +1080,10 @@ mod test {
             modifier: Modifier::SchoolClosure,
             geography: Geography::State(USState::decode(1).unwrap()),
             acceptance_probability: 0.5,
-            activation_time: 10.0,
-            duration: Some(5.0),
+            trigger: CustomTrigger::Time {
+                start_time: 10.0,
+                duration: 5.0,
+            },
             override_modifiers: Some(ModifierSpecification {
                 home: Some([0.5, 0.5, 0.5, 0.5]), // Sum is 2.0, not 1.0
                 school: None,
@@ -1082,16 +1110,20 @@ mod test {
             modifier: Modifier::SchoolClosure,
             geography: g1,
             acceptance_probability: 1.0,
-            activation_time: 1.0,
-            duration: Some(1.0),
+            trigger: CustomTrigger::Time {
+                start_time: 1.0,
+                duration: 1.0,
+            },
             override_modifiers: None,
         };
         let intervention2 = Intervention {
             modifier: Modifier::SchoolClosure,
             geography: g2,
             acceptance_probability: 1.0,
-            activation_time: 1.0,
-            duration: Some(1.0),
+            trigger: CustomTrigger::Time {
+                start_time: 1.0,
+                duration: 1.0,
+            },
             override_modifiers: Some(modifier_specification),
         };
 
