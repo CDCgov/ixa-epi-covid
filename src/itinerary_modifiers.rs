@@ -32,9 +32,19 @@ impl std::fmt::Debug for ItineraryTransitionMatrix {
     }
 }
 
+impl PartialEq for ItineraryTransitionMatrix {
+    fn eq(&self, other: &Self) -> bool {
+        self.activity_matrix == other.activity_matrix
+            && self.location_matrix == other.location_matrix
+    }
+}
+
 impl ItineraryModifier for ItineraryTransitionMatrix {
     fn as_any(&self) -> &dyn Any {
         self
+    }
+    fn eq_modifier(&self, other: &dyn ItineraryModifier) -> bool {
+        other.as_any().downcast_ref::<Self>() == Some(self)
     }
     fn layer(&self, other: &dyn ItineraryModifier) -> Box<dyn ItineraryModifier> {
         let other = other
