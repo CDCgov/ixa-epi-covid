@@ -344,11 +344,6 @@ pub trait InterventionContextExt:
 
     fn setup_intervention_trigger_event_subscription(&mut self) {
         self.subscribe_to_event(move |context, event: InterventionEvent| {
-            println!(
-                "Received intervention event: {:?} {:?}",
-                event.active, event.intervention
-            );
-            println!("{}", context.get_current_time());
             if event.active {
                 context.set_accepts_intervention(event.intervention);
                 context

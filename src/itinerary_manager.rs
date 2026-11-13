@@ -160,15 +160,11 @@ impl ContextItineraryModifierExt for Context {
             .into_iter()
             .filter(|modifier| modifier.accept(self, person_id));
 
-        // println!("modifiers for person {}: {:?}", person_id, modifiers);
-
         let Some(first) = modifiers.next() else {
             return base_itinerary;
         };
 
         let Some(second) = modifiers.next() else {
-            // println!("first modifier: {:?}", first);
-            // println!("Exiting here");
             return first.apply(&base_itinerary);
         };
 
@@ -187,10 +183,6 @@ impl ContextItineraryModifierExt for Context {
         P: IndexableProperty<Person>,
     {
         let mut modifiers = self.get_itinerary_modifiers(person_id);
-        println!(
-            "All modifiers for person {} before removing previous property: {:?}",
-            person_id, modifiers
-        );
         let data = self.get_data(ItineraryModifierPlugin);
         let previous_modifiers = data
             .itinerary_modifier_map
@@ -201,14 +193,6 @@ impl ContextItineraryModifierExt for Context {
                     .downcast_ref::<PersonPropertyItineraryModifier<P>>()
             })
             .and_then(|modifier_map| modifier_map.itinerary_modifier_map.get(&previous_property));
-        println!(
-            "modifiers before filtering for person {}: {:?}",
-            person_id, modifiers
-        );
-        println!(
-            "Previous modifiers for person {}: {:?}",
-            person_id, previous_modifiers
-        );
         if let Some(previous_modifiers) = previous_modifiers {
             modifiers.retain(|modifier| {
                 !previous_modifiers
@@ -216,10 +200,6 @@ impl ContextItineraryModifierExt for Context {
                     .any(|prev| prev.as_ref() == *modifier)
             });
         }
-        println!(
-            "Modifiers after removing previous property for person {}: {:?}",
-            person_id, modifiers
-        );
         let mut modifiers = modifiers
             .into_iter()
             .filter(|modifier| modifier.accept(self, person_id));
