@@ -206,6 +206,13 @@ impl ModifierSpecification {
         ];
         for (category, modifier) in categories.iter() {
             if let Some(modifier) = modifier {
+                let sum: f64 = modifier.iter().sum();
+                if (sum - 1.0).abs() > 1e-6 {
+                    return Err(ModelError::ModelError(format!(
+                        "Modifier specification for {:?} does not sum to 1.0",
+                        category
+                    )));
+                }
                 for &value in modifier.iter() {
                     if !(0.0..=1.0).contains(&value) {
                         return Err(ModelError::ModelError(format!(
@@ -213,12 +220,6 @@ impl ModifierSpecification {
                             category
                         )));
                     }
-                }
-                if modifier.iter().sum::<f64>() > 1.0 {
-                    return Err(ModelError::ModelError(format!(
-                        "Modifier specification for {:?} values must sum to no more than 1",
-                        category
-                    )));
                 }
             }
         }
@@ -967,7 +968,7 @@ mod test {
 
         // Invalid - values don't sum to 1.0
         let invalid_sum = ModifierSpecification {
-            home: Some([0.3, 0.2, 0.3, 0.4]),
+            home: Some([0.3, 0.2, 0.3, 0.1]),
             school: None,
             work: None,
             community: None,

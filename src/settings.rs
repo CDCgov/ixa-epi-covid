@@ -526,14 +526,8 @@ pub trait ContextSettingExt:
         let is_changed: fn(f64, f64) -> bool =
             |old: f64, modified: f64| modified == 0.0 && old > 0.0;
         let old = self.get_itinerary_without_property(person_id, person_property);
-        print!(
-            "Old itinerary at time {} for person {}: {:?} with property {:?}",
-            self.get_current_time(),
-            person_id,
-            old,
-            person_property
-        );
         let modified = self.get_itinerary(person_id);
+
         old.iter()
             .zip(modified.iter())
             .zip(setting_ids.iter())
