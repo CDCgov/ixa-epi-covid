@@ -81,8 +81,12 @@
                 "modifier":"SchoolClosure",
                 "geography": {"type": "State", "code": "56"},
                 "acceptance_probability": 1.0,
-                "activation_time": 0.0,
-                "duration": 30.0
+                "trigger": {
+                    "Time": {
+                        "start_time": 50,
+                        "duration": 50
+                    }
+                }
             }
         ],
         "prevalence_report": {
