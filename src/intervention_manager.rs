@@ -12,8 +12,8 @@ use crate::{
     },
     pop_reader::{FIPSCode, states::USState},
     settings::{ContextSettingExt, Itinerary, Person, PersonId, SETTING_COUNT, SettingCategory},
-    triggers::{ContextCustomTriggerExt, CustomTrigger},
     transmission_modifier_manager::{ContextTransmissionModifierExt, ScalarTransmissionModifier},
+    triggers::{ContextCustomTriggerExt, CustomTrigger},
 };
 use ixa::{HashMap, HashMapExt, IxaEvent, impl_derived_property, prelude::*};
 use serde::{Deserialize, Serialize};
@@ -400,12 +400,8 @@ define_data_plugin!(
 
 pub trait InterventionContextExt:
     PluginContext
-   
     + ContextEntitiesExt
-   
     + ContextParametersExt
-   
-   
     + ContextSettingExt
     + ContextCustomTriggerExt
     + ContextTransmissionModifierExt
@@ -1238,38 +1234,16 @@ mod test {
             },
         };
         assert!(invalid_duration.validate().is_err());
-
-        // Invalid - invalid override modifiers
-        let invalid_overrides = Intervention {
-            modifier: Modifier::SchoolClosure,
-            geography: Geography::State(USState::decode(1).unwrap()),
-            acceptance_probability: 0.5,
-            trigger: CustomTrigger::Time {
-                start_time: 10.0,
-                duration: 5.0,
-            },
-            override_modifiers: Some(ModifierSpecification {
-                home: Some([0.5, 0.5, 0.5, 0.5]), // Sum is 2.0, not 1.0
-                school: None,
-                work: None,
-                community: None,
-            }),
-        };
-        assert!(invalid_overrides.validate().is_err());
     }
 
     #[test]
     fn test_different_modifiers_in_different_geographies() {
         let school_code1 = make_school_id(b"16037960200002");
         let school_code2 = make_school_id(b"16038960200002");
+        let home_code = make_home_id(b"16037960200002");
+        let community_code = home_code.extract_community();
         let g1 = Geography::County(school_code1.0.state_county_code().unwrap());
-        let g2 = Geography::County(school_code2.0.state_county_code().unwrap());
-        let modifier_specification = ModifierSpecification {
-            home: None,
-            school: Some([0.5, 0.0, 0.0, 0.5]),
-            work: None,
-            community: None,
-        };
+        let g2 = Geography::County(community_code.0.state_county_code().unwrap());
         let intervention1 = Intervention {
             modifier: Modifier::SchoolClosure,
             geography: g1,
@@ -1278,17 +1252,15 @@ mod test {
                 start_time: 1.0,
                 duration: 1.0,
             },
-            override_modifiers: None,
         };
         let intervention2 = Intervention {
-            modifier: Modifier::SchoolClosure,
+            modifier: Modifier::CommunityMobilityReduction,
             geography: g2,
             acceptance_probability: 1.0,
             trigger: CustomTrigger::Time {
                 start_time: 1.0,
                 duration: 1.0,
             },
-            override_modifiers: Some(modifier_specification),
         };
 
         let mut context = setup();
@@ -1300,7 +1272,12 @@ mod test {
         context.set_property(
             p1,
             Itinerary {
-                setting_ids: [None, None, Some(school_code1), None],
+                setting_ids: [
+                    Some(home_code),
+                    None,
+                    Some(school_code1),
+                    Some(community_code),
+                ],
                 itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
             },
         );
@@ -1308,7 +1285,12 @@ mod test {
         context.set_property(
             p2,
             Itinerary {
-                setting_ids: [None, None, Some(school_code2), None],
+                setting_ids: [
+                    Some(home_code),
+                    None,
+                    Some(school_code2),
+                    Some(community_code),
+                ],
                 itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
             },
         );
@@ -1322,8 +1304,8 @@ mod test {
         context.add_plan(1.5, move |context| {
             let itinerary1 = context.get_itinerary(p1);
             let itinerary2 = context.get_itinerary(p2);
-            assert_eq!(itinerary1, [0.8, 0.0, 0.0, 0.2]);
-            assert_eq!(itinerary2, [0.55, 0.0, 0.0, 0.45]);
+            assert_eq!(itinerary1, [1.0, 0.0, 0.0, 0.0]);
+            assert_eq!(itinerary2, [0.5, 0.0, 0.5, 0.0]);
         });
         context.add_plan(3.0, move |context| {
             let itinerary1 = context.get_itinerary(p1);
