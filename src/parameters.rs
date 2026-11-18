@@ -1,11 +1,11 @@
-use ixa::{HashMap, HashMapExt, HashSet, prelude::*};
+use ixa::{HashMap, HashMapExt, HashSet, HashSetExt, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::{fmt::Debug, path::PathBuf};
 
 use crate::error::ModelError;
 use crate::infection_importation::ImportCasesFromFile;
-use crate::intervention_manager::{Intervention, Modifier, ModifierSpecification};
+use crate::intervention_manager::{Intervention, InterventionModifierSpecification, Modifier};
 use crate::reports::ReportParams;
 use crate::school_calendar::{SchoolCalendarModifier, SchoolCalendarModifierType};
 use crate::settings::SettingCategory;
@@ -95,7 +95,7 @@ pub struct Params {
     /// Vector of modifiers that impacting school itineraries
     pub school_calendar: Vec<SchoolCalendarModifier>,
     /// Parameters defining default itinerary modifiers
-    pub default_modifiers: HashMap<Modifier, ModifierSpecification>,
+    pub default_modifiers: HashMap<Modifier, InterventionModifierSpecification>,
     /// Parameters defining interventions
     pub interventions: Vec<Intervention>,
     /// Prevalence report with a period and name required
@@ -315,8 +315,14 @@ fn validate_inputs(parameters: &Params) -> Result<(), Box<dyn std::error::Error 
         unique_school_calendar_modifiers.push(school_calendar_modifier.clone());
     }
 
-    for value in parameters.default_modifiers.values() {
-        value.validate()?;
+    let mut default_modifier_types = HashSet::new();
+    for modifier_specification in &parameters.default_modifiers {
+        if !default_modifier_types.insert(*modifier_specification.0) {
+            return Err(Box::new(ModelError::ModelError(
+                "Duplicate default modifiers are not allowed.".to_string(),
+            )));
+        }
+        modifier_specification.1.validate()?;
     }
 
     for intervention in &parameters.interventions {
