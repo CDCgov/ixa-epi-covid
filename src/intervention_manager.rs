@@ -7,6 +7,7 @@ use crate::{
     ContextParametersExt, Params,
     error::ModelError,
     geography::{GEOGRAPHY_COUNT, Geography, GeographyDiscriminants},
+    infectiousness_manager::InfectionStatus,
     itinerary_modifiers::{
         AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
     },
@@ -605,14 +606,24 @@ pub trait InterventionContextExt:
                 )));
             }
             (Modifier::MaskMandate, Geography::State(state_code)) => {
-                self.remove_itinerary_modifier(AcceptsMaskMandateState(Some(Geography::State(
-                    state_code,
-                ))));
+                self.remove_transmission_modifier(
+                    InfectionStatus::Susceptible,
+                    AcceptsMaskMandateState(Some(Geography::State(state_code))),
+                );
+                self.remove_transmission_modifier(
+                    InfectionStatus::Infectious,
+                    AcceptsMaskMandateState(Some(Geography::State(state_code))),
+                );
             }
             (Modifier::MaskMandate, Geography::County(fips_code)) => {
-                self.remove_itinerary_modifier(AcceptsMaskMandateCounty(Some(Geography::County(
-                    fips_code,
-                ))));
+                self.remove_transmission_modifier(
+                    InfectionStatus::Susceptible,
+                    AcceptsMaskMandateCounty(Some(Geography::County(fips_code))),
+                );
+                self.remove_transmission_modifier(
+                    InfectionStatus::Infectious,
+                    AcceptsMaskMandateCounty(Some(Geography::County(fips_code))),
+                );
             }
         }
         Ok(())
@@ -1312,6 +1323,82 @@ mod test {
             let itinerary2 = context.get_itinerary(p2);
             assert_eq!(itinerary1, [0.3, 0.0, 0.5, 0.2]);
             assert_eq!(itinerary2, [0.3, 0.0, 0.5, 0.2]);
+        });
+        context.execute();
+    }
+
+    #[test]
+    fn test_mask_mandate_intervention() {
+        let school_code = make_school_id(b"16037960200002");
+        let home_code = make_home_id(b"16037960200002");
+        let home_code2 = make_home_id(b"1677760200003");
+        let community_code = home_code.extract_community();
+        let community_code2 = home_code2.extract_community();
+        let g1 = Geography::County(home_code.0.state_county_code().unwrap());
+        let intervention1 = Intervention {
+            modifier: Modifier::MaskMandate,
+            geography: g1,
+            acceptance_probability: 1.0,
+            trigger: CustomTrigger::Time {
+                start_time: 1.0,
+                duration: 1.0,
+            },
+        };
+
+        let mut context = setup();
+        let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
+        let p2 = context.add_entity(with!(Person, Age(10))).unwrap();
+        context.setup_intervention_triggers(intervention1);
+        context.setup_intervention_trigger_event_subscription();
+        context.set_property(
+            p1,
+            Itinerary {
+                setting_ids: [
+                    Some(home_code),
+                    None,
+                    Some(school_code),
+                    Some(community_code),
+                ],
+                itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
+            },
+        );
+
+        context.set_property(
+            p2,
+            Itinerary {
+                setting_ids: [
+                    Some(home_code2),
+                    None,
+                    Some(school_code),
+                    Some(community_code2),
+                ],
+                itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
+            },
+        );
+
+        context.add_plan(0.0, move |context| {
+            let transmission1 =
+                context.get_relative_total_transmission(p1, SettingCategory::Community);
+            let transmission2 =
+                context.get_relative_total_transmission(p2, SettingCategory::Community);
+            assert_eq!(transmission1, 1.0);
+            assert_eq!(transmission2, 1.0);
+        });
+        context.add_plan(1.5, move |context| {
+            let transmission1 =
+                context.get_relative_total_transmission(p1, SettingCategory::Community);
+            let transmission2 =
+                context.get_relative_total_transmission(p2, SettingCategory::Community);
+            assert_eq!(transmission1, 0.9);
+            assert_eq!(transmission2, 1.0);
+        });
+        context.add_plan(3.0, move |context| {
+            let transmission1 =
+                context.get_relative_total_transmission(p1, SettingCategory::Community);
+            let transmission2 =
+                context.get_relative_total_transmission(p2, SettingCategory::Community);
+            assert_eq!(transmission1, 1.0);
+            assert_eq!(transmission2, 1.0);
         });
         context.execute();
     }

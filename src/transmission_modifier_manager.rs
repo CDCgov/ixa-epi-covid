@@ -76,6 +76,7 @@ pub trait TransmissionModifierStorage: std::fmt::Debug + 'static {
         person_id: PersonId,
         setting_category: SettingCategory,
     ) -> f64;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 // A type alias for the type of the transmission modifiers specified via a hashmap of person
@@ -90,6 +91,9 @@ impl<P> TransmissionModifierStorage for PersonPropertyTransmissionModifier<P>
 where
     P: IndexableProperty<Person>,
 {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
     fn get_relative_transmission(
         &self,
         context: &Context,
@@ -266,6 +270,35 @@ pub trait ContextTransmissionModifierExt:
         Ok(())
     }
 
+    fn remove_transmission_modifier<P>(
+        &mut self,
+        infection_status: InfectionStatus,
+        property_value: P,
+    ) -> Option<Box<dyn TransmissionModifier>>
+    where
+        P: IndexableProperty<Person>,
+    {
+        let modifier_map = self
+            .get_data_mut(TransmissionModifierPlugin)
+            .transmission_modifier_map
+            .get_mut(&infection_status);
+
+        let modifier_type_id = TypeId::of::<PersonPropertyTransmissionModifier<P>>();
+        if let Some(modifier_map) = modifier_map {
+            let person_property_value_map = modifier_map.get_mut(&modifier_type_id);
+            if let Some(person_property_value_map) = person_property_value_map {
+                let downcast_map = person_property_value_map
+                    .as_any_mut()
+                    .downcast_mut::<PersonPropertyTransmissionModifier<P>>()
+                    .expect("modifier map entry had unexpected type for its TypeId key");
+                return downcast_map
+                    .transmission_modifier_map
+                    .remove(&property_value);
+            }
+        }
+        None
+    }
+
     fn get_transmission_success_probability(
         &self,
         infector: PersonId,
@@ -342,6 +375,7 @@ mod test {
         parameters::{ContextParametersExt, GlobalParams, Params},
         rate_fns::load_rate_fns,
     };
+    use std::any::Any;
     use std::any::TypeId;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -483,7 +517,6 @@ mod test {
             .transmission_modifier_map
             .get(&InfectionStatus::Susceptible)
             .unwrap();
-        println!("{:?}", modifier_map);
         // Check that the modifier map contains the expected values
         assert_eq!(modifier_map.len(), 1);
 
@@ -793,6 +826,116 @@ mod test {
         }
     }
 
+    #[test]
+    fn test_remove_transmission_modifier() {
+        let mut context = Context::new();
+        let relative_effect = 0.8;
+        context
+            .register_transmission_modifier([
+                (
+                    MandatoryIntervention::Partial,
+                    ScalarTransmissionModifier {
+                        infectiousness_multiplier: 0.0,
+                        susceptibility_multiplier: relative_effect,
+                        settings: vec![
+                            SettingCategory::Home,
+                            SettingCategory::Work,
+                            SettingCategory::School,
+                            SettingCategory::Community,
+                        ],
+                        acceptance_function: None,
+                    },
+                ),
+                (
+                    MandatoryIntervention::Full,
+                    ScalarTransmissionModifier {
+                        infectiousness_multiplier: 0.0,
+                        susceptibility_multiplier: 0.0,
+                        settings: vec![
+                            SettingCategory::Home,
+                            SettingCategory::Work,
+                            SettingCategory::School,
+                            SettingCategory::Community,
+                        ],
+                        acceptance_function: None,
+                    },
+                ),
+            ])
+            .unwrap();
+
+        // Add people with different intervention statuses
+        let partial_id = context
+            .add_entity(with!(Person, MandatoryIntervention::Partial, Age(30)))
+            .unwrap();
+        let full_id = context
+            .add_entity(with!(Person, MandatoryIntervention::Full, Age(30)))
+            .unwrap();
+
+        {
+            let modifier_container = context.get_data(TransmissionModifierPlugin);
+            let modifier_map = modifier_container
+                .transmission_modifier_map
+                .get(&InfectionStatus::Susceptible)
+                .unwrap();
+            // Check that the modifier map contains the expected values
+            assert_eq!(modifier_map.len(), 1);
+            let modifier_fn = modifier_map
+                .get(&TypeId::of::<
+                    PersonPropertyTransmissionModifier<MandatoryIntervention>,
+                >())
+                .unwrap();
+            // Check that the modifier function returns the expected value
+            assert_almost_eq!(
+                modifier_fn.get_relative_transmission(&context, partial_id, SettingCategory::Home),
+                relative_effect,
+                0.0
+            );
+            assert_almost_eq!(
+                modifier_fn.get_relative_transmission(&context, full_id, SettingCategory::Home),
+                0.0,
+                0.0
+            );
+        }
+
+        context.remove_transmission_modifier(
+            InfectionStatus::Susceptible,
+            MandatoryIntervention::Partial,
+        );
+        let modifier_container = context.get_data_mut(TransmissionModifierPlugin);
+        let modifier_map = modifier_container
+            .transmission_modifier_map
+            .get_mut(&InfectionStatus::Susceptible)
+            .unwrap();
+        let modifier_fn = modifier_map.get_mut(&TypeId::of::<
+            PersonPropertyTransmissionModifier<MandatoryIntervention>,
+        >());
+        let downcast = modifier_fn
+            .unwrap()
+            .as_any_mut()
+            .downcast_mut::<PersonPropertyTransmissionModifier<MandatoryIntervention>>()
+            .unwrap();
+        assert!(
+            !downcast
+                .transmission_modifier_map
+                .contains_key(&MandatoryIntervention::Partial)
+        );
+        assert!(
+            downcast
+                .transmission_modifier_map
+                .contains_key(&MandatoryIntervention::Full)
+        );
+        assert_almost_eq!(
+            context.get_relative_total_transmission(partial_id, SettingCategory::Home),
+            1.0,
+            0.0
+        );
+        assert_almost_eq!(
+            context.get_relative_total_transmission(full_id, SettingCategory::Home),
+            0.0,
+            0.0
+        );
+    }
+
     #[derive(Debug)]
     struct AgeModifier {
         age_multiplier: f64,
@@ -800,6 +943,9 @@ mod test {
 
     impl TransmissionModifierStorage for AgeModifier {
         #[allow(clippy::cast_precision_loss)]
+        fn as_any_mut(&mut self) -> &mut dyn Any {
+            self
+        }
         fn get_relative_transmission(
             &self,
             context: &Context,
