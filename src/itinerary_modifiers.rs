@@ -42,9 +42,19 @@ impl ModifierSpecification for ItineraryTransitionMatrix {
     }
 }
 
+impl PartialEq for ItineraryTransitionMatrix {
+    fn eq(&self, other: &Self) -> bool {
+        self.activity_matrix == other.activity_matrix
+            && self.location_matrix == other.location_matrix
+    }
+}
+
 impl ItineraryModifier for ItineraryTransitionMatrix {
     fn as_any(&self) -> &dyn Any {
         self
+    }
+    fn eq_modifier(&self, other: &dyn ItineraryModifier) -> bool {
+        other.as_any().downcast_ref::<Self>() == Some(self)
     }
     fn layer(&self, other: &dyn ItineraryModifier) -> Box<dyn ItineraryModifier> {
         let other = other
@@ -286,6 +296,24 @@ mod tests {
         let modifier = create_itinerary_transition_matrix(Some(activity), Some(location), None);
         assert_eq!(modifier.activity_matrix[0][0], 0.5);
         assert_eq!(modifier.location_matrix[0][1], 0.3);
+    }
+
+    #[test]
+    fn test_itinerary_modifier_partial_eq() {
+        let mut activity = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+        let mut location = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+        activity[0][0] = 0.5;
+        location[0][1] = 0.3;
+
+        let modifier = create_itinerary_transition_matrix(Some(activity), Some(location), None);
+        let same_modifier =
+            create_itinerary_transition_matrix(Some(activity), Some(location), None);
+        assert_eq!(modifier, same_modifier);
+
+        let different_activity = [[0.0; SETTING_COUNT]; SETTING_COUNT];
+        let different_modifier =
+            create_itinerary_transition_matrix(Some(different_activity), Some(location), None);
+        assert_ne!(modifier, different_modifier);
     }
 
     #[test]
