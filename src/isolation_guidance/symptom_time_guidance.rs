@@ -117,9 +117,6 @@ mod test {
     ) -> Context {
         let mut context = Context::new();
         let parameters = Params {
-            // We need to specify an itinerary split here even though we don't draw people from
-            // itineraries because `load_synth_population` calls `create_itinerary` for each person,
-            // and that function requires an itinerary write function to be set.
             settings_properties: HashMap::from_iter(
                 [
                     (SettingCategory::Home, SettingProperties { alpha: 0.0 }),
@@ -289,7 +286,8 @@ mod test {
         // 1. Create a new person
         // 2. Keep track of the time of symptom onset and duration
         // 3. Assert that start of isolation is the same as symptom onset + isolation delay
-        // 4. Assert that the end of isolation is at the minimum isolation duration
+        // 4. Assert that the end of isolation is at the post-symptoms isolation duration
+        // after symptoms resolve
 
         let post_symptoms_isolation_duration = 3.0;
         let minimum_isolation_duration = 7.0;

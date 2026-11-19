@@ -222,14 +222,14 @@ impl_derived_property!(
 );
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct IsolationGuidanceFinalState(pub Option<Geography>);
+pub struct AcceptsAndIsolatesState(pub Option<Geography>);
 impl_derived_property!(
-    IsolationGuidanceFinalState,
+    AcceptsAndIsolatesState,
     Person,
     [AcceptsIntervention, IsolationStatus],
     [],
     |accepts, isolation_status| {
-        IsolationGuidanceFinalState(
+        AcceptsAndIsolatesState(
             if accepts.0[GeographyDiscriminants::State][Modifier::IsolationGuidance].is_some()
                 && isolation_status.0
             {
@@ -242,14 +242,14 @@ impl_derived_property!(
 );
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct IsolationGuidanceFinalCounty(pub Option<Geography>);
+pub struct AcceptsAndIsolatesCounty(pub Option<Geography>);
 impl_derived_property!(
-    IsolationGuidanceFinalCounty,
+    AcceptsAndIsolatesCounty,
     Person,
     [AcceptsIntervention, IsolationStatus],
     [],
     |accepts, isolation_status| {
-        IsolationGuidanceFinalCounty(
+        AcceptsAndIsolatesCounty(
             if accepts.0[GeographyDiscriminants::County][Modifier::IsolationGuidance].is_some()
                 && isolation_status.0
             {
@@ -466,11 +466,51 @@ impl InterventionModifierSpecification {
                 Ok(())
             }
             InterventionModifierSpecification::IsolationGuidance {
+                home,
+                school,
+                work,
+                community,
+                infectiousness_multiplier,
+                susceptibility_multiplier,
+                settings,
                 delay_symptoms_to_isolation,
                 minimum_isolation_duration,
                 post_symptoms_isolation_duration,
                 ..
             } => {
+                let categories = [
+                    (SettingCategory::Home, home),
+                    (SettingCategory::School, school),
+                    (SettingCategory::Work, work),
+                    (SettingCategory::Community, community),
+                ];
+                for (category, modifier) in categories.iter() {
+                    if let Some(values) = modifier {
+                        for &value in values.iter() {
+                            if !(0.0..=1.0).contains(&value) {
+                                return Err(ModelError::ModelError(format!(
+                                    "{:?} modifier values must be between 0 and 1",
+                                    category
+                                )));
+                            }
+                        }
+                    }
+                }
+                if !(0.0..=1.0).contains(infectiousness_multiplier) {
+                    return Err(ModelError::ModelError(
+                        "Infectiousness multiplier must be between 0 and 1".to_string(),
+                    ));
+                }
+                if !(0.0..=1.0).contains(susceptibility_multiplier) {
+                    return Err(ModelError::ModelError(
+                        "Susceptibility multiplier must be between 0 and 1".to_string(),
+                    ));
+                }
+                if settings.is_empty() {
+                    return Err(ModelError::ModelError(
+                        "Settings must not be empty".to_string(),
+                    ));
+                }
                 if *delay_symptoms_to_isolation < 0.0 {
                     return Err(ModelError::ModelError(
                         "Delay symptoms to isolation must be greater than or equal to 0"
@@ -661,7 +701,6 @@ pub trait InterventionContextExt:
                 self.setup_itinerary_modifier(
                     AcceptsSchoolClosureState(Some(Geography::State(state_code))),
                     *modifier
-                        .unwrap()
                         .into_any()
                         .downcast::<ItineraryTransitionMatrix>()
                         .expect("expected ItineraryTransitionMatrix"),
@@ -672,7 +711,6 @@ pub trait InterventionContextExt:
                 self.setup_itinerary_modifier(
                     AcceptsSchoolClosureCounty(Some(Geography::County(fips_code))),
                     *modifier
-                        .unwrap()
                         .into_any()
                         .downcast::<ItineraryTransitionMatrix>()
                         .expect("expected ItineraryTransitionMatrix"),
@@ -683,7 +721,6 @@ pub trait InterventionContextExt:
                 self.setup_itinerary_modifier(
                     AcceptsWorkMobilityState(Some(Geography::State(state_code))),
                     *modifier
-                        .unwrap()
                         .into_any()
                         .downcast::<ItineraryTransitionMatrix>()
                         .expect("expected ItineraryTransitionMatrix"),
@@ -694,7 +731,6 @@ pub trait InterventionContextExt:
                 self.setup_itinerary_modifier(
                     AcceptsWorkMobilityCounty(Some(Geography::County(fips_code))),
                     *modifier
-                        .unwrap()
                         .into_any()
                         .downcast::<ItineraryTransitionMatrix>()
                         .expect("expected ItineraryTransitionMatrix"),
@@ -705,7 +741,6 @@ pub trait InterventionContextExt:
                 self.setup_itinerary_modifier(
                     AcceptsCommunityMobilityState(Some(Geography::State(state_code))),
                     *modifier
-                        .unwrap()
                         .into_any()
                         .downcast::<ItineraryTransitionMatrix>()
                         .expect("expected ItineraryTransitionMatrix"),
@@ -716,7 +751,6 @@ pub trait InterventionContextExt:
                 self.setup_itinerary_modifier(
                     AcceptsCommunityMobilityCounty(Some(Geography::County(fips_code))),
                     *modifier
-                        .unwrap()
                         .into_any()
                         .downcast::<ItineraryTransitionMatrix>()
                         .expect("expected ItineraryTransitionMatrix"),
@@ -727,7 +761,6 @@ pub trait InterventionContextExt:
                 self.register_transmission_modifier([(
                     AcceptsMaskMandateState(Some(Geography::State(state_code))),
                     *modifier
-                        .unwrap()
                         .into_any()
                         .downcast::<ScalarTransmissionModifier>()
                         .expect("expected ScalarTransmissionModifier"),
@@ -738,7 +771,6 @@ pub trait InterventionContextExt:
                 self.register_transmission_modifier([(
                     AcceptsMaskMandateCounty(Some(Geography::County(fips_code))),
                     *modifier
-                        .unwrap()
                         .into_any()
                         .downcast::<ScalarTransmissionModifier>()
                         .expect("expected ScalarTransmissionModifier"),
@@ -747,7 +779,6 @@ pub trait InterventionContextExt:
             }
             (Modifier::IsolationGuidance, Geography::State(state_code)) => {
                 let modifier = *modifier
-                    .unwrap()
                     .into_any()
                     .downcast::<IsolationGuidanceModifiers>()
                     .expect("expected IsolationGuidanceModifiers");
@@ -762,19 +793,18 @@ pub trait InterventionContextExt:
                     .downcast::<ScalarTransmissionModifier>()
                     .expect("expected ScalarTransmissionModifier");
                 self.setup_itinerary_modifier(
-                    IsolationGuidanceFinalState(Some(Geography::State(state_code))),
+                    AcceptsAndIsolatesState(Some(Geography::State(state_code))),
                     *itinerary_modifier,
                     false,
                 );
                 self.register_transmission_modifier([(
-                    IsolationGuidanceFinalState(Some(Geography::State(state_code))),
+                    AcceptsAndIsolatesState(Some(Geography::State(state_code))),
                     *transmission_modifier,
                 )])
                 .unwrap();
             }
             (Modifier::IsolationGuidance, Geography::County(fips_code)) => {
                 let modifier = *modifier
-                    .unwrap()
                     .into_any()
                     .downcast::<IsolationGuidanceModifiers>()
                     .expect("expected IsolationGuidanceModifiers");
@@ -789,12 +819,12 @@ pub trait InterventionContextExt:
                     .downcast::<ScalarTransmissionModifier>()
                     .expect("expected ScalarTransmissionModifier");
                 self.setup_itinerary_modifier(
-                    IsolationGuidanceFinalCounty(Some(Geography::County(fips_code))),
+                    AcceptsAndIsolatesCounty(Some(Geography::County(fips_code))),
                     *itinerary_modifier,
                     false,
                 );
                 self.register_transmission_modifier([(
-                    IsolationGuidanceFinalCounty(Some(Geography::County(fips_code))),
+                    AcceptsAndIsolatesCounty(Some(Geography::County(fips_code))),
                     *transmission_modifier,
                 )])
                 .unwrap();
@@ -848,14 +878,14 @@ pub trait InterventionContextExt:
                 )));
             }
             (Modifier::IsolationGuidance, Geography::State(state_code)) => {
-                self.remove_itinerary_modifier(IsolationGuidanceFinalState(Some(
-                    Geography::State(state_code),
-                )));
+                self.remove_itinerary_modifier(AcceptsAndIsolatesState(Some(Geography::State(
+                    state_code,
+                ))));
             }
             (Modifier::IsolationGuidance, Geography::County(fips_code)) => {
-                self.remove_itinerary_modifier(IsolationGuidanceFinalCounty(Some(
-                    Geography::County(fips_code),
-                )));
+                self.remove_itinerary_modifier(AcceptsAndIsolatesCounty(Some(Geography::County(
+                    fips_code,
+                ))));
             }
         }
         Ok(())
@@ -869,7 +899,7 @@ pub trait InterventionContextExt:
     fn get_modifier_specification(
         &self,
         intervention: Intervention,
-    ) -> Option<Box<dyn ModifierSpecification>> {
+    ) -> Box<dyn ModifierSpecification> {
         let default_modifiers = self.get_params().default_modifiers.clone();
         let modifier_spec = default_modifiers
             .get(&intervention.modifier)
@@ -879,44 +909,44 @@ pub trait InterventionContextExt:
                 let matrix = modifier_spec
                     .get_itinerary_modifier()
                     .expect("Itinerary modifiers incorrectly specified");
-                Some(Box::new(create_itinerary_transition_matrix(
+                Box::new(create_itinerary_transition_matrix(
                     None,
                     Some(matrix),
                     Some(create_intervention_acceptance_function(intervention)),
-                )))
+                ))
             }
             Modifier::WorkplaceMobilityReduction => {
                 let matrix = modifier_spec
                     .get_itinerary_modifier()
                     .expect("Itinerary modifiers incorrectly specified");
-                Some(Box::new(create_itinerary_transition_matrix(
+                Box::new(create_itinerary_transition_matrix(
                     None,
                     Some(matrix),
                     Some(create_intervention_acceptance_function(intervention)),
-                )))
+                ))
             }
             Modifier::CommunityMobilityReduction => {
                 let matrix = modifier_spec
                     .get_itinerary_modifier()
                     .expect("Itinerary modifiers incorrectly specified");
-                Some(Box::new(create_itinerary_transition_matrix(
+                Box::new(create_itinerary_transition_matrix(
                     Some(matrix),
                     None,
                     Some(create_intervention_acceptance_function(intervention)),
-                )))
+                ))
             }
             Modifier::MaskMandate => {
                 let transmission_multipliers = modifier_spec
                     .get_transmission_modifier()
                     .expect("Transmission modifiers incorrectly specified");
-                Some(Box::new(ScalarTransmissionModifier {
+                Box::new(ScalarTransmissionModifier {
                     infectiousness_multiplier: transmission_multipliers.infectiousness_multiplier,
                     susceptibility_multiplier: transmission_multipliers.susceptibility_multiplier,
                     settings: transmission_multipliers.settings.clone(),
                     acceptance_function: Some(create_intervention_acceptance_function(
                         intervention,
                     )),
-                }))
+                })
             }
             Modifier::IsolationGuidance => {
                 let modifiers = modifier_spec
@@ -939,7 +969,7 @@ pub trait InterventionContextExt:
                     itinerary_modifier: Box::new(itinerary_modifier),
                     transmission_modifier: Box::new(transmission_modifier),
                 };
-                Some(Box::new(isolation_guidance))
+                Box::new(isolation_guidance)
             }
         }
     }

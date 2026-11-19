@@ -36,33 +36,7 @@ impl ModifierSpecification for IsolationGuidanceModifiers {
     }
 }
 
-// pub fn register_isolation_modifiers(context: &mut Context) -> Result<(), ModelError> {
-//     let activity_matrix = [
-//         [0.0, 0.0, 0.0, 0.0],
-//         [1.0, 0.0, 0.0, 0.0],
-//         [1.0, 0.0, 0.0, 0.0],
-//         [1.0, 0.0, 0.0, 0.0],
-//     ];
-//     let isolation_acceptance: AcceptanceFunction = Box::new(move |context, _person|
-//         context.is_intervention_active(Modifier::IsolationGuidance, Geography) &&
-//         !context.is_intervention_active(
-//             intervention.modifier,
-//             Geography::State(code.state().unwrap()),
-//         ) && context.is_intervention_active(intervention.modifier, intervention.geography)
-//     );
-//     let isolation_modifier = create_itinerary_transition_matrix(
-//         Some(activity_matrix),
-//         None,
-//         Some(isolation_acceptance),
-//     );
-//     context.setup_itinerary_modifier(IsolationStatus(true), isolation_modifier, true);
-//     Ok(())
-// }
-
 pub fn init(context: &mut Context) -> Result<(), ModelError> {
-    // let Params {
-    //     interventions, ..
-    // } = context.get_params();
     symptom_time_guidance::init(context)?;
     Ok(())
 }
