@@ -218,6 +218,35 @@ pub trait ContextTransmissionModifierPrivateExt: PluginContext {
         );
         Ok(())
     }
+
+    fn remove_transmission_modifier_fn<P>(
+        &mut self,
+        infection_status: InfectionStatus,
+        property_value: P,
+    ) -> Option<Box<dyn TransmissionModifier>>
+    where
+        P: IndexableProperty<Person>,
+    {
+        let modifier_map = self
+            .get_data_mut(TransmissionModifierPlugin)
+            .transmission_modifier_map
+            .get_mut(&infection_status);
+
+        let modifier_type_id = TypeId::of::<PersonPropertyTransmissionModifier<P>>();
+        if let Some(modifier_map) = modifier_map {
+            let person_property_value_map = modifier_map.get_mut(&modifier_type_id);
+            if let Some(person_property_value_map) = person_property_value_map {
+                let downcast_map = person_property_value_map
+                    .as_any_mut()
+                    .downcast_mut::<PersonPropertyTransmissionModifier<P>>()
+                    .expect("modifier map entry had unexpected type for its TypeId key");
+                return downcast_map
+                    .transmission_modifier_map
+                    .remove(&property_value);
+            }
+        }
+        None
+    }
 }
 impl ContextTransmissionModifierPrivateExt for Context {}
 pub trait ContextTransmissionModifierExt:
@@ -270,33 +299,22 @@ pub trait ContextTransmissionModifierExt:
         Ok(())
     }
 
+    #[allow(clippy::type_complexity)]
     fn remove_transmission_modifier<P>(
         &mut self,
-        infection_status: InfectionStatus,
         property_value: P,
-    ) -> Option<Box<dyn TransmissionModifier>>
+    ) -> (
+        Option<Box<dyn TransmissionModifier>>,
+        Option<Box<dyn TransmissionModifier>>,
+    )
     where
         P: IndexableProperty<Person>,
     {
-        let modifier_map = self
-            .get_data_mut(TransmissionModifierPlugin)
-            .transmission_modifier_map
-            .get_mut(&infection_status);
-
-        let modifier_type_id = TypeId::of::<PersonPropertyTransmissionModifier<P>>();
-        if let Some(modifier_map) = modifier_map {
-            let person_property_value_map = modifier_map.get_mut(&modifier_type_id);
-            if let Some(person_property_value_map) = person_property_value_map {
-                let downcast_map = person_property_value_map
-                    .as_any_mut()
-                    .downcast_mut::<PersonPropertyTransmissionModifier<P>>()
-                    .expect("modifier map entry had unexpected type for its TypeId key");
-                return downcast_map
-                    .transmission_modifier_map
-                    .remove(&property_value);
-            }
-        }
-        None
+        let removed_infectious_modifier =
+            self.remove_transmission_modifier_fn(InfectionStatus::Infectious, property_value);
+        let removed_susceptible_modifier =
+            self.remove_transmission_modifier_fn(InfectionStatus::Susceptible, property_value);
+        (removed_infectious_modifier, removed_susceptible_modifier)
     }
 
     fn get_transmission_success_probability(
@@ -897,10 +915,10 @@ mod test {
             );
         }
 
-        context.remove_transmission_modifier(
-            InfectionStatus::Susceptible,
-            MandatoryIntervention::Partial,
-        );
+        let (removed_infectious, removed_susceptible) =
+            context.remove_transmission_modifier(MandatoryIntervention::Partial);
+        assert!(removed_infectious.is_some());
+        assert!(removed_susceptible.is_some());
         let modifier_container = context.get_data_mut(TransmissionModifierPlugin);
         let modifier_map = modifier_container
             .transmission_modifier_map

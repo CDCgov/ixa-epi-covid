@@ -7,7 +7,6 @@ use crate::{
     ContextParametersExt, Params,
     error::ModelError,
     geography::{GEOGRAPHY_COUNT, Geography, GeographyDiscriminants},
-    infectiousness_manager::InfectionStatus,
     itinerary_modifiers::{
         AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
     },
@@ -606,24 +605,14 @@ pub trait InterventionContextExt:
                 )));
             }
             (Modifier::MaskMandate, Geography::State(state_code)) => {
-                self.remove_transmission_modifier(
-                    InfectionStatus::Susceptible,
-                    AcceptsMaskMandateState(Some(Geography::State(state_code))),
-                );
-                self.remove_transmission_modifier(
-                    InfectionStatus::Infectious,
-                    AcceptsMaskMandateState(Some(Geography::State(state_code))),
-                );
+                self.remove_transmission_modifier(AcceptsMaskMandateState(Some(Geography::State(
+                    state_code,
+                ))));
             }
             (Modifier::MaskMandate, Geography::County(fips_code)) => {
-                self.remove_transmission_modifier(
-                    InfectionStatus::Susceptible,
-                    AcceptsMaskMandateCounty(Some(Geography::County(fips_code))),
-                );
-                self.remove_transmission_modifier(
-                    InfectionStatus::Infectious,
-                    AcceptsMaskMandateCounty(Some(Geography::County(fips_code))),
-                );
+                self.remove_transmission_modifier(AcceptsMaskMandateCounty(Some(
+                    Geography::County(fips_code),
+                )));
             }
         }
         Ok(())
