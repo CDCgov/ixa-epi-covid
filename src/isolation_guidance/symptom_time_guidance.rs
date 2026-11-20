@@ -4,12 +4,10 @@ use crate::{
     ContextParametersExt, Params,
     error::ModelError,
     intervention_manager::Modifier,
-    isolation_guidance::{IsolationStatus, SymptomTimeGuidance},
+    isolation_guidance::{EligibleForIsolationStatus, SymptomTimeGuidance},
     settings::{Person, PersonId},
-    symptom_status_manager::{PresentingWithSymptoms, SymptomData},
+    symptom_status_manager::{PresenceOfSymptoms, SymptomData},
 };
-
-define_rng!(IsolationGuidanceRng);
 
 pub trait ContextIsolationGuidanceExt: PluginContext + ContextRandomExt {
     fn start_isolation(&mut self, person_id: PersonId, symptom_time_guidance: SymptomTimeGuidance) {
@@ -17,10 +15,10 @@ pub trait ContextIsolationGuidanceExt: PluginContext + ContextRandomExt {
             self.get_current_time() + symptom_time_guidance.delay_symptoms_to_isolation,
             move |context| {
                 if context
-                    .get_property::<Person, PresentingWithSymptoms>(person_id)
+                    .get_property::<Person, PresenceOfSymptoms>(person_id)
                     .0
                 {
-                    context.set_property(person_id, IsolationStatus(true));
+                    context.set_property(person_id, EligibleForIsolationStatus(true));
                 }
             },
         );
@@ -47,14 +45,14 @@ pub trait ContextIsolationGuidanceExt: PluginContext + ContextRandomExt {
             self.add_plan(
                 symptom_onset + symptom_time_guidance.minimum_isolation_duration,
                 move |context| {
-                    context.set_property(person_id, IsolationStatus(false));
+                    context.set_property(person_id, EligibleForIsolationStatus(false));
                 },
             );
         } else {
             self.add_plan(
                 self.get_current_time() + symptom_time_guidance.post_symptoms_isolation_duration,
                 move |context| {
-                    context.set_property(person_id, IsolationStatus(false));
+                    context.set_property(person_id, EligibleForIsolationStatus(false));
                 },
             );
         }
@@ -67,7 +65,7 @@ pub trait ContextIsolationGuidanceExt: PluginContext + ContextRandomExt {
         symptom_time_guidance: SymptomTimeGuidance,
     ) {
         self.subscribe_to_event(
-            move |context, event: PropertyChangeEvent<Person, PresentingWithSymptoms>| {
+            move |context, event: PropertyChangeEvent<Person, PresenceOfSymptoms>| {
                 if event.current.0 {
                     context.start_isolation(event.entity_id, symptom_time_guidance);
                 } else if event.previous.0 {
@@ -226,7 +224,7 @@ mod test {
         let policy_ran_flag = Rc::new(RefCell::new(false));
         let policy_ran_flag_clone = Rc::clone(&policy_ran_flag);
 
-        context.subscribe_to_event::<PropertyChangeEvent<Person, IsolationStatus>>(
+        context.subscribe_to_event::<PropertyChangeEvent<Person, EligibleForIsolationStatus>>(
             move |context, event| {
                 let symptom_data = context.get_property::<Person, SymptomData>(event.entity_id);
                 if event.current.0 {
@@ -304,7 +302,7 @@ mod test {
         let policy_ran_flag = Rc::new(RefCell::new(false));
         let policy_ran_flag_clone = Rc::clone(&policy_ran_flag);
 
-        context.subscribe_to_event::<PropertyChangeEvent<Person, IsolationStatus>>(
+        context.subscribe_to_event::<PropertyChangeEvent<Person, EligibleForIsolationStatus>>(
             move |context, event| {
                 let symptom_data = context.get_property::<Person, SymptomData>(event.entity_id);
                 if event.current.0 {

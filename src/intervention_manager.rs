@@ -7,7 +7,9 @@ use crate::{
     ContextParametersExt, Params,
     error::ModelError,
     geography::{GEOGRAPHY_COUNT, Geography, GeographyDiscriminants},
-    isolation_guidance::{IsolationGuidanceModifiers, IsolationStatus, SymptomTimeGuidance},
+    isolation_guidance::{
+        EligibleForIsolationStatus, IsolationGuidanceModifiers, SymptomTimeGuidance,
+    },
     itinerary_modifiers::{
         AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
     },
@@ -226,7 +228,7 @@ pub struct AcceptsAndIsolatesState(pub Option<Geography>);
 impl_derived_property!(
     AcceptsAndIsolatesState,
     Person,
-    [AcceptsIntervention, IsolationStatus],
+    [AcceptsIntervention, EligibleForIsolationStatus],
     [],
     |accepts, isolation_status| {
         AcceptsAndIsolatesState(
@@ -246,7 +248,7 @@ pub struct AcceptsAndIsolatesCounty(pub Option<Geography>);
 impl_derived_property!(
     AcceptsAndIsolatesCounty,
     Person,
-    [AcceptsIntervention, IsolationStatus],
+    [AcceptsIntervention, EligibleForIsolationStatus],
     [],
     |accepts, isolation_status| {
         AcceptsAndIsolatesCounty(
@@ -1808,7 +1810,11 @@ mod test {
             assert_eq!(transmission2, 1.0);
         });
         context.add_plan(8.0, move |context| {
-            assert!(!context.get_property::<Person, IsolationStatus>(p1).0);
+            assert!(
+                !context
+                    .get_property::<Person, EligibleForIsolationStatus>(p1)
+                    .0
+            );
             let itinerary1 = context.get_itinerary(p1);
             let itinerary2 = context.get_itinerary(p2);
             assert_eq!(itinerary1, [0.3, 0.0, 0.5, 0.2]);
