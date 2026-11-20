@@ -1093,7 +1093,6 @@ mod test {
                         infectiousness_multiplier: 0.9,
                         susceptibility_multiplier: 0.9,
                         settings: vec![
-                            SettingCategory::Home,
                             SettingCategory::Work,
                             SettingCategory::School,
                             SettingCategory::Community,
@@ -1826,4 +1825,167 @@ mod test {
         });
         context.execute();
     }
+
+    #[test]
+    fn test_isolation_guidance_and_mask_mandate(){
+        let school_code = make_school_id(b"16037960200003");
+        let home_code = make_home_id(b"16037960200002");
+        let community_code = home_code.extract_community();
+        let g1 = Geography::State(home_code.0.state().unwrap());
+        let intervention1 = Intervention {
+            modifier: Modifier::IsolationGuidance,
+            geography: g1,
+            acceptance_probability: 1.0,
+            trigger: CustomTrigger::Time {
+                start_time: 1.0,
+                duration: 10.0,
+            },
+        };
+        let intervention2 = Intervention {
+            modifier: Modifier::MaskMandate,
+            geography: g1,
+            acceptance_probability: 1.0,
+            trigger: CustomTrigger::Time {
+                start_time: 1.0,
+                duration: 10.0,
+            },
+        };
+
+        let mut context = setup();
+        let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
+        let p2 = context.add_entity(with!(Person, Age(10))).unwrap();
+        context.setup_intervention_triggers(intervention1);
+        context.setup_intervention_triggers(intervention2);
+        context.setup_intervention_trigger_event_subscription();
+        context.set_property(
+            p1,
+            Itinerary {
+                setting_ids: [
+                    Some(home_code),
+                    None,
+                    Some(school_code),
+                    Some(community_code),
+                ],
+                itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
+            },
+        );
+
+        context.set_property(
+            p2,
+            Itinerary {
+                setting_ids: [
+                    Some(home_code),
+                    None,
+                    Some(school_code),
+                    Some(community_code),
+                ],
+                itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
+            },
+        );
+
+        symptom_time_guidance::init(&mut context).unwrap();
+        context.add_plan(0.0, move |context| {
+            // no interventions have been activated
+            let itinerary1 = context.get_itinerary(p1);
+            let itinerary2 = context.get_itinerary(p2);
+            assert_eq!(itinerary1, [0.3, 0.0, 0.5, 0.2]);
+            assert_eq!(itinerary2, [0.3, 0.0, 0.5, 0.2]);
+            let transmission1 = context.get_relative_total_transmission(p1, SettingCategory::Community);
+            let transmission2 = context.get_relative_total_transmission(p2, SettingCategory::Community);
+            assert_eq!(transmission1, 1.0);
+            assert_eq!(transmission2, 1.0);
+        });
+        context.add_plan(1.5, move |context| {
+            // interventions have been activated but only mask mandate will have an affect
+            let itinerary1 = context.get_itinerary(p1);
+            let itinerary2 = context.get_itinerary(p2);
+            assert_eq!(itinerary1, [0.3, 0.0, 0.5, 0.2]);
+            assert_eq!(itinerary2, [0.3, 0.0, 0.5, 0.2]);
+            let transmission1 = context.get_relative_total_transmission(p1, SettingCategory::Community);
+            let transmission2 = context.get_relative_total_transmission(p2, SettingCategory::Community);
+            assert_eq!(transmission1, 0.9);
+            assert_eq!(transmission2, 0.9);
+        });
+
+        context.add_plan(2.0, move |context| {
+            // person p1 becomes infectious and symptomatic so the isolation will affect them
+            context.set_property::<Person, InfectionData>(
+                p1,
+                InfectionData::Infectious {
+                    infection_time: 2.0,
+                    infected_by: None,
+                    infection_setting_id: None,
+                },
+            );
+            context.set_property::<Person, SymptomData>(p1, SymptomData::Mild { mild_time: 2.0 });
+        });
+
+        context.add_plan(4.0, move |context| {
+            // p1 will now be impacted by the isolation intervention since they are infectious and symptomatic
+            // p2 will still only be impacted by the mask mandate
+            let itinerary1 = context.get_itinerary(p1);
+            let itinerary2 = context.get_itinerary(p2);
+            assert_eq!(itinerary1, [1.0, 0.0, 0.0, 0.0]);
+            assert_eq!(itinerary2, [0.3, 0.0, 0.5, 0.2]);
+            let transmission1_home = context.get_relative_total_transmission(p1, SettingCategory::Home);
+            let transmission1_community = context.get_relative_total_transmission(p1, SettingCategory::Community);
+            let transmission2_home = context.get_relative_total_transmission(p2, SettingCategory::Home);
+            let transmission2_community = context.get_relative_total_transmission(p2, SettingCategory::Community);
+            assert_eq!(transmission1_home, 0.9);
+            assert_eq!(transmission1_community, 0.9);
+            assert_eq!(transmission2_home, 1.0);
+            assert_eq!(transmission2_community, 0.9);
+        });
+
+        context.add_plan(5.0, move |context| {
+            context.set_property::<Person, InfectionData>(
+                p1,
+                InfectionData::Recovered {
+                    infection_time: 2.0,
+                    recovery_time: 5.0,
+                },
+            );
+            context.set_property::<Person, SymptomData>(
+                p1,
+                SymptomData::Resolved {
+                    mild_time: 2.0,
+                    severe_time: None,
+                    critical_time: None,
+                    resolved_time: 5.0,
+                },
+            );
+        });
+
+        context.add_plan(9.5, move |context| {
+            // p1 will have exited isolation guidance but the mask mandate will still apply
+            // p2 will still only be impacted by the mask mandate
+            let itinerary1 = context.get_itinerary(p1);
+            let itinerary2 = context.get_itinerary(p2);
+            assert_eq!(itinerary1, [0.3, 0.0, 0.5, 0.2]);
+            assert_eq!(itinerary2, [0.3, 0.0, 0.5, 0.2]);
+            let transmission1_home = context.get_relative_total_transmission(p1, SettingCategory::Home);
+            let transmission1_community = context.get_relative_total_transmission(p1, SettingCategory::Community);
+            let transmission2_home = context.get_relative_total_transmission(p2, SettingCategory::Home);
+            let transmission2_community = context.get_relative_total_transmission(p2, SettingCategory::Community);
+            assert_eq!(transmission1_home, 1.0);
+            assert_eq!(transmission1_community, 0.9);
+            assert_eq!(transmission2_home, 1.0);
+            assert_eq!(transmission2_community, 0.9);
+        });
+
+        context.add_plan(11.0, move |context| {
+            // no interventions apply 
+            let itinerary1 = context.get_itinerary(p1);
+            let itinerary2 = context.get_itinerary(p2);
+            assert_eq!(itinerary1, [0.3, 0.0, 0.5, 0.2]);
+            assert_eq!(itinerary2, [0.3, 0.0, 0.5, 0.2]);
+            let transmission1 = context.get_relative_total_transmission(p1, SettingCategory::Community);
+            let transmission2 = context.get_relative_total_transmission(p2, SettingCategory::Community);
+            assert_eq!(transmission1, 1.0);
+            assert_eq!(transmission2, 1.0);
+        });
+
+        context.execute();
+    }
+
 }
