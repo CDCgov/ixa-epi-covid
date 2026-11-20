@@ -42,7 +42,6 @@ pub trait ContextIsolationGuidanceExt: PluginContext + ContextRandomExt {
             < symptom_onset + symptom_time_guidance.minimum_isolation_duration
                 - symptom_time_guidance.post_symptoms_isolation_duration
         {
-            println!("ending isolation at time {}", symptom_onset + symptom_time_guidance.minimum_isolation_duration);
             self.add_plan(
                 symptom_onset + symptom_time_guidance.minimum_isolation_duration,
                 move |context| {
@@ -50,7 +49,6 @@ pub trait ContextIsolationGuidanceExt: PluginContext + ContextRandomExt {
                 },
             );
         } else {
-            println!("ending isolation at time here {}", self.get_current_time() + symptom_time_guidance.post_symptoms_isolation_duration);
             self.add_plan(
                 self.get_current_time() + symptom_time_guidance.post_symptoms_isolation_duration,
                 move |context| {
