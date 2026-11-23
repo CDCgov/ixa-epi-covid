@@ -4,11 +4,20 @@ use std::{
 };
 
 use crate::{
-    ContextParametersExt, Params, error::ModelError, geography::{GEOGRAPHY_COUNT, Geography, GeographyDiscriminants}, isolation_guidance::{
-        EligibleForIsolationStatus, IsolationGuidanceModifiers, IsolationGuidanceParameters, SymptomTestGuidance, SymptomTimeGuidance,
-    }, itinerary_modifiers::{
+    ContextParametersExt, Params,
+    error::ModelError,
+    geography::{GEOGRAPHY_COUNT, Geography, GeographyDiscriminants},
+    isolation_guidance::{
+        EligibleForIsolationStatus, IsolationGuidanceModifiers, IsolationGuidanceParameters,
+        SymptomTestGuidance, SymptomTimeGuidance,
+    },
+    itinerary_modifiers::{
         AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
-    }, pop_reader::{FIPSCode, states::USState}, settings::{ContextSettingExt, Itinerary, Person, PersonId, SETTING_COUNT, SettingCategory}, transmission_modifier_manager::{ContextTransmissionModifierExt, ScalarTransmissionModifier}, triggers::{ContextCustomTriggerExt, CustomTrigger},
+    },
+    pop_reader::{FIPSCode, states::USState},
+    settings::{ContextSettingExt, Itinerary, Person, PersonId, SETTING_COUNT, SettingCategory},
+    transmission_modifier_manager::{ContextTransmissionModifierExt, ScalarTransmissionModifier},
+    triggers::{ContextCustomTriggerExt, CustomTrigger},
 };
 use ixa::{HashMap, HashMapExt, IxaEvent, impl_derived_property, prelude::*};
 use serde::{Deserialize, Serialize};
@@ -352,30 +361,32 @@ impl InterventionModifierSpecification {
     pub fn get_symptom_time_guidance(&self) -> Option<SymptomTimeGuidance> {
         match self {
             InterventionModifierSpecification::IsolationGuidance {
-                isolation_guidance,
-                ..
+                isolation_guidance, ..
             } => {
-                if let IsolationGuidanceParameters::SymptomTimeGuidance(symptom_time_guidance) = isolation_guidance {
+                if let IsolationGuidanceParameters::SymptomTimeGuidance(symptom_time_guidance) =
+                    isolation_guidance
+                {
                     Some(*symptom_time_guidance)
                 } else {
                     None
                 }
-            },
+            }
             _ => None,
         }
     }
     pub fn get_symptom_test_guidance(&self) -> Option<SymptomTestGuidance> {
         match self {
             InterventionModifierSpecification::IsolationGuidance {
-                isolation_guidance,
-                ..
+                isolation_guidance, ..
             } => {
-                if let IsolationGuidanceParameters::SymptomTestGuidance(symptom_test_guidance) = isolation_guidance {
+                if let IsolationGuidanceParameters::SymptomTestGuidance(symptom_test_guidance) =
+                    isolation_guidance
+                {
                     Some(*symptom_test_guidance)
                 } else {
                     None
                 }
-            },
+            }
             _ => None,
         }
     }
@@ -480,7 +491,7 @@ impl InterventionModifierSpecification {
                 infectiousness_multiplier,
                 susceptibility_multiplier,
                 settings,
-                isolation_guidance: IsolationGuidanceParameters::SymptomTimeGuidance(SymptomTimeGuidance { post_symptoms_isolation_duration, minimum_isolation_duration, delay_symptoms_to_isolation }),
+                isolation_guidance,
                 ..
             } => {
                 let categories = [
@@ -516,23 +527,9 @@ impl InterventionModifierSpecification {
                         "Settings must not be empty".to_string(),
                     ));
                 }
-                if *delay_symptoms_to_isolation < 0.0 {
-                    return Err(ModelError::ModelError(
-                        "Delay symptoms to isolation must be greater than or equal to 0"
-                            .to_string(),
-                    ));
-                }
-                if *minimum_isolation_duration < 0.0 {
-                    return Err(ModelError::ModelError(
-                        "Minimum isolation duration must be greater than or equal to 0".to_string(),
-                    ));
-                }
-                if *post_symptoms_isolation_duration < 0.0 {
-                    return Err(ModelError::ModelError(
-                        "Post symptoms isolation duration must be greater than or equal to 0"
-                            .to_string(),
-                    ));
-                }
+                isolation_guidance
+                    .validate()
+                    .map_err(|e| ModelError::ModelError(e.to_string()))?;
                 Ok(())
             }
         }
@@ -1021,7 +1018,7 @@ mod test {
     use crate::{
         Age,
         infectiousness_manager::InfectionData,
-        isolation_guidance::symptom_time_guidance,
+        isolation_guidance::{self},
         itinerary_manager::ContextItineraryModifierExt,
         parameters::{GlobalParams, SettingProperties},
         pop_reader::parser::parse_fips_school_id,
@@ -1118,9 +1115,13 @@ mod test {
                         infectiousness_multiplier: 0.9,
                         susceptibility_multiplier: 0.9,
                         settings: vec![SettingCategory::Home],
-                        post_symptoms_isolation_duration: 3.0,
-                        minimum_isolation_duration: 7.0,
-                        delay_symptoms_to_isolation: 1.0,
+                        isolation_guidance: IsolationGuidanceParameters::SymptomTimeGuidance(
+                            SymptomTimeGuidance {
+                                post_symptoms_isolation_duration: 3.0,
+                                minimum_isolation_duration: 7.0,
+                                delay_symptoms_to_isolation: 1.0,
+                            },
+                        ),
                     },
                 ),
             ]),
@@ -1761,7 +1762,7 @@ mod test {
                 itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
             },
         );
-        symptom_time_guidance::init(&mut context).unwrap();
+        isolation_guidance::symptom_time_guidance::init(&mut context).unwrap();
         context.add_plan(0.0, move |context| {
             let itinerary1 = context.get_itinerary(p1);
             let itinerary2 = context.get_itinerary(p2);
@@ -1892,7 +1893,7 @@ mod test {
             },
         );
 
-        symptom_time_guidance::init(&mut context).unwrap();
+        isolation_guidance::symptom_time_guidance::init(&mut context).unwrap();
         context.add_plan(0.0, move |context| {
             // no interventions have been activated
             let itinerary1 = context.get_itinerary(p1);
@@ -2069,7 +2070,7 @@ mod test {
             },
         );
 
-        symptom_time_guidance::init(&mut context).unwrap();
+        isolation_guidance::symptom_time_guidance::init(&mut context).unwrap();
         context.add_plan(0.0, move |context| {
             // no interventions have been activated
             let itinerary1 = context.get_itinerary(p1);

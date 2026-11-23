@@ -1,7 +1,9 @@
 use ixa::prelude::*;
 
 use crate::{
+    ContextParametersExt, Params,
     error::ModelError,
+    intervention_manager::Modifier,
     isolation_guidance::{EligibleForIsolationStatus, SymptomTimeGuidance},
     settings::{Person, PersonId},
     symptom_status_manager::{PresenceOfSymptoms, SymptomData},
@@ -78,7 +80,15 @@ pub trait ContextIsolationGuidanceExt: PluginContext + ContextRandomExt {
 }
 impl ContextIsolationGuidanceExt for Context {}
 
-pub fn init(context: &mut Context, symptom_time_guidance: SymptomTimeGuidance) -> Result<(), ModelError> {
+pub fn init(context: &mut Context) -> Result<(), ModelError> {
+    let Params {
+        default_modifiers, ..
+    } = context.get_params();
+    let symptom_time_guidance = default_modifiers
+        .get(&Modifier::IsolationGuidance)
+        .expect("IsolationGuidance parameters not found")
+        .get_symptom_time_guidance()
+        .expect("SymptomTimeGuidance incorrectly specified");
     context.setup_isolation_guidance_event_sequence(symptom_time_guidance);
     Ok(())
 }
@@ -86,16 +96,18 @@ pub fn init(context: &mut Context, symptom_time_guidance: SymptomTimeGuidance) -
 #[cfg(test)]
 mod test {
     use crate::{
-        Age, Params, intervention_manager::{InterventionModifierSpecification, Modifier}, isolation_guidance::IsolationGuidanceParameters, parameters::{GlobalParams, SettingProperties}, settings::SettingCategory,
+        Age, Params,
+        intervention_manager::{InterventionModifierSpecification, Modifier},
+        isolation_guidance::IsolationGuidanceParameters,
+        parameters::{GlobalParams, SettingProperties},
+        settings::SettingCategory,
     };
     use ixa::{HashMap, assert_almost_eq};
     use std::{cell::RefCell, panic, rc::Rc};
 
     use super::*;
 
-    fn setup(
-        isolation_guidance: SymptomTimeGuidance,
-    ) -> Context {
+    fn setup(isolation_guidance: SymptomTimeGuidance) -> Context {
         let mut context = Context::new();
         let parameters = Params {
             settings_properties: HashMap::from_iter(
@@ -170,7 +182,9 @@ mod test {
                             SettingCategory::School,
                             SettingCategory::Community,
                         ],
-                        isolation_guidance: IsolationGuidanceParameters::SymptomTimeGuidance(isolation_guidance),
+                        isolation_guidance: IsolationGuidanceParameters::SymptomTimeGuidance(
+                            isolation_guidance,
+                        ),
                     },
                 ),
             ]),
@@ -201,7 +215,7 @@ mod test {
         };
         let mut context = setup(isolation_guidance);
         let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
-        super::init(&mut context, isolation_guidance).unwrap();
+        super::init(&mut context).unwrap();
 
         let policy_ran_flag = Rc::new(RefCell::new(false));
         let policy_ran_flag_clone = Rc::clone(&policy_ran_flag);
@@ -281,7 +295,7 @@ mod test {
 
         let mut context = setup(isolation_guidance);
         let p1 = context.add_entity(with!(Person, Age(10))).unwrap();
-        super::init(&mut context, isolation_guidance).unwrap();
+        super::init(&mut context).unwrap();
 
         let policy_ran_flag = Rc::new(RefCell::new(false));
         let policy_ran_flag_clone = Rc::clone(&policy_ran_flag);
