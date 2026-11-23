@@ -471,10 +471,10 @@ pub trait InterventionContextExt:
         for person in people {
             let accepts = self.sample_bool(InterventionRng, intervention.acceptance_probability);
             let mut current_accepts = self.get_property::<Person, AcceptsIntervention>(person);
-            if accepts {
-                current_accepts.0[intervention.geography][intervention.modifier] =
-                    Some(intervention.geography);
-            }
+            // Overwrite rather than only set, so a repeated activation resamples instead of
+            // compounding acceptance from earlier ones.
+            current_accepts.0[intervention.geography][intervention.modifier] =
+                accepts.then_some(intervention.geography);
             self.set_property(person, current_accepts);
         }
     }
@@ -1064,6 +1064,60 @@ mod test {
         #[allow(clippy::cast_precision_loss, clippy::cast_lossless)]
         let observed_acceptance = *acceptance.borrow();
         assert_almost_eq!(observed_acceptance as f64 / pop_size as f64, 0.5, 0.025);
+    }
+
+    #[test]
+    fn test_repeated_intervention_does_not_compound_acceptance() {
+        let mut context = setup();
+        let acceptance = Rc::new(RefCell::new(0));
+        let acceptance_clone: Rc<RefCell<usize>> = Rc::clone(&acceptance);
+        let school_code = make_school_id(b"16037960200002");
+        let geography = Geography::State(school_code.0.state().unwrap());
+        let pop_size = 10000;
+        for _ in 0..pop_size {
+            let person = context.add_entity(with!(Person, Age(10))).unwrap();
+            context.set_property(
+                person,
+                Itinerary {
+                    setting_ids: [None, None, Some(school_code), None],
+                    itinerary_ratios: [0.3, 0.0, 0.5, 0.2],
+                },
+            );
+        }
+        let first = Intervention {
+            modifier: Modifier::SchoolClosure,
+            geography,
+            acceptance_probability: 0.5,
+            trigger: CustomTrigger::Time {
+                start_time: 1.0,
+                duration: 1.0,
+            },
+        };
+        let second = Intervention {
+            trigger: CustomTrigger::Time {
+                start_time: 3.0,
+                duration: 1.0,
+            },
+            ..first
+        };
+        context.setup_intervention_triggers(first);
+        context.setup_intervention_triggers(second);
+        context.setup_intervention_trigger_event_subscription();
+
+        context.add_plan(3.5, move |context| {
+            for person in context.get_entity_iterator::<Person>() {
+                let accepts = context.get_property::<Person, AcceptsIntervention>(person);
+                if accepts.0[geography][Modifier::SchoolClosure] == Some(geography) {
+                    *acceptance_clone.borrow_mut() += 1;
+                }
+            }
+        });
+        context.execute();
+
+        #[allow(clippy::cast_precision_loss, clippy::cast_lossless)]
+        let observed_acceptance = *acceptance.borrow() as f64 / pop_size as f64;
+        // Compounding the two activations would give 1 - 0.5^2 = 0.75.
+        assert_almost_eq!(observed_acceptance, 0.5, 0.025);
     }
 
     #[test]
