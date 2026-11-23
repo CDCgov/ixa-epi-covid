@@ -314,8 +314,10 @@ pub fn iter_csv_files(
 
         let file_names: Vec<PathBuf> = archive
             .file_names()
+            .collect::<zip::result::ZipResult<Vec<_>>>()?
+            .into_iter()
             .filter(|name| name.starts_with(subdirectory))
-            .map(PathBuf::from)
+            .map(|name| PathBuf::from(name.as_ref()))
             .collect();
 
         Ok(file_names.into_iter())
