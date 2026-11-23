@@ -30,33 +30,28 @@ pub trait ContextIsolationGuidanceExt: PluginContext + ContextRandomExt {
         symptom_time_guidance: SymptomTimeGuidance,
     ) -> Result<(), ModelError> {
         let symptom_data = self.get_property::<Person, SymptomData>(person_id);
-        let symptom_onset = match symptom_data {
-            SymptomData::Resolved { mild_time, .. } => mild_time,
+        let (symptom_onset, symptom_resolution) = match symptom_data {
+            SymptomData::Resolved {
+                mild_time,
+                resolved_time,
+                ..
+            } => (mild_time, resolved_time),
             _ => {
                 return Err(ModelError::ModelError(
                     "Expected resolved symptom data".to_string(),
                 ));
             }
         };
-        if self.get_current_time()
-            < symptom_onset + symptom_time_guidance.minimum_isolation_duration
-                - symptom_time_guidance.post_symptoms_isolation_duration
-        {
-            self.add_plan(
-                symptom_onset + symptom_time_guidance.minimum_isolation_duration,
-                move |context| {
-                    context.set_property(person_id, EligibleForIsolationStatus(false));
-                },
-            );
-        } else {
-            self.add_plan(
-                self.get_current_time() + symptom_time_guidance.post_symptoms_isolation_duration,
-                move |context| {
-                    context.set_property(person_id, EligibleForIsolationStatus(false));
-                },
-            );
-        }
 
+        let symptom_duration = symptom_resolution - symptom_onset;
+        let isolation_end_time = symptom_resolution
+            + f64::max(
+                symptom_time_guidance.minimum_isolation_duration - symptom_duration,
+                symptom_time_guidance.post_symptoms_isolation_duration,
+            );
+        self.add_plan(isolation_end_time, move |context| {
+            context.set_property(person_id, EligibleForIsolationStatus(false));
+        });
         Ok(())
     }
 
