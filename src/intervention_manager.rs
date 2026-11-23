@@ -4,19 +4,11 @@ use std::{
 };
 
 use crate::{
-    ContextParametersExt, Params,
-    error::ModelError,
-    geography::{GEOGRAPHY_COUNT, Geography, GeographyDiscriminants},
-    isolation_guidance::{
-        EligibleForIsolationStatus, IsolationGuidanceModifiers, SymptomTimeGuidance,
-    },
-    itinerary_modifiers::{
+    ContextParametersExt, Params, error::ModelError, geography::{GEOGRAPHY_COUNT, Geography, GeographyDiscriminants}, isolation_guidance::{
+        EligibleForIsolationStatus, IsolationGuidanceModifiers, IsolationGuidanceParameters, SymptomTestGuidance, SymptomTimeGuidance,
+    }, itinerary_modifiers::{
         AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
-    },
-    pop_reader::{FIPSCode, states::USState},
-    settings::{ContextSettingExt, Itinerary, Person, PersonId, SETTING_COUNT, SettingCategory},
-    transmission_modifier_manager::{ContextTransmissionModifierExt, ScalarTransmissionModifier},
-    triggers::{ContextCustomTriggerExt, CustomTrigger},
+    }, pop_reader::{FIPSCode, states::USState}, settings::{ContextSettingExt, Itinerary, Person, PersonId, SETTING_COUNT, SettingCategory}, transmission_modifier_manager::{ContextTransmissionModifierExt, ScalarTransmissionModifier}, triggers::{ContextCustomTriggerExt, CustomTrigger},
 };
 use ixa::{HashMap, HashMapExt, IxaEvent, impl_derived_property, prelude::*};
 use serde::{Deserialize, Serialize};
@@ -310,9 +302,7 @@ pub enum InterventionModifierSpecification {
         infectiousness_multiplier: f64,
         susceptibility_multiplier: f64,
         settings: Vec<SettingCategory>,
-        delay_symptoms_to_isolation: f64,
-        minimum_isolation_duration: f64,
-        post_symptoms_isolation_duration: f64,
+        isolation_guidance: IsolationGuidanceParameters,
     },
 }
 
@@ -362,15 +352,30 @@ impl InterventionModifierSpecification {
     pub fn get_symptom_time_guidance(&self) -> Option<SymptomTimeGuidance> {
         match self {
             InterventionModifierSpecification::IsolationGuidance {
-                delay_symptoms_to_isolation,
-                minimum_isolation_duration,
-                post_symptoms_isolation_duration,
+                isolation_guidance,
                 ..
-            } => Some(SymptomTimeGuidance {
-                delay_symptoms_to_isolation: *delay_symptoms_to_isolation,
-                minimum_isolation_duration: *minimum_isolation_duration,
-                post_symptoms_isolation_duration: *post_symptoms_isolation_duration,
-            }),
+            } => {
+                if let IsolationGuidanceParameters::SymptomTimeGuidance(symptom_time_guidance) = isolation_guidance {
+                    Some(*symptom_time_guidance)
+                } else {
+                    None
+                }
+            },
+            _ => None,
+        }
+    }
+    pub fn get_symptom_test_guidance(&self) -> Option<SymptomTestGuidance> {
+        match self {
+            InterventionModifierSpecification::IsolationGuidance {
+                isolation_guidance,
+                ..
+            } => {
+                if let IsolationGuidanceParameters::SymptomTestGuidance(symptom_test_guidance) = isolation_guidance {
+                    Some(*symptom_test_guidance)
+                } else {
+                    None
+                }
+            },
             _ => None,
         }
     }
@@ -475,9 +480,7 @@ impl InterventionModifierSpecification {
                 infectiousness_multiplier,
                 susceptibility_multiplier,
                 settings,
-                delay_symptoms_to_isolation,
-                minimum_isolation_duration,
-                post_symptoms_isolation_duration,
+                isolation_guidance: IsolationGuidanceParameters::SymptomTimeGuidance(SymptomTimeGuidance { post_symptoms_isolation_duration, minimum_isolation_duration, delay_symptoms_to_isolation }),
                 ..
             } => {
                 let categories = [
@@ -543,7 +546,7 @@ pub trait ModifierSpecification {
 
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct Intervention {
-    modifier: Modifier,
+    pub modifier: Modifier,
     geography: Geography,
     acceptance_probability: f64,
     trigger: CustomTrigger,

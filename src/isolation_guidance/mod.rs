@@ -1,11 +1,12 @@
 use std::any::Any;
 
 use ixa::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-use crate::{error::ModelError, intervention_manager::ModifierSpecification, settings::Person};
+use crate::{ContextParametersExt, Params, error::ModelError, intervention_manager::{InterventionModifierSpecification, Modifier, ModifierSpecification}, settings::Person};
 
 pub mod symptom_time_guidance;
+pub mod symptom_test_guidance;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
 pub struct EligibleForIsolationStatus(pub bool);
@@ -15,7 +16,7 @@ impl_property!(
     default_const = EligibleForIsolationStatus(false)
 );
 
-#[derive(Debug, PartialEq, Clone, Copy, Serialize)]
+#[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
 pub struct SymptomTimeGuidance {
     // the duration of isolation required after symptoms have resolved
     pub post_symptoms_isolation_duration: f64,
@@ -24,6 +25,25 @@ pub struct SymptomTimeGuidance {
     // the delay from symptom onset to starting isolation. This is is not a
     // parameter of the guidance itself, but rather a modeling accuracy consideration
     pub delay_symptoms_to_isolation: f64,
+}
+
+#[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
+pub struct SymptomTestGuidance {
+    // the number of negative test required to end isoilation
+    pub tests_post_symptoms: usize,
+    // interval between tests
+    pub test_interval: f64,
+    // test sensitivity 
+    pub test_sensitivity: f64,
+    // the delay from test to starting isolation. This is not a
+    // parameter of the guidance itself, but rather a modeling accuracy consideration
+    pub delay_symptoms_to_isolation: f64,
+}
+
+#[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
+pub enum IsolationGuidanceParameters {
+    SymptomTimeGuidance(SymptomTimeGuidance),
+    SymptomTestGuidance(SymptomTestGuidance),
 }
 
 pub struct IsolationGuidanceModifiers {
@@ -41,6 +61,29 @@ impl ModifierSpecification for IsolationGuidanceModifiers {
 }
 
 pub fn init(context: &mut Context) -> Result<(), ModelError> {
-    symptom_time_guidance::init(context)?;
+    let Params {
+        interventions,
+        default_modifiers,
+        ..
+    } = context.get_params();
+
+    let default_isolation_guidance = default_modifiers.get(&Modifier::IsolationGuidance);
+    let activate_isolation_guidance = interventions.iter().any(|i| i.modifier == Modifier::IsolationGuidance);
+    if let Some(default_isolation_guidance) = default_isolation_guidance && activate_isolation_guidance {
+        match default_isolation_guidance{
+            InterventionModifierSpecification::IsolationGuidance{isolation_guidance, ..} => {
+                match isolation_guidance {
+                    IsolationGuidanceParameters::SymptomTimeGuidance(symptom_time_guidance) => {
+                        symptom_time_guidance::init(context, *symptom_time_guidance);
+                    }
+                    IsolationGuidanceParameters::SymptomTestGuidance(symptom_test_guidance) => {
+                        symptom_test_guidance::init(context, *symptom_test_guidance);
+                    }
+                }
+            }
+            _ => {}
+            
+        }
+    }
     Ok(())
 }
