@@ -32,7 +32,7 @@ pub enum PopulationReaderError {
     #[error("population reader data file is empty: {0}")]
     EmptyFile(PathBuf),
     #[error("population reader zip error: {0}")]
-    ZipError(#[source] ZipError),
+    ZipError(#[from] ZipError),
 }
 
 /// The FIPS parser error type.
