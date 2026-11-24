@@ -209,6 +209,21 @@ define_derived_property!(
 );
 
 define_derived_property!(
+    struct PresenceOfSymptoms(bool),
+    Person,
+    [SymptomData],
+    [],
+    |symptom_data| match symptom_data {
+        SymptomData::NoSymptoms => PresenceOfSymptoms(false),
+        SymptomData::Mild { .. } => PresenceOfSymptoms(true),
+        SymptomData::Severe { .. } => PresenceOfSymptoms(true),
+        SymptomData::Critical { .. } => PresenceOfSymptoms(true),
+        SymptomData::Resolved { .. } => PresenceOfSymptoms(false),
+        SymptomData::Dead { .. } => PresenceOfSymptoms(false),
+    }
+);
+
+define_derived_property!(
     enum HospitalizationStatus {
         NotHospitalized,
         Hospitalized,
