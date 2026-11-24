@@ -4,8 +4,8 @@ use ixa::{ExecutionPhase, prelude::*};
 
 use crate::{
     abort_run, error::ModelError, infection_importation, infection_propagation_loop,
-    intervention_manager, parameters, population_loader, reports, school_calendar, settings,
-    symptom_status_manager,
+    intervention_manager, isolation_guidance, parameters, population_loader, reports,
+    school_calendar, settings, symptom_status_manager,
 };
 
 pub fn initialize_model(
@@ -42,6 +42,8 @@ pub fn initialize_model(
     info!("School calendar initialized");
     intervention_manager::init(context)?;
     info!("School closure initialized");
+    isolation_guidance::init(context)?;
+    info!("Isolation guidance initialized");
     reports::init(context)?;
     info!("Reports initialized");
     abort_run::init(context);

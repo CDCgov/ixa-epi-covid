@@ -81,13 +81,29 @@ impl_derived_property!(HomeCounty, Person, [Itinerary], [], |itinerary| {
     )
 });
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct AcceptsIntervention(pub [[Option<Geography>; MODIFIER_COUNT]; GEOGRAPHY_COUNT]);
 impl_property!(
     AcceptsIntervention,
     Person,
     default_const = AcceptsIntervention([[None; MODIFIER_COUNT]; GEOGRAPHY_COUNT])
 );
+
+impl Serialize for AcceptsIntervention {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let named_modifiers = self.0.map(|modifiers| {
+            <Modifier as strum::IntoEnumIterator>::iter()
+                .map(|modifier| (format!("{modifier:?}"), modifiers[modifier]))
+                .collect::<std::collections::BTreeMap<_, _>>()
+        });
+        let contents =
+            serde_json::to_string(&named_modifiers).map_err(serde::ser::Error::custom)?;
+        serializer.serialize_str(&contents.replace('"', ""))
+    }
+}
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
 pub struct AcceptsSchoolClosureState(pub Option<Geography>);
@@ -545,10 +561,10 @@ pub trait ModifierSpecification {
 
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct Intervention {
-    modifier: Modifier,
-    geography: Geography,
-    acceptance_probability: f64,
-    trigger: CustomTrigger,
+    pub modifier: Modifier,
+    pub geography: Geography,
+    pub acceptance_probability: f64,
+    pub trigger: CustomTrigger,
 }
 
 impl Intervention {

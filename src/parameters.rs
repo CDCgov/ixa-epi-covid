@@ -110,6 +110,8 @@ pub struct Params {
     pub current_hospitalizations_report: ReportParams,
     /// Age group specific measures of attack_rate with a period and name required
     pub attack_rate_report: ReportParams,
+    /// Intervention report with a period and name required
+    pub intervention_report: ReportParams,
     /// Terminate run on first observed death
     pub first_death_terminates_run: bool,
 }
@@ -491,6 +493,11 @@ impl Default for Params {
                 period: None,
             },
             attack_rate_report: ReportParams {
+                write: false,
+                filename: None,
+                period: None,
+            },
+            intervention_report: ReportParams {
                 write: false,
                 filename: None,
                 period: None,
