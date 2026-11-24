@@ -219,7 +219,7 @@ define_derived_property!(
         SymptomData::Severe { .. } => PresenceOfSymptoms(true),
         SymptomData::Critical { .. } => PresenceOfSymptoms(true),
         SymptomData::Resolved { .. } => PresenceOfSymptoms(false),
-        SymptomData::Dead { .. } => PresenceOfSymptoms(true),
+        SymptomData::Dead { .. } => PresenceOfSymptoms(false),
     }
 );
 

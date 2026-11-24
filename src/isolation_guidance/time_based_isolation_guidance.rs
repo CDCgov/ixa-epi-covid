@@ -4,30 +4,34 @@ use crate::{
     ContextParametersExt, Params,
     error::ModelError,
     intervention_manager::Modifier,
-    isolation_guidance::{EligibleForIsolationStatus, SymptomTimeGuidance},
+    isolation_guidance::{EligibleForIsolation, TimeBasedIsolationGuidance},
     settings::{Person, PersonId},
     symptom_status_manager::{PresenceOfSymptoms, SymptomData},
 };
 
 pub trait ContextIsolationGuidanceExt: PluginContext + ContextRandomExt {
-    fn start_isolation(&mut self, person_id: PersonId, symptom_time_guidance: SymptomTimeGuidance) {
+    fn plan_isolation_eligibility(
+        &mut self,
+        person_id: PersonId,
+        time_based_isolation_guidance: TimeBasedIsolationGuidance,
+    ) {
         self.add_plan(
-            self.get_current_time() + symptom_time_guidance.delay_symptoms_to_isolation,
+            self.get_current_time() + time_based_isolation_guidance.delay_symptoms_to_isolation,
             move |context| {
                 if context
                     .get_property::<Person, PresenceOfSymptoms>(person_id)
                     .0
                 {
-                    context.set_property(person_id, EligibleForIsolationStatus(true));
+                    context.set_property(person_id, EligibleForIsolation(true));
                 }
             },
         );
     }
 
-    fn end_isolation(
+    fn plan_end_isolation_eligibility(
         &mut self,
         person_id: PersonId,
-        symptom_time_guidance: SymptomTimeGuidance,
+        time_based_isolation_guidance: TimeBasedIsolationGuidance,
     ) -> Result<(), ModelError> {
         let symptom_data = self.get_property::<Person, SymptomData>(person_id);
         let (symptom_onset, symptom_resolution) = match symptom_data {
@@ -46,31 +50,13 @@ pub trait ContextIsolationGuidanceExt: PluginContext + ContextRandomExt {
         let symptom_duration = symptom_resolution - symptom_onset;
         let isolation_end_time = symptom_resolution
             + f64::max(
-                symptom_time_guidance.minimum_isolation_duration - symptom_duration,
-                symptom_time_guidance.post_symptoms_isolation_duration,
+                time_based_isolation_guidance.minimum_isolation_duration - symptom_duration,
+                time_based_isolation_guidance.post_symptoms_isolation_duration,
             );
         self.add_plan(isolation_end_time, move |context| {
-            context.set_property(person_id, EligibleForIsolationStatus(false));
+            context.set_property(person_id, EligibleForIsolation(false));
         });
         Ok(())
-    }
-
-    fn setup_isolation_guidance_event_sequence(
-        &mut self,
-        symptom_time_guidance: SymptomTimeGuidance,
-    ) {
-        self.subscribe_to_event(
-            move |context, event: PropertyChangeEvent<Person, PresenceOfSymptoms>| {
-                if event.current.0 {
-                    context.start_isolation(event.entity_id, symptom_time_guidance);
-                } else if event.previous.0 {
-                    //individuals transition from presenting with symptoms to not presenting with symptoms
-                    context
-                        .end_isolation(event.entity_id, symptom_time_guidance)
-                        .unwrap();
-                }
-            },
-        );
     }
 }
 impl ContextIsolationGuidanceExt for Context {}
@@ -80,13 +66,25 @@ pub fn init(context: &mut Context) -> Result<(), ModelError> {
         default_modifiers, ..
     } = context.get_params();
 
-    let symptom_time_guidance = default_modifiers
+    let time_based_isolation_guidance = default_modifiers
         .get(&Modifier::IsolationGuidance)
         .expect("SymptomTimeGuidance parameters not found")
-        .get_symptom_time_guidance()
+        .get_time_based_isolation_guidance_specification()
         .expect("SymptomTimeGuidance incorrectly specified");
 
-    context.setup_isolation_guidance_event_sequence(symptom_time_guidance);
+    context.subscribe_to_event(
+        move |context, event: PropertyChangeEvent<Person, PresenceOfSymptoms>| {
+            if event.current.0 {
+                context.plan_isolation_eligibility(event.entity_id, time_based_isolation_guidance);
+            } else if event.previous.0 {
+                //individuals transition from presenting with symptoms to not presenting with symptoms
+                context
+                    .plan_end_isolation_eligibility(event.entity_id, time_based_isolation_guidance)
+                    .unwrap();
+            }
+        },
+    );
+
     Ok(())
 }
 
@@ -198,7 +196,7 @@ mod test {
     }
 
     #[test]
-    fn test_symptom_time_guidance_event_sequence_short_symptoms() {
+    fn test_time_based_isolation_guidance_event_sequence_short_symptoms() {
         // 1. Create a new person
         // 2. Keep track of the time of symptom onset and duration
         // 3. Assert that start of isolation is the same as symptom onset + isolation delay
@@ -219,7 +217,7 @@ mod test {
         let policy_ran_flag = Rc::new(RefCell::new(false));
         let policy_ran_flag_clone = Rc::clone(&policy_ran_flag);
 
-        context.subscribe_to_event::<PropertyChangeEvent<Person, EligibleForIsolationStatus>>(
+        context.subscribe_to_event::<PropertyChangeEvent<Person, EligibleForIsolation>>(
             move |context, event| {
                 let symptom_data = context.get_property::<Person, SymptomData>(event.entity_id);
                 if event.current.0 {
@@ -275,7 +273,7 @@ mod test {
     }
 
     #[test]
-    fn test_symptom_time_guidance_event_sequence_long_symptoms() {
+    fn test_time_based_isolation_guidance_event_sequence_long_symptoms() {
         // 1. Create a new person
         // 2. Keep track of the time of symptom onset and duration
         // 3. Assert that start of isolation is the same as symptom onset + isolation delay
@@ -297,7 +295,7 @@ mod test {
         let policy_ran_flag = Rc::new(RefCell::new(false));
         let policy_ran_flag_clone = Rc::clone(&policy_ran_flag);
 
-        context.subscribe_to_event::<PropertyChangeEvent<Person, EligibleForIsolationStatus>>(
+        context.subscribe_to_event::<PropertyChangeEvent<Person, EligibleForIsolation>>(
             move |context, event| {
                 let symptom_data = context.get_property::<Person, SymptomData>(event.entity_id);
                 if event.current.0 {

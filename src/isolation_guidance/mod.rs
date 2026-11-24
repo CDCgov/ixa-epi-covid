@@ -5,24 +5,24 @@ use serde::Serialize;
 
 use crate::{error::ModelError, intervention_manager::ModifierSpecification, settings::Person};
 
-pub mod symptom_time_guidance;
+pub mod time_based_isolation_guidance;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
-pub struct EligibleForIsolationStatus(pub bool);
+pub struct EligibleForIsolation(pub bool);
 impl_property!(
-    EligibleForIsolationStatus,
+    EligibleForIsolation,
     Person,
-    default_const = EligibleForIsolationStatus(false)
+    default_const = EligibleForIsolation(false)
 );
 
 #[derive(Debug, PartialEq, Clone, Copy, Serialize)]
-pub struct SymptomTimeGuidance {
+pub struct TimeBasedIsolationGuidance {
     // the duration of isolation required after symptoms have resolved
     pub post_symptoms_isolation_duration: f64,
     // the minimum duration of isolation regardless of symptom resolution
     pub minimum_isolation_duration: f64,
     // the delay from symptom onset to starting isolation. This is is not a
-    // parameter of the guidance itself, but rather a modeling accuracy consideration
+    // parameter of the guidance itself, but rather a modeling realism consideration
     pub delay_symptoms_to_isolation: f64,
 }
 
@@ -41,6 +41,6 @@ impl ModifierSpecification for IsolationGuidanceModifiers {
 }
 
 pub fn init(context: &mut Context) -> Result<(), ModelError> {
-    symptom_time_guidance::init(context)?;
+    time_based_isolation_guidance::init(context)?;
     Ok(())
 }
