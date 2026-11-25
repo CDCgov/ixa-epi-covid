@@ -102,21 +102,12 @@ fn send_property_counts(context: &mut Context) {
     }
 }
 
-/// Count initial number of people per property status and subscribe to changes
-/// # Errors
-///
-/// Will return `ModelError` if the report cannot be added
-///
-/// # Panics
-///
-/// Will panic if symptom value string is not listed in enum
 pub fn init(context: &mut Context, file_name: &str, period: f64) -> Result<(), ModelError> {
     context.add_report::<InterventionReport>(file_name)?;
 
     let mut map_counts = HashMap::default();
 
     context.with_query_results(with!(Person, Alive(true)), &mut |current_people| {
-        //current_people = results.to_owned_vec();
         for person in current_people {
             let value: ReportProperties = context.get_property(person);
             map_counts

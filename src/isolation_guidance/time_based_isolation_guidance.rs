@@ -18,14 +18,11 @@ pub trait ContextIsolationGuidanceExt: PluginContext + ContextRandomExt {
         self.add_plan(
             self.get_current_time() + time_based_isolation_guidance.delay_symptoms_to_isolation,
             move |context| {
-                // check if they have still have symptoms after the delay has occurred to determine
-                // if isolation sequence should continue
                 if context
                     .get_property::<Person, PresenceOfSymptoms>(person_id)
                     .0
                 {
                     context.set_property(person_id, EligibleForIsolation(true));
-                    println!("Person {} is eligible for isolation", person_id);
                 }
             },
         );

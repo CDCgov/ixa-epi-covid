@@ -89,22 +89,6 @@ impl_property!(
     default_const = AcceptsIntervention([[None; MODIFIER_COUNT]; GEOGRAPHY_COUNT])
 );
 
-impl Serialize for AcceptsIntervention {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let named_modifiers = self.0.map(|modifiers| {
-            <Modifier as strum::IntoEnumIterator>::iter()
-                .map(|modifier| (format!("{modifier:?}"), modifiers[modifier]))
-                .collect::<std::collections::BTreeMap<_, _>>()
-        });
-        let contents =
-            serde_json::to_string(&named_modifiers).map_err(serde::ser::Error::custom)?;
-        serializer.serialize_str(&contents.replace('"', ""))
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
 pub struct AcceptsSchoolClosureState(pub Option<Geography>);
 impl_derived_property!(
