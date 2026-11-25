@@ -4,19 +4,11 @@ use std::{
 };
 
 use crate::{
-    ContextParametersExt, Params,
-    error::ModelError,
-    geography::{GEOGRAPHY_COUNT, Geography, GeographyDiscriminants},
-    isolation_guidance::{
+    ContextParametersExt, Params, error::ModelError, geography::{GEOGRAPHY_COUNT, Geography, GeographyDiscriminants}, isolation_guidance::{
         EligibleForIsolation, IsolationGuidanceModifiers, TimeBasedIsolationGuidance,
-    },
-    itinerary_modifiers::{
+    }, itinerary_modifiers::{
         AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
-    },
-    pop_reader::{FIPSCode, states::USState},
-    settings::{ContextSettingExt, Itinerary, Person, PersonId, SETTING_COUNT, SettingCategory},
-    transmission_modifier_manager::{ContextTransmissionModifierExt, ScalarTransmissionModifier},
-    triggers::{ContextCustomTriggerExt, CustomTrigger},
+    }, pop_reader::{FIPSCode, states::USState}, settings::{ContextSettingExt, Itinerary, Person, PersonId, SETTING_COUNT, SettingCategory, SettingMembershipMethod}, transmission_modifier_manager::{ContextTransmissionModifierExt, ScalarTransmissionModifier}, triggers::{ContextCustomTriggerExt, CustomTrigger},
 };
 use ixa::{HashMap, HashMapExt, IxaEvent, impl_derived_property, prelude::*};
 use serde::{Deserialize, Serialize};
@@ -708,7 +700,7 @@ pub trait InterventionContextExt:
                         .into_any()
                         .downcast::<ItineraryTransitionMatrix>()
                         .expect("expected ItineraryTransitionMatrix"),
-                    false,
+                    SettingMembershipMethod::NoChange,
                 );
             }
             (Modifier::SchoolClosure, Geography::County(fips_code)) => {
@@ -718,7 +710,7 @@ pub trait InterventionContextExt:
                         .into_any()
                         .downcast::<ItineraryTransitionMatrix>()
                         .expect("expected ItineraryTransitionMatrix"),
-                    false,
+                    SettingMembershipMethod::NoChange,
                 );
             }
             (Modifier::WorkplaceMobilityReduction, Geography::State(state_code)) => {
@@ -728,7 +720,7 @@ pub trait InterventionContextExt:
                         .into_any()
                         .downcast::<ItineraryTransitionMatrix>()
                         .expect("expected ItineraryTransitionMatrix"),
-                    true,
+                    SettingMembershipMethod::Static,
                 );
             }
             (Modifier::WorkplaceMobilityReduction, Geography::County(fips_code)) => {
@@ -738,7 +730,7 @@ pub trait InterventionContextExt:
                         .into_any()
                         .downcast::<ItineraryTransitionMatrix>()
                         .expect("expected ItineraryTransitionMatrix"),
-                    true,
+                    SettingMembershipMethod::Static,
                 );
             }
             (Modifier::CommunityMobilityReduction, Geography::State(state_code)) => {
@@ -748,7 +740,7 @@ pub trait InterventionContextExt:
                         .into_any()
                         .downcast::<ItineraryTransitionMatrix>()
                         .expect("expected ItineraryTransitionMatrix"),
-                    true,
+                    SettingMembershipMethod::Static,
                 );
             }
             (Modifier::CommunityMobilityReduction, Geography::County(fips_code)) => {
@@ -758,7 +750,7 @@ pub trait InterventionContextExt:
                         .into_any()
                         .downcast::<ItineraryTransitionMatrix>()
                         .expect("expected ItineraryTransitionMatrix"),
-                    true,
+                    SettingMembershipMethod::Static,
                 );
             }
             (Modifier::MaskMandate, Geography::State(state_code)) => {
@@ -799,7 +791,7 @@ pub trait InterventionContextExt:
                 self.setup_itinerary_modifier(
                     AcceptsAndIsolatesState(Some(Geography::State(state_code))),
                     *itinerary_modifier,
-                    false,
+                    SettingMembershipMethod::EventDriven,
                 );
                 self.register_transmission_modifier([(
                     AcceptsAndIsolatesState(Some(Geography::State(state_code))),
@@ -825,7 +817,7 @@ pub trait InterventionContextExt:
                 self.setup_itinerary_modifier(
                     AcceptsAndIsolatesCounty(Some(Geography::County(fips_code))),
                     *itinerary_modifier,
-                    false,
+                    SettingMembershipMethod::EventDriven,
                 );
                 self.register_transmission_modifier([(
                     AcceptsAndIsolatesCounty(Some(Geography::County(fips_code))),
@@ -844,32 +836,34 @@ pub trait InterventionContextExt:
             (Modifier::SchoolClosure, Geography::State(state_code)) => {
                 self.remove_itinerary_modifier(AcceptsSchoolClosureState(Some(Geography::State(
                     state_code,
-                ))));
+                ))), SettingMembershipMethod::NoChange);
             }
             (Modifier::SchoolClosure, Geography::County(fips_code)) => {
                 self.remove_itinerary_modifier(AcceptsSchoolClosureCounty(Some(
                     Geography::County(fips_code),
-                )));
+                )), SettingMembershipMethod::NoChange);
             }
             (Modifier::WorkplaceMobilityReduction, Geography::State(state_code)) => {
                 self.remove_itinerary_modifier(AcceptsWorkMobilityState(Some(Geography::State(
                     state_code,
-                ))));
+                ))), SettingMembershipMethod::Static);
             }
             (Modifier::WorkplaceMobilityReduction, Geography::County(fips_code)) => {
                 self.remove_itinerary_modifier(AcceptsWorkMobilityCounty(Some(Geography::County(
                     fips_code,
-                ))));
+                ))), SettingMembershipMethod::Static);
             }
             (Modifier::CommunityMobilityReduction, Geography::State(state_code)) => {
-                self.remove_itinerary_modifier(AcceptsCommunityMobilityState(Some(
-                    Geography::State(state_code),
-                )));
+                self.remove_itinerary_modifier(
+                    AcceptsCommunityMobilityState(Some(Geography::State(state_code))),
+                    SettingMembershipMethod::Static,
+                );
             }
             (Modifier::CommunityMobilityReduction, Geography::County(fips_code)) => {
-                self.remove_itinerary_modifier(AcceptsCommunityMobilityCounty(Some(
-                    Geography::County(fips_code),
-                )));
+                self.remove_itinerary_modifier(
+                    AcceptsCommunityMobilityCounty(Some(Geography::County(fips_code))),
+                    SettingMembershipMethod::Static,
+                );
             }
             (Modifier::MaskMandate, Geography::State(state_code)) => {
                 self.remove_transmission_modifier(AcceptsMaskMandateState(Some(Geography::State(
@@ -884,7 +878,7 @@ pub trait InterventionContextExt:
             (Modifier::IsolationGuidance, Geography::State(state_code)) => {
                 self.remove_itinerary_modifier(AcceptsAndIsolatesState(Some(Geography::State(
                     state_code,
-                ))));
+                ))), SettingMembershipMethod::EventDriven);
                 self.remove_transmission_modifier(AcceptsAndIsolatesState(Some(Geography::State(
                     state_code,
                 ))));
@@ -892,7 +886,7 @@ pub trait InterventionContextExt:
             (Modifier::IsolationGuidance, Geography::County(fips_code)) => {
                 self.remove_itinerary_modifier(AcceptsAndIsolatesCounty(Some(Geography::County(
                     fips_code,
-                ))));
+                ))), SettingMembershipMethod::EventDriven);
                 self.remove_transmission_modifier(AcceptsAndIsolatesCounty(Some(
                     Geography::County(fips_code),
                 )));

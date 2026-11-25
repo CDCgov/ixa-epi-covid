@@ -1,10 +1,7 @@
 use crate::{
-    ContextParametersExt, Params,
-    error::ModelError,
-    itinerary_modifiers::{
+    ContextParametersExt, Params, error::ModelError, itinerary_modifiers::{
         AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
-    },
-    settings::{ContextSettingExt, Itinerary, Person, SettingCategory},
+    }, settings::{ContextSettingExt, Itinerary, Person, SettingCategory, SettingMembershipMethod},
 };
 use ixa::{impl_derived_property, prelude::*};
 use serde::{Deserialize, Serialize};
@@ -87,7 +84,7 @@ pub fn init(context: &mut Context) {
     } = context.get_params().clone();
     for modifier in school_calendar {
         let itinerary_modifier = define_school_calendar_itinerary_modifier(&modifier).unwrap();
-        context.setup_itinerary_modifier(Student(true), itinerary_modifier, false);
+        context.setup_itinerary_modifier(Student(true), itinerary_modifier, SettingMembershipMethod::NoChange);
     }
 }
 

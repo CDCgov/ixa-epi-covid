@@ -1,9 +1,8 @@
-use ixa::{HashMap, data_structures::entity_map::EntityMap, prelude::*};
+use ixa::{HashMap, HashMapExt, data_structures::entity_map::EntityMap, prelude::*};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::{
-    fmt::Debug,
-    ops::{Index, IndexMut},
+    any::{Any, TypeId}, fmt::Debug, ops::{Index, IndexMut},
 };
 use strum::{EnumCount as EnumCountMacro, EnumIter, IntoEnumIterator};
 
@@ -15,6 +14,94 @@ pub(crate) use crate::{
     population_loader::{Itinerary, Person, PersonId},
     setting_code::SettingCode,
 };
+
+pub enum SettingMembershipMethod {
+    EventDriven,
+    Static,
+    NoChange,
+}
+
+pub trait EventListenerStorage: Any {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+struct EventListener<P: IndexableProperty<Person>> {
+    // Use fully qualified syntax for the associated type because type aliases do not have type checking
+    event_listener_property_map: HashMap<P, Vec<EventListenerId<PropertyChangeEvent<Person, P>>>>,
+}
+
+impl<P: IndexableProperty<Person>> EventListenerStorage for EventListener<P> {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+#[derive(Default)]
+struct EventListenerContainer {
+    event_listener_map: HashMap<TypeId, Box<dyn EventListenerStorage>>,
+}
+
+#[allow(dead_code)]
+impl EventListenerContainer {
+    fn get_event_listener_storage<P: IndexableProperty<Person>>(
+        &self,
+    ) -> Option<&EventListener<P>> {
+        let type_id = TypeId::of::<P>();
+        self.event_listener_map
+            .get(&type_id)
+            .and_then(|storage| storage.as_any().downcast_ref::<EventListener<P>>())
+    }
+
+    fn get_event_listener_storage_mut<P: IndexableProperty<Person>>(
+        &mut self,
+    ) -> Option<&mut EventListener<P>> {
+        let type_id = TypeId::of::<P>();
+        self.event_listener_map
+            .get_mut(&type_id)
+            .and_then(|storage| storage.as_any_mut().downcast_mut::<EventListener<P>>())
+    }
+
+    fn add_event_listener_id<P: IndexableProperty<Person>>(
+        &mut self,
+        property: P,
+        listener_id: EventListenerId<PropertyChangeEvent<Person, P>>,
+    ) {
+        let type_id = TypeId::of::<P>();
+        let storage = self.event_listener_map.entry(type_id).or_insert_with(|| {
+            Box::new(EventListener::<P> {
+                event_listener_property_map: HashMap::new(),
+            })
+        });
+        let event_listener = storage
+            .as_any_mut()
+            .downcast_mut::<EventListener<P>>()
+            .expect("Failed to downcast to EventListener<P>");
+        event_listener
+            .event_listener_property_map
+            .entry(property)
+            .or_default()
+            .push(listener_id);
+    }
+
+    fn remove_event_listener_ids<P: IndexableProperty<Person>>(
+        &mut self,
+        property: P,
+    ) -> Option<Vec<EventListenerId<PropertyChangeEvent<Person, P>>>> {
+        self.get_event_listener_storage_mut::<P>()
+            .and_then(|storage| storage.event_listener_property_map.remove(&property))
+    }
+}
+
+define_data_plugin!(
+    EventListenerPlugin,
+    EventListenerContainer,
+    EventListenerContainer::default()
+);
 
 define_rng!(SettingRng);
 
@@ -475,21 +562,33 @@ pub trait ContextSettingExt:
         &mut self,
         person_property: P,
         modifier: I,
-        change_setting_membership: bool,
+        change_setting_membership: SettingMembershipMethod,
     ) {
         // registeration needs to occur before setting membership changes are handled
         // so we have access to the modifier when handling setting membership changes
         self.register_itinerary_modifier(person_property, modifier);
-        if change_setting_membership {
-            self.handle_setting_membership_removal(person_property);
+        match change_setting_membership {
+            SettingMembershipMethod::Static => {
+                self.handle_setting_membership_removal(person_property);
+            }
+            SettingMembershipMethod::EventDriven => {
+                self.add_and_store_event_subscription(person_property);
+            }
+            SettingMembershipMethod::NoChange => {}
         }
     }
 
-    fn remove_itinerary_modifier<P: IndexableProperty<Person>>(&mut self, person_property: P) {
+    fn remove_itinerary_modifier<P: IndexableProperty<Person>>(&mut self, person_property: P, change_setting_membership: SettingMembershipMethod) {
         // the setting addition needs to occur before removing the itinerary modifier
         // so we can still have access to the modifier associated with the itinerary to be removed
         self.handle_setting_membership_addition(person_property);
         self.remove_itinerary_modifier_by_property(person_property);
+        match change_setting_membership {
+            SettingMembershipMethod::EventDriven => {
+                self.remove_event_subscription(person_property);
+            }
+            _ => {}
+        }
     }
 
     fn handle_setting_membership_addition<P>(&mut self, person_property: P)
@@ -520,6 +619,37 @@ pub trait ContextSettingExt:
                 self.remove_person_from_single_setting(person_id, setting_id);
             }
         }
+    }
+
+    fn add_and_store_event_subscription<P>(&mut self, person_property: P)
+    where
+        P: IndexableProperty<Person>,
+    {
+        let listener_id = self.subscribe_to_event(
+            move |context, event: PropertyChangeEvent<Person, P>| {
+                if event.current == person_property {
+                    let removals = context.determine_setting_membership_removal(event.entity_id, person_property);
+                    for setting_id in removals {
+                        context.remove_person_from_single_setting(event.entity_id, setting_id);
+                    }
+                } else {
+                    let additions = context.determine_setting_membership_addition(event.entity_id, person_property);
+                    for setting_id in additions {
+                        context.add_person_to_single_setting(event.entity_id, setting_id);
+                    }
+                }
+            },
+        );
+        self.get_data_mut(EventListenerPlugin)
+        .add_event_listener_id(person_property, listener_id);
+    }
+
+    fn remove_event_subscription<P>(&mut self, person_property: P)
+    where
+        P: IndexableProperty<Person>,
+    {
+        self.get_data_mut(EventListenerPlugin)
+        .remove_event_listener_ids(person_property);
     }
 
     fn determine_setting_membership_addition<P>(
@@ -1048,7 +1178,7 @@ mod test {
 
         let weekend_modifier = create_itinerary_transition_matrix(Some(weekend_matrix), None, None);
 
-        context.setup_itinerary_modifier(Age(20), weekend_modifier, true);
+        context.setup_itinerary_modifier(Age(20), weekend_modifier, SettingMembershipMethod::Static);
 
         let active_settings = context.get_settings_for_person(p1).unwrap();
         assert_eq!(active_settings.len(), 2); // Only home and community should be active
@@ -1057,7 +1187,7 @@ mod test {
         assert_eq!(context.get_setting_size(school_id), 1); // Only p2 is a member of school now
         assert_eq!(context.get_setting_size(community_id), 2); // Both p1 and p2 are still members of community
 
-        context.remove_itinerary_modifier(Age(20));
+        context.remove_itinerary_modifier(Age(20), SettingMembershipMethod::Static);
 
         let active_settings_after_removal = context.get_settings_for_person(p1).unwrap();
         assert_eq!(active_settings_after_removal.len(), 4); // All settings should be active again
