@@ -79,6 +79,17 @@
                 "infectiousness_multiplier": 0.1,
                 "susceptibility_multiplier": 0.1,
                 "settings": ["Work", "School", "Community"]
+            }},
+            "IsolationGuidance": {"IsolationGuidance":{
+                "school": [1.0, 0.0, 0.0, 0.0],
+                "work": [1.0, 0.0, 0.0, 0.0],
+                "community": [1.0, 0.0, 0.0, 0.0],
+                "infectiousness_multiplier": 0.1,
+                "susceptibility_multiplier": 0.1,
+                "settings": ["Home"],
+                "post_symptoms_isolation_duration": 3,
+                "minimum_isolation_duration": 7,
+                "delay_symptoms_to_isolation": 1
             }}
         },
         "interventions": [
@@ -132,6 +143,11 @@
         "attack_rate_report": {
             "write": true,
             "filename": "attack_rate_report.csv",
+            "period": 1.0
+        },
+        "intervention_report": {
+            "write": true,
+            "filename": "intervention_report.csv",
             "period": 1.0
         },
         "first_death_terminates_run": false

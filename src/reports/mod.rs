@@ -9,6 +9,7 @@ pub mod aggregated_deaths_report;
 pub mod attack_rate_report;
 pub mod current_hospitalizations_report;
 pub mod incidence_report;
+pub mod intervention_report;
 pub mod prevalence_report;
 pub mod transmission_report;
 
@@ -68,6 +69,7 @@ pub fn init(context: &mut Context) -> Result<(), ModelError> {
         aggregated_deaths_report,
         current_hospitalizations_report,
         attack_rate_report,
+        intervention_report,
         ..
     } = context.get_params().clone();
     let mut report_count = 0;
@@ -104,7 +106,11 @@ pub fn init(context: &mut Context) -> Result<(), ModelError> {
         info!("Generating the attack_rate report.");
         report_count += 1;
     }
-
+    if let Some((name, period)) = get_period_report_name(&intervention_report)? {
+        intervention_report::init(context, name, period)?;
+        info!("Generating the intervention report.");
+        report_count += 1;
+    }
     info!("Generating {report_count} report(s) in total.");
 
     Ok(())

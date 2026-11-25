@@ -81,7 +81,7 @@ impl_derived_property!(HomeCounty, Person, [Itinerary], [], |itinerary| {
     )
 });
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Hash)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct AcceptsIntervention(pub [[Option<Geography>; MODIFIER_COUNT]; GEOGRAPHY_COUNT]);
 impl_property!(
     AcceptsIntervention,
@@ -545,10 +545,10 @@ pub trait ModifierSpecification {
 
 #[derive(Copy, Clone, PartialEq, Debug, Deserialize, Serialize)]
 pub struct Intervention {
-    modifier: Modifier,
-    geography: Geography,
-    acceptance_probability: f64,
-    trigger: CustomTrigger,
+    pub modifier: Modifier,
+    pub geography: Geography,
+    pub acceptance_probability: f64,
+    pub trigger: CustomTrigger,
 }
 
 impl Intervention {
