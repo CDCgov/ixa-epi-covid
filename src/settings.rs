@@ -1,7 +1,8 @@
-use ixa::{HashMap, data_structures::entity_map::EntityMap, prelude::*};
+use ixa::{HashMap, HashMapExt, data_structures::entity_map::EntityMap, prelude::*};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::{
+    any::{Any, TypeId},
     fmt::Debug,
     ops::{Index, IndexMut},
 };
@@ -15,6 +16,94 @@ pub(crate) use crate::{
     population_loader::{Itinerary, Person, PersonId},
     setting_code::SettingCode,
 };
+
+pub enum SettingMembershipMethod {
+    EventDriven,
+    Static,
+    NoChange,
+}
+
+pub trait EventListenerStorage: Any {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+struct EventListener<P: IndexableProperty<Person>> {
+    // Use fully qualified syntax for the associated type because type aliases do not have type checking
+    event_listener_property_map: HashMap<P, Vec<EventListenerId<PropertyChangeEvent<Person, P>>>>,
+}
+
+impl<P: IndexableProperty<Person>> EventListenerStorage for EventListener<P> {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+#[derive(Default)]
+struct EventListenerContainer {
+    event_listener_map: HashMap<TypeId, Box<dyn EventListenerStorage>>,
+}
+
+#[allow(dead_code)]
+impl EventListenerContainer {
+    fn get_event_listener_storage<P: IndexableProperty<Person>>(
+        &self,
+    ) -> Option<&EventListener<P>> {
+        let type_id = TypeId::of::<P>();
+        self.event_listener_map
+            .get(&type_id)
+            .and_then(|storage| storage.as_any().downcast_ref::<EventListener<P>>())
+    }
+
+    fn get_event_listener_storage_mut<P: IndexableProperty<Person>>(
+        &mut self,
+    ) -> Option<&mut EventListener<P>> {
+        let type_id = TypeId::of::<P>();
+        self.event_listener_map
+            .get_mut(&type_id)
+            .and_then(|storage| storage.as_any_mut().downcast_mut::<EventListener<P>>())
+    }
+
+    fn add_event_listener_id<P: IndexableProperty<Person>>(
+        &mut self,
+        property: P,
+        listener_id: EventListenerId<PropertyChangeEvent<Person, P>>,
+    ) {
+        let type_id = TypeId::of::<P>();
+        let storage = self.event_listener_map.entry(type_id).or_insert_with(|| {
+            Box::new(EventListener::<P> {
+                event_listener_property_map: HashMap::new(),
+            })
+        });
+        let event_listener = storage
+            .as_any_mut()
+            .downcast_mut::<EventListener<P>>()
+            .expect("Failed to downcast to EventListener<P>");
+        event_listener
+            .event_listener_property_map
+            .entry(property)
+            .or_default()
+            .push(listener_id);
+    }
+
+    fn remove_event_listener_ids<P: IndexableProperty<Person>>(
+        &mut self,
+        property: P,
+    ) -> Option<Vec<EventListenerId<PropertyChangeEvent<Person, P>>>> {
+        self.get_event_listener_storage_mut::<P>()
+            .and_then(|storage| storage.event_listener_property_map.remove(&property))
+    }
+}
+
+define_data_plugin!(
+    EventListenerPlugin,
+    EventListenerContainer,
+    EventListenerContainer::default()
+);
 
 define_rng!(SettingRng);
 
@@ -475,21 +564,34 @@ pub trait ContextSettingExt:
         &mut self,
         person_property: P,
         modifier: I,
-        change_setting_membership: bool,
+        change_setting_membership: SettingMembershipMethod,
     ) {
         // registeration needs to occur before setting membership changes are handled
         // so we have access to the modifier when handling setting membership changes
         self.register_itinerary_modifier(person_property, modifier);
-        if change_setting_membership {
-            self.handle_setting_membership_removal(person_property);
+        match change_setting_membership {
+            SettingMembershipMethod::Static => {
+                self.handle_setting_membership_removal(person_property);
+            }
+            SettingMembershipMethod::EventDriven => {
+                self.add_and_store_event_subscription(person_property);
+            }
+            SettingMembershipMethod::NoChange => {}
         }
     }
 
-    fn remove_itinerary_modifier<P: IndexableProperty<Person>>(&mut self, person_property: P) {
+    fn remove_itinerary_modifier<P: IndexableProperty<Person>>(
+        &mut self,
+        person_property: P,
+        change_setting_membership: SettingMembershipMethod,
+    ) {
         // the setting addition needs to occur before removing the itinerary modifier
         // so we can still have access to the modifier associated with the itinerary to be removed
         self.handle_setting_membership_addition(person_property);
         self.remove_itinerary_modifier_by_property(person_property);
+        if let SettingMembershipMethod::EventDriven = change_setting_membership {
+            self.remove_event_subscription(person_property);
+        }
     }
 
     fn handle_setting_membership_addition<P>(&mut self, person_property: P)
@@ -522,6 +624,40 @@ pub trait ContextSettingExt:
         }
     }
 
+    fn add_and_store_event_subscription<P>(&mut self, person_property: P)
+    where
+        P: IndexableProperty<Person>,
+    {
+        let listener_id =
+            self.subscribe_to_event(move |context, event: PropertyChangeEvent<Person, P>| {
+                if event.current == person_property {
+                    let removals = context
+                        .determine_setting_membership_removal(event.entity_id, person_property);
+                    for setting_id in removals {
+                        context.remove_person_from_single_setting(event.entity_id, setting_id);
+                    }
+                } else {
+                    let additions = context.determine_setting_membership_addition_event_driven(
+                        event.entity_id,
+                        person_property,
+                    );
+                    for setting_id in additions {
+                        context.add_person_to_single_setting(event.entity_id, setting_id);
+                    }
+                }
+            });
+        self.get_data_mut(EventListenerPlugin)
+            .add_event_listener_id(person_property, listener_id);
+    }
+
+    fn remove_event_subscription<P>(&mut self, person_property: P)
+    where
+        P: IndexableProperty<Person>,
+    {
+        self.get_data_mut(EventListenerPlugin)
+            .remove_event_listener_ids(person_property);
+    }
+
     fn determine_setting_membership_addition<P>(
         &self,
         person_id: PersonId,
@@ -538,7 +674,31 @@ pub trait ContextSettingExt:
             |old: f64, modified: f64| modified > 0.0 && old == 0.0;
         let old = self.get_itinerary(person_id);
         let modified = self.get_itinerary_without_property(person_id, person_property);
+        old.iter()
+            .zip(modified.iter())
+            .zip(setting_ids.iter())
+            .filter_map(|((old, modified), setting_id)| {
+                is_changed(*old, *modified).then_some(*setting_id).flatten()
+            })
+            .collect()
+    }
 
+    fn determine_setting_membership_addition_event_driven<P>(
+        &self,
+        person_id: PersonId,
+        person_property: P,
+    ) -> Vec<SettingCode>
+    where
+        P: IndexableProperty<Person>,
+    {
+        // this needs to be their previous itinerary
+        let setting_ids = self
+            .get_property::<Person, Itinerary>(person_id)
+            .setting_ids;
+        let is_changed: fn(f64, f64) -> bool =
+            |old: f64, modified: f64| modified > 0.0 && old == 0.0;
+        let old = self.get_itinerary_with_property(person_id, person_property);
+        let modified = self.get_itinerary(person_id);
         old.iter()
             .zip(modified.iter())
             .zip(setting_ids.iter())
@@ -564,7 +724,6 @@ pub trait ContextSettingExt:
             |old: f64, modified: f64| modified == 0.0 && old > 0.0;
         let old = self.get_itinerary_without_property(person_id, person_property);
         let modified = self.get_itinerary(person_id);
-
         old.iter()
             .zip(modified.iter())
             .zip(setting_ids.iter())
@@ -586,7 +745,7 @@ pub fn init(context: &mut Context) -> Result<(), IxaError> {
 mod test {
     use super::*;
     use crate::itinerary_modifiers::create_itinerary_transition_matrix;
-    use crate::population_loader::{CommunityId, HomeId, SchoolId, WorkId};
+    use crate::population_loader::{Alive, CommunityId, HomeId, SchoolId, WorkId};
     use crate::{
         Age, Params,
         parameters::{GlobalParams, SettingProperties},
@@ -1048,7 +1207,11 @@ mod test {
 
         let weekend_modifier = create_itinerary_transition_matrix(Some(weekend_matrix), None, None);
 
-        context.setup_itinerary_modifier(Age(20), weekend_modifier, true);
+        context.setup_itinerary_modifier(
+            Age(20),
+            weekend_modifier,
+            SettingMembershipMethod::Static,
+        );
 
         let active_settings = context.get_settings_for_person(p1).unwrap();
         assert_eq!(active_settings.len(), 2); // Only home and community should be active
@@ -1057,7 +1220,7 @@ mod test {
         assert_eq!(context.get_setting_size(school_id), 1); // Only p2 is a member of school now
         assert_eq!(context.get_setting_size(community_id), 2); // Both p1 and p2 are still members of community
 
-        context.remove_itinerary_modifier(Age(20));
+        context.remove_itinerary_modifier(Age(20), SettingMembershipMethod::Static);
 
         let active_settings_after_removal = context.get_settings_for_person(p1).unwrap();
         assert_eq!(active_settings_after_removal.len(), 4); // All settings should be active again
@@ -1065,5 +1228,186 @@ mod test {
         assert_eq!(context.get_setting_size(work_id), 2);
         assert_eq!(context.get_setting_size(school_id), 2);
         assert_eq!(context.get_setting_size(community_id), 2);
+    }
+
+    #[test]
+    fn test_add_and_remove_event_listener() {
+        let mut context = Context::new();
+        let listener_id = context.subscribe_to_event(
+            move |_context, event: PropertyChangeEvent<Person, Alive>| {
+                println!("Event received: {:?}", event.current);
+            },
+        );
+        context
+            .get_data_mut(EventListenerPlugin)
+            .add_event_listener_id(Alive(true), listener_id);
+
+        let optional_event_listener = context
+            .get_data(EventListenerPlugin)
+            .get_event_listener_storage::<Alive>();
+        assert!(optional_event_listener.is_some());
+
+        let event_map = &optional_event_listener.unwrap().event_listener_property_map;
+        assert!(event_map.contains_key(&Alive(true)));
+        assert_eq!(event_map.get(&Alive(true)).unwrap().len(), 1);
+        assert!(!event_map.contains_key(&Alive(false)));
+
+        context
+            .get_data_mut(EventListenerPlugin)
+            .remove_event_listener_ids(Alive(true));
+
+        let optional_event_listener_after_removal = context
+            .get_data(EventListenerPlugin)
+            .get_event_listener_storage::<Alive>();
+        let event_map_after_removal = &optional_event_listener_after_removal
+            .unwrap()
+            .event_listener_property_map;
+        assert!(!event_map_after_removal.contains_key(&Alive(true)));
+    }
+
+    #[test]
+    fn test_event_driven_membership() {
+        let mut context = setup_test_context(0.0);
+        let p1 = context.add_entity(with!(Person, Age(20))).unwrap();
+        let home_id = make_home_id(b"160379602000011");
+        let work_id = make_workplace_id(b"1603796020001332");
+        let school_id = make_school_id(b"1603796020001443");
+        let community_id = make_community_id(b"160379602000011");
+        context.add_person_to_settings(
+            p1,
+            Some(home_id),
+            Some(work_id),
+            Some(school_id),
+            Some(community_id),
+        );
+
+        let p2 = context.add_entity(with!(Person, Age(21))).unwrap();
+        context.add_person_to_settings(
+            p2,
+            Some(home_id),
+            Some(work_id),
+            Some(school_id),
+            Some(community_id),
+        );
+
+        let weekend_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+        ];
+
+        let weekend_modifier = create_itinerary_transition_matrix(Some(weekend_matrix), None, None);
+
+        context.setup_itinerary_modifier(
+            Alive(false),
+            weekend_modifier,
+            SettingMembershipMethod::EventDriven,
+        );
+
+        let active_settings = context.get_settings_for_person(p1).unwrap();
+        assert_eq!(active_settings.len(), 4); // All settings should be active initially
+        assert_eq!(context.get_setting_size(home_id), 2); // Both p1 and p2 are still members of home
+        assert_eq!(context.get_setting_size(work_id), 2); //  Both p1 and p2 are members of work now
+        assert_eq!(context.get_setting_size(school_id), 2); // Both p1 and p2 are members of school now
+        assert_eq!(context.get_setting_size(community_id), 2); // Both p1 and p2 are still members of community
+
+        context.add_plan(1.0, move |context| {
+            context.set_property(p1, Alive(false));
+        });
+        context.add_plan(1.0, move |context| {
+            let active_settings = context.get_settings_for_person(p1).unwrap();
+            assert_eq!(active_settings.len(), 2); // Only home and community should be active
+            assert_eq!(context.get_setting_size(home_id), 2); // Both p1 and p2 are still members of home
+            assert_eq!(context.get_setting_size(work_id), 1); // Only p2 is a member of work now
+            assert_eq!(context.get_setting_size(school_id), 1); // Only p2 is a member of school now
+            assert_eq!(context.get_setting_size(community_id), 2); // Both p1 and p2 are still members of community
+        });
+
+        context.add_plan(2.0, move |context| {
+            context.set_property(p1, Alive(true));
+        });
+        context.add_plan(2.0, move |context| {
+            let active_settings = context.get_settings_for_person(p1).unwrap();
+            assert_eq!(active_settings.len(), 4); // All settings should be active again
+            assert_eq!(context.get_setting_size(home_id), 2); // Both p1 and p2 are still members of home
+            assert_eq!(context.get_setting_size(work_id), 2); //  Both p1 and p2 are members of work now
+            assert_eq!(context.get_setting_size(school_id), 2); // Both p1 and p2 are members of school now
+            assert_eq!(context.get_setting_size(community_id), 2); // Both p1 and p2 are still members of community
+        });
+        context.execute();
+    }
+
+    #[test]
+    fn test_event_driven_membership_with_property_removal() {
+        let mut context = setup_test_context(0.0);
+        let p1 = context.add_entity(with!(Person, Age(20))).unwrap();
+        let home_id = make_home_id(b"160379602000011");
+        let work_id = make_workplace_id(b"1603796020001332");
+        let school_id = make_school_id(b"1603796020001443");
+        let community_id = make_community_id(b"160379602000011");
+        context.add_person_to_settings(
+            p1,
+            Some(home_id),
+            Some(work_id),
+            Some(school_id),
+            Some(community_id),
+        );
+
+        let p2 = context.add_entity(with!(Person, Age(21))).unwrap();
+        context.add_person_to_settings(
+            p2,
+            Some(home_id),
+            Some(work_id),
+            Some(school_id),
+            Some(community_id),
+        );
+
+        let weekend_matrix = [
+            [0.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0],
+        ];
+
+        let weekend_modifier = create_itinerary_transition_matrix(Some(weekend_matrix), None, None);
+
+        context.setup_itinerary_modifier(
+            Alive(false),
+            weekend_modifier,
+            SettingMembershipMethod::EventDriven,
+        );
+
+        let active_settings = context.get_settings_for_person(p1).unwrap();
+        assert_eq!(active_settings.len(), 4); // All settings should be active initially
+        assert_eq!(context.get_setting_size(home_id), 2); // Both p1 and p2 are still members of home
+        assert_eq!(context.get_setting_size(work_id), 2); //  Both p1 and p2 are members of work now
+        assert_eq!(context.get_setting_size(school_id), 2); // Both p1 and p2 are members of school now
+        assert_eq!(context.get_setting_size(community_id), 2); // Both p1 and p2 are still members of community
+
+        context.add_plan(1.0, move |context| {
+            context.set_property(p1, Alive(false));
+        });
+        context.add_plan(1.0, move |context| {
+            let active_settings = context.get_settings_for_person(p1).unwrap();
+            assert_eq!(active_settings.len(), 2); // Only home and community should be active
+            assert_eq!(context.get_setting_size(home_id), 2); // Both p1 and p2 are still members of home
+            assert_eq!(context.get_setting_size(work_id), 1); // Only p2 is a member of work now
+            assert_eq!(context.get_setting_size(school_id), 1); // Only p2 is a member of school now
+            assert_eq!(context.get_setting_size(community_id), 2); // Both p1 and p2 are still members of community
+        });
+
+        context.add_plan(2.0, move |context| {
+            context.remove_itinerary_modifier(Alive(false), SettingMembershipMethod::EventDriven);
+        });
+        context.add_plan(2.0, move |context| {
+            let active_settings = context.get_settings_for_person(p1).unwrap();
+            assert_eq!(active_settings.len(), 4); // All settings should be active again
+            assert_eq!(context.get_setting_size(home_id), 2); // Both p1 and p2 are still members of home
+            assert_eq!(context.get_setting_size(work_id), 2); //  Both p1 and p2 are members of work now
+            assert_eq!(context.get_setting_size(school_id), 2); // Both p1 and p2 are members of school now
+            assert_eq!(context.get_setting_size(community_id), 2); // Both p1 and p2 are still members of community
+        });
+        context.execute();
     }
 }

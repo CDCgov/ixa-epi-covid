@@ -137,6 +137,13 @@ pub trait ContextItineraryModifierExt: PluginContext + ContextEntitiesExt {
     ) -> [f64; SETTING_COUNT]
     where
         P: IndexableProperty<Person>;
+    fn get_itinerary_with_property<P>(
+        &self,
+        person_id: PersonId,
+        property_value: P,
+    ) -> [f64; SETTING_COUNT]
+    where
+        P: IndexableProperty<Person>;
 }
 impl ContextItineraryModifierExt for Context {
     // This needs to be here to have access to the concrete context type for the get_itinerary trait method
@@ -199,6 +206,50 @@ impl ContextItineraryModifierExt for Context {
                     .iter()
                     .any(|prev| prev.as_ref() == *modifier)
             });
+        }
+        let mut modifiers = modifiers
+            .into_iter()
+            .filter(|modifier| modifier.accept(self, person_id));
+
+        let base_itinerary = self
+            .get_property::<Person, Itinerary>(person_id)
+            .itinerary_ratios;
+
+        let Some(first) = modifiers.next() else {
+            return base_itinerary;
+        };
+
+        let Some(second) = modifiers.next() else {
+            return first.apply(&base_itinerary);
+        };
+
+        modifiers
+            .fold(first.layer(second), |layered, modifier| {
+                layered.layer(modifier)
+            })
+            .apply(&base_itinerary)
+    }
+    fn get_itinerary_with_property<P>(
+        &self,
+        person_id: PersonId,
+        property_value: P,
+    ) -> [f64; SETTING_COUNT]
+    where
+        P: IndexableProperty<Person>,
+    {
+        let mut modifiers = self.get_itinerary_modifiers(person_id);
+        let data = self.get_data(ItineraryModifierPlugin);
+        let property_modifiers = data
+            .itinerary_modifier_map
+            .get(&TypeId::of::<P>())
+            .and_then(|modifier_map| {
+                modifier_map
+                    .as_any()
+                    .downcast_ref::<PersonPropertyItineraryModifier<P>>()
+            })
+            .and_then(|modifier_map| modifier_map.itinerary_modifier_map.get(&property_value));
+        if let Some(property_modifiers) = property_modifiers {
+            modifiers.extend(property_modifiers.iter().map(Box::as_ref));
         }
         let mut modifiers = modifiers
             .into_iter()

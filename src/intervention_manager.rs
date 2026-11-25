@@ -14,7 +14,10 @@ use crate::{
         AcceptanceFunction, ItineraryTransitionMatrix, create_itinerary_transition_matrix,
     },
     pop_reader::{FIPSCode, states::USState},
-    settings::{ContextSettingExt, Itinerary, Person, PersonId, SETTING_COUNT, SettingCategory},
+    settings::{
+        ContextSettingExt, Itinerary, Person, PersonId, SETTING_COUNT, SettingCategory,
+        SettingMembershipMethod,
+    },
     transmission_modifier_manager::{ContextTransmissionModifierExt, ScalarTransmissionModifier},
     triggers::{ContextCustomTriggerExt, CustomTrigger},
 };
@@ -708,7 +711,7 @@ pub trait InterventionContextExt:
                         .into_any()
                         .downcast::<ItineraryTransitionMatrix>()
                         .expect("expected ItineraryTransitionMatrix"),
-                    false,
+                    SettingMembershipMethod::NoChange,
                 );
             }
             (Modifier::SchoolClosure, Geography::County(fips_code)) => {
@@ -718,7 +721,7 @@ pub trait InterventionContextExt:
                         .into_any()
                         .downcast::<ItineraryTransitionMatrix>()
                         .expect("expected ItineraryTransitionMatrix"),
-                    false,
+                    SettingMembershipMethod::NoChange,
                 );
             }
             (Modifier::WorkplaceMobilityReduction, Geography::State(state_code)) => {
@@ -728,7 +731,7 @@ pub trait InterventionContextExt:
                         .into_any()
                         .downcast::<ItineraryTransitionMatrix>()
                         .expect("expected ItineraryTransitionMatrix"),
-                    true,
+                    SettingMembershipMethod::Static,
                 );
             }
             (Modifier::WorkplaceMobilityReduction, Geography::County(fips_code)) => {
@@ -738,7 +741,7 @@ pub trait InterventionContextExt:
                         .into_any()
                         .downcast::<ItineraryTransitionMatrix>()
                         .expect("expected ItineraryTransitionMatrix"),
-                    true,
+                    SettingMembershipMethod::Static,
                 );
             }
             (Modifier::CommunityMobilityReduction, Geography::State(state_code)) => {
@@ -748,7 +751,7 @@ pub trait InterventionContextExt:
                         .into_any()
                         .downcast::<ItineraryTransitionMatrix>()
                         .expect("expected ItineraryTransitionMatrix"),
-                    true,
+                    SettingMembershipMethod::Static,
                 );
             }
             (Modifier::CommunityMobilityReduction, Geography::County(fips_code)) => {
@@ -758,7 +761,7 @@ pub trait InterventionContextExt:
                         .into_any()
                         .downcast::<ItineraryTransitionMatrix>()
                         .expect("expected ItineraryTransitionMatrix"),
-                    true,
+                    SettingMembershipMethod::Static,
                 );
             }
             (Modifier::MaskMandate, Geography::State(state_code)) => {
@@ -799,7 +802,7 @@ pub trait InterventionContextExt:
                 self.setup_itinerary_modifier(
                     AcceptsAndIsolatesState(Some(Geography::State(state_code))),
                     *itinerary_modifier,
-                    false,
+                    SettingMembershipMethod::EventDriven,
                 );
                 self.register_transmission_modifier([(
                     AcceptsAndIsolatesState(Some(Geography::State(state_code))),
@@ -825,7 +828,7 @@ pub trait InterventionContextExt:
                 self.setup_itinerary_modifier(
                     AcceptsAndIsolatesCounty(Some(Geography::County(fips_code))),
                     *itinerary_modifier,
-                    false,
+                    SettingMembershipMethod::EventDriven,
                 );
                 self.register_transmission_modifier([(
                     AcceptsAndIsolatesCounty(Some(Geography::County(fips_code))),
@@ -842,34 +845,40 @@ pub trait InterventionContextExt:
     ) -> Result<(), ModelError> {
         match (intervention.modifier, intervention.geography) {
             (Modifier::SchoolClosure, Geography::State(state_code)) => {
-                self.remove_itinerary_modifier(AcceptsSchoolClosureState(Some(Geography::State(
-                    state_code,
-                ))));
+                self.remove_itinerary_modifier(
+                    AcceptsSchoolClosureState(Some(Geography::State(state_code))),
+                    SettingMembershipMethod::NoChange,
+                );
             }
             (Modifier::SchoolClosure, Geography::County(fips_code)) => {
-                self.remove_itinerary_modifier(AcceptsSchoolClosureCounty(Some(
-                    Geography::County(fips_code),
-                )));
+                self.remove_itinerary_modifier(
+                    AcceptsSchoolClosureCounty(Some(Geography::County(fips_code))),
+                    SettingMembershipMethod::NoChange,
+                );
             }
             (Modifier::WorkplaceMobilityReduction, Geography::State(state_code)) => {
-                self.remove_itinerary_modifier(AcceptsWorkMobilityState(Some(Geography::State(
-                    state_code,
-                ))));
+                self.remove_itinerary_modifier(
+                    AcceptsWorkMobilityState(Some(Geography::State(state_code))),
+                    SettingMembershipMethod::Static,
+                );
             }
             (Modifier::WorkplaceMobilityReduction, Geography::County(fips_code)) => {
-                self.remove_itinerary_modifier(AcceptsWorkMobilityCounty(Some(Geography::County(
-                    fips_code,
-                ))));
+                self.remove_itinerary_modifier(
+                    AcceptsWorkMobilityCounty(Some(Geography::County(fips_code))),
+                    SettingMembershipMethod::Static,
+                );
             }
             (Modifier::CommunityMobilityReduction, Geography::State(state_code)) => {
-                self.remove_itinerary_modifier(AcceptsCommunityMobilityState(Some(
-                    Geography::State(state_code),
-                )));
+                self.remove_itinerary_modifier(
+                    AcceptsCommunityMobilityState(Some(Geography::State(state_code))),
+                    SettingMembershipMethod::Static,
+                );
             }
             (Modifier::CommunityMobilityReduction, Geography::County(fips_code)) => {
-                self.remove_itinerary_modifier(AcceptsCommunityMobilityCounty(Some(
-                    Geography::County(fips_code),
-                )));
+                self.remove_itinerary_modifier(
+                    AcceptsCommunityMobilityCounty(Some(Geography::County(fips_code))),
+                    SettingMembershipMethod::Static,
+                );
             }
             (Modifier::MaskMandate, Geography::State(state_code)) => {
                 self.remove_transmission_modifier(AcceptsMaskMandateState(Some(Geography::State(
@@ -882,17 +891,19 @@ pub trait InterventionContextExt:
                 )));
             }
             (Modifier::IsolationGuidance, Geography::State(state_code)) => {
-                self.remove_itinerary_modifier(AcceptsAndIsolatesState(Some(Geography::State(
-                    state_code,
-                ))));
+                self.remove_itinerary_modifier(
+                    AcceptsAndIsolatesState(Some(Geography::State(state_code))),
+                    SettingMembershipMethod::EventDriven,
+                );
                 self.remove_transmission_modifier(AcceptsAndIsolatesState(Some(Geography::State(
                     state_code,
                 ))));
             }
             (Modifier::IsolationGuidance, Geography::County(fips_code)) => {
-                self.remove_itinerary_modifier(AcceptsAndIsolatesCounty(Some(Geography::County(
-                    fips_code,
-                ))));
+                self.remove_itinerary_modifier(
+                    AcceptsAndIsolatesCounty(Some(Geography::County(fips_code))),
+                    SettingMembershipMethod::EventDriven,
+                );
                 self.remove_transmission_modifier(AcceptsAndIsolatesCounty(Some(
                     Geography::County(fips_code),
                 )));
@@ -1023,7 +1034,7 @@ mod test {
         isolation_guidance::time_based_isolation_guidance,
         itinerary_manager::ContextItineraryModifierExt,
         parameters::{GlobalParams, SettingProperties},
-        pop_reader::parser::parse_fips_school_id,
+        pop_reader::parser::{parse_fips_home_id, parse_fips_school_id, parse_fips_workplace_id},
         settings::SettingCode,
         symptom_status_manager::SymptomData,
     };
@@ -1036,13 +1047,13 @@ mod test {
         SettingCode(parse_fips_school_id(school_id).unwrap().1)
     }
     fn make_work_id(work_id: &[u8]) -> SettingCode {
-        SettingCode(parse_fips_school_id(work_id).unwrap().1)
+        SettingCode(parse_fips_workplace_id(work_id).unwrap().1)
     }
     fn make_home_id(home_id: &[u8]) -> SettingCode {
-        SettingCode(parse_fips_school_id(home_id).unwrap().1)
+        SettingCode(parse_fips_home_id(home_id).unwrap().1)
     }
     fn make_community_id(community_id: &[u8]) -> SettingCode {
-        SettingCode(parse_fips_school_id(community_id).unwrap().1)
+        SettingCode(parse_fips_home_id(community_id).unwrap().1).extract_community()
     }
 
     fn setup() -> Context {
@@ -1826,6 +1837,7 @@ mod test {
             let transmission2 = context.get_relative_total_transmission(p2, SettingCategory::Home);
             assert_eq!(transmission1, 1.0);
             assert_eq!(transmission2, 1.0);
+            println!("this ran");
         });
         context.execute();
     }
@@ -1861,6 +1873,20 @@ mod test {
         context.setup_intervention_triggers(intervention1);
         context.setup_intervention_triggers(intervention2);
         context.setup_intervention_trigger_event_subscription();
+        context.add_person_to_settings(
+            p1,
+            Some(home_code),
+            None,
+            Some(school_code),
+            Some(community_code),
+        );
+        context.add_person_to_settings(
+            p2,
+            Some(home_code),
+            None,
+            Some(school_code),
+            Some(community_code),
+        );
         context.set_property(
             p1,
             Itinerary {
@@ -2038,6 +2064,21 @@ mod test {
         context.setup_intervention_triggers(intervention1);
         context.setup_intervention_triggers(intervention2);
         context.setup_intervention_trigger_event_subscription();
+        context.setup_intervention_trigger_event_subscription();
+        context.add_person_to_settings(
+            p1,
+            Some(home_code),
+            None,
+            Some(school_code),
+            Some(community_code),
+        );
+        context.add_person_to_settings(
+            p2,
+            Some(home_code),
+            None,
+            Some(school_code),
+            Some(community_code),
+        );
         context.set_property(
             p1,
             Itinerary {
